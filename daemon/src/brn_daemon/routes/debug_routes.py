@@ -44,15 +44,18 @@ async def get_debug_status():
     gateway_reachable = False
     try:
         async with httpx.AsyncClient(timeout=3.0) as client:
-            r = await client.get(f"{cfg.gateway_url}/actuator/health")
+            base = cfg.chat_provider.base_url.rstrip("/")
+            if base.endswith("/v1"):
+                base = base[:-3]
+            r = await client.get(f"{base}/actuator/health")
             gateway_reachable = r.status_code == 200
     except Exception:
         gateway_reachable = False
 
     gateway_section = {
-        "url": cfg.gateway_url,
+        "url": cfg.chat_provider.base_url,
         "reachable": gateway_reachable,
-        "model": cfg.llm_model,
+        "model": cfg.chat_provider.model,
     }
 
     # Chroma counts

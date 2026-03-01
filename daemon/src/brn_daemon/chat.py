@@ -38,8 +38,10 @@ def build_rag_prompt(question: str, context_chunks: list[dict]) -> str:
 
 
 class ChatService:
-    def __init__(self, gateway, chroma_store):
-        self._gateway = gateway
+    def __init__(self, chat_fn, stream_fn, embed_client, chroma_store):
+        self._chat_fn = chat_fn
+        self._stream_fn = stream_fn
+        self._embed_client = embed_client
         self._store = chroma_store
 
     async def chat(
@@ -51,7 +53,7 @@ class ChatService:
     ) -> AsyncIterator[str]:
         # 1. Embed the query
         try:
-            query_embedding = await self._gateway.embed(question)
+            query_embedding = await self._embed_client.embed(question)
         except Exception as exc:
             logger.error("Failed to embed query: %s", exc)
             yield "Sorry, I couldn't process your question right now."
@@ -103,5 +105,5 @@ class ChatService:
             {"role": "system", "content": CHAT_SYSTEM_PROMPT},
             {"role": "user", "content": user_prompt},
         ]
-        async for chunk in self._gateway.chat_stream(messages):
+        async for chunk in self._stream_fn(messages):
             yield chunk

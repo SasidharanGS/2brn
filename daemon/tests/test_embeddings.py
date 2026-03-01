@@ -53,7 +53,9 @@ async def test_embedding_service_writes_chroma_id_to_db(tmp_home, mock_gateway):
         act_id = (await cur.fetchone())[0]
 
     store = ChromaStore(persist_dir=str(tmp_home / "chroma"))
-    service = EmbeddingService(gateway=mock_gateway, chroma_store=store)
+    mock_embed_client = MagicMock()
+    mock_embed_client.embed = AsyncMock(return_value=[0.1] * 384)
+    service = EmbeddingService(embed_client=mock_embed_client, chroma_store=store)
     await service.embed_activity(
         activity_id=act_id,
         summary="coding in VS Code",

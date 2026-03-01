@@ -65,10 +65,9 @@ async def test_generate_saves_to_db(tmp_home):
         )
         await conn.commit()
 
-    mock_gateway = MagicMock()
-    mock_gateway.chat_complete = AsyncMock(return_value="Today I wrote Python code and focused deeply.")
+    mock_chat_fn = AsyncMock(return_value="Today I wrote Python code and focused deeply.")
 
-    gen = JournalGenerator(gateway=mock_gateway)
+    gen = JournalGenerator(chat_fn=mock_chat_fn)
     await gen.generate(target_date=date(2026, 4, 12))
 
     async with aiosqlite.connect(get_db_path()) as conn:
@@ -87,16 +86,15 @@ async def test_generate_skips_if_user_edited(tmp_home):
         )
         await conn.commit()
 
-    mock_gateway = MagicMock()
-    mock_gateway.chat_complete = AsyncMock(return_value="New content")
-    gen = JournalGenerator(gateway=mock_gateway)
+    mock_chat_fn = AsyncMock(return_value="New content")
+    gen = JournalGenerator(chat_fn=mock_chat_fn)
     await gen.generate(target_date=date(2026, 4, 12))
 
     async with aiosqlite.connect(get_db_path()) as conn:
         cur = await conn.execute("SELECT content FROM journals WHERE date = '2026-04-12'")
         row = await cur.fetchone()
     assert row[0] == "My edit"
-    mock_gateway.chat_complete.assert_not_called()
+    mock_chat_fn.assert_not_called()
 
 
 # ── JournalMirror ─────────────────────────────────────────────────────────────
@@ -182,23 +180,21 @@ def test_journal_mirror_silent_on_joplin_offline():
 
 # ── ResumeUpdater ─────────────────────────────────────────────────────────────
 
-def _make_updater(gateway=None):
-    if gateway is None:
-        gateway = MagicMock()
-        gateway.chat_complete = AsyncMock(return_value="NONE")
-    return ResumeUpdater(gateway=gateway, token="test-token", port=41184)
+def _make_updater(chat_fn=None):
+    if chat_fn is None:
+        chat_fn = AsyncMock(return_value="NONE")
+    return ResumeUpdater(chat_fn=chat_fn, token="test-token", port=41184)
 
 
 async def test_resume_updater_skips_empty_journal():
     updater = _make_updater()
     await updater.update_from_journal("", date(2026, 4, 26))
-    updater._gateway.chat_complete.assert_not_called()
+    updater._chat_fn.assert_not_called()
 
 
 async def test_resume_updater_skips_on_none_response():
-    gw = MagicMock()
-    gw.chat_complete = AsyncMock(return_value="NONE")
-    updater = _make_updater(gw)
+    chat_fn = AsyncMock(return_value="NONE")
+    updater = _make_updater(chat_fn)
 
     find_calls = []
     updater._find_resume_note = lambda t: find_calls.append(t) or None
@@ -208,11 +204,10 @@ async def test_resume_updater_skips_on_none_response():
 
 
 async def test_resume_updater_parses_and_appends():
-    gw = MagicMock()
-    gw.chat_complete = AsyncMock(
+    chat_fn = AsyncMock(
         return_value="Technical Skills | Used DeepEval for LLM evaluation in AgentHub."
     )
-    updater = _make_updater(gw)
+    updater = _make_updater(chat_fn)
 
     found_notes = {"Technical Skills": "skills-note-id"}
     appended = []
@@ -234,11 +229,10 @@ async def test_resume_updater_parses_and_appends():
 
 
 async def test_resume_updater_ignores_unknown_note_titles():
-    gw = MagicMock()
-    gw.chat_complete = AsyncMock(
+    chat_fn = AsyncMock(
         return_value="Unknown Note Title | Some bullet text."
     )
-    updater = _make_updater(gw)
+    updater = _make_updater(chat_fn)
 
     appended = []
     updater._find_resume_note = lambda t: "some-id"
@@ -250,9 +244,8 @@ async def test_resume_updater_ignores_unknown_note_titles():
 
 
 async def test_resume_updater_handles_gateway_failure():
-    gw = MagicMock()
-    gw.chat_complete = AsyncMock(side_effect=Exception("gateway down"))
-    updater = _make_updater(gw)
+    chat_fn = AsyncMock(side_effect=Exception("gateway down"))
+    updater = _make_updater(chat_fn)
 
     appended = []
     updater._find_resume_note = lambda t: "some-id"

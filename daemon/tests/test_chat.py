@@ -24,8 +24,8 @@ async def test_chat_service_streams_answer(tmp_home):
     from brn_daemon.db import init_db
     await init_db()
 
-    mock_gateway = MagicMock()
-    mock_gateway.embed = AsyncMock(return_value=[0.1] * 384)
+    mock_embed_client = MagicMock()
+    mock_embed_client.embed = AsyncMock(return_value=[0.1] * 384)
 
     mock_chroma = MagicMock()
     mock_chroma.query = MagicMock(return_value={
@@ -37,14 +37,12 @@ async def test_chat_service_streams_answer(tmp_home):
     })
 
     chunks_seen = []
-    async def fake_stream(messages, model=None):
+    async def fake_stream(messages):
         for chunk in ["Here ", "is ", "your ", "answer."]:
             chunks_seen.append(chunk)
             yield chunk
 
-    mock_gateway.chat_stream = fake_stream
-
-    service = ChatService(gateway=mock_gateway, chroma_store=mock_chroma)
+    service = ChatService(chat_fn=AsyncMock(), stream_fn=fake_stream, embed_client=mock_embed_client, chroma_store=mock_chroma)
     collected = []
     async for chunk in service.chat(question="What was I doing?"):
         collected.append(chunk)

@@ -1,3 +1,9 @@
+# ── Agent config (never commit) ───────────────────────────────────────────────
+AGENTS.md
+CLAUDE.md
+.claude/
+.opencode/
+
 # ── Node ──────────────────────────────────────────────────────────────────────
 node_modules/
 build/

@@ -1,0 +1,23 @@
+import ReactDOM from 'react-dom/client'
+import { HashRouter } from 'react-router-dom'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import App from './App'
+import './index.css'
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 30_000,           // data stays fresh 30s — navigating back shows cached data instantly
+      retry: 1,                    // retry once on failure, don't hammer a down daemon
+      refetchOnWindowFocus: false, // Electron app — window focus isn't meaningful
+    },
+  },
+})
+
+ReactDOM.createRoot(document.getElementById('root')!).render(
+  <QueryClientProvider client={queryClient}>
+    <HashRouter>
+      <App />
+    </HashRouter>
+  </QueryClientProvider>
+)

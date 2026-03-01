@@ -91,6 +91,7 @@ def save_config(cfg: Config) -> None:
         "capture_interval_seconds": cfg.capture_interval_seconds,
         "purge_months": cfg.purge_months,
         "paused": cfg.paused,
+        "excluded_apps": cfg.excluded_apps,
         "blog_mirror_enabled": cfg.blog_mirror_enabled,
         "joplin_token": cfg.joplin_token,
     }

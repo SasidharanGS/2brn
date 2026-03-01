@@ -79,7 +79,12 @@ async def chat_stream(
     kwargs["messages"] = messages
     kwargs["stream"] = True
 
-    resp = await litellm.acompletion(**kwargs)
+    try:
+        resp = await litellm.acompletion(**kwargs)
+    except Exception as exc:
+        logger.error("Chat stream failed: %s", exc)
+        yield f"Error: {exc}"
+        return
     async for chunk in resp:
         if not chunk.choices:
             continue

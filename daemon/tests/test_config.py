@@ -58,3 +58,11 @@ def test_provider_config_extra_headers(tmp_home):
     save_config(cfg)
     reloaded = load_config()
     assert reloaded.chat_provider.extra_headers == {"api-key": "abc123"}
+
+
+def test_excluded_apps_persist(tmp_home):
+    cfg = load_config()
+    cfg.excluded_apps = ["1Password", "banking_app"]
+    save_config(cfg)
+    reloaded = load_config()
+    assert reloaded.excluded_apps == ["1Password", "banking_app"]

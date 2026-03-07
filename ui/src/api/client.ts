@@ -1,6 +1,6 @@
 import type {
   DaemonStatus, CaptureRecord, ActivityRecord, JournalEntry, BlogPost,
-  DailyInsights, AppSettings, AppExclusion, UserInstruction, LogLine, DebugStatus
+  DailyInsights, AppSettings, SettingsUpdateRequest, AppExclusion, UserInstruction, LogLine, DebugStatus
 } from './types'
 
 const BASE_URL = 'http://127.0.0.1:7842'
@@ -62,7 +62,7 @@ export const api = {
   generateBlogPost: (date: string) => post<{ ok: boolean; generated: boolean }>(`/blog/${date}/generate`),
   updateBlogPost: (date: string, content: string) => put<{ ok: boolean }>(`/blog/${date}`, { content }),
   getSettings: () => get<AppSettings>('/settings'),
-  updateSettings: (body: Partial<AppSettings> & { gateway_token?: string }) => put('/settings', body),
+  updateSettings: (body: SettingsUpdateRequest) => put('/settings', body),
   setPaused: (paused: boolean) => post(`/settings/paused?paused=${paused}`),
   getExclusions: () => get<AppExclusion[]>('/settings/exclusions'),
   addExclusion: (app_name: string) => post('/settings/exclusions', { app_name }),

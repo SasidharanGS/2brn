@@ -66,6 +66,7 @@ export interface AppSettings {
   purge_months: number
   paused: boolean
   blog_mirror_enabled: boolean
+  screenshot_encryption_enabled: boolean
 }
 
 export interface ProviderConfigUpdate {

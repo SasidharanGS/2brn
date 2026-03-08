@@ -23,7 +23,7 @@ Both layers are unified in the **2brn chat UI** via RAG — a question like *"wh
 ```
 ┌──────────────────────────────────────────────────────────────┐
 │  SCREEN (passive capture)                                     │
-│  Screenshot every 60s → OCR → JLL GPT inference              │
+│  Screenshot every 60s → OCR → AI provider inference              │
 │  → SQLite (activities) + ChromaDB (activity_memories)         │
 └───────────────────────┬──────────────────────────────────────┘
                         │
@@ -246,7 +246,7 @@ Joplin saves it to ~/.config/joplin-desktop/database.sqlite
 joplin_watcher.py polls SQLite, detects updated_time changed
         │
         ▼
-Note body chunked (400 words) → embedded via JLL GPT Gateway
+Note body chunked (400 words) → embedded via your AI provider
         │
         ▼
 ChromaDB note_memories collection updated (upsert, stable doc IDs)
@@ -330,7 +330,7 @@ Search for "Memories — YYYY-MM" in Second Brain
 
 ## Migration History
 
-All notes were migrated from **Microsoft OneNote** (JLL work account) → Joplin on **2026-04-19**.
+All notes were migrated from **Microsoft OneNote** (work account) → Joplin on **2026-04-19**.
 
 **Method:** Custom Python script (`scripts/dendron_to_joplin_api.py`) using Joplin Web Clipper API.  
 **Intermediate step:** Notes were first exported from OneNote via Playwright + onenote.com to Dendron vault (`notes/`), then imported to Joplin via API.

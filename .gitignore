@@ -58,6 +58,7 @@ scripts/
 
 # ── Internal design docs with employer-specific context ───────────────────────
 docs/superpowers/specs/
+docs/superpowers/plans/
 
 # ── OpenClaude plan working files (keep docs/design/ but not openclaude plans dir)
 .openclaude/

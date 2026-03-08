@@ -13,8 +13,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from brn_daemon.db import init_db, get_db_path
-from brn_daemon.config import load_config, get_gateway_token
-from brn_daemon.gateway import GatewayClient
+from brn_daemon.config import load_config
+from brn_daemon.llm import make_chat_fn
+from brn_daemon.providers import make_embed_client
 from brn_daemon.capture import capture_all_monitors_with_rects, get_active_app, get_app_for_monitor, get_windows_snapshot, save_screenshot
 from brn_daemon.dedup import compute_phash, is_duplicate
 from brn_daemon.ocr import extract_text, is_text_sparse
@@ -74,24 +75,24 @@ async def lifespan(app: FastAPI):
     cfg = load_config()
     app_state["paused"] = cfg.paused
 
-    gateway = GatewayClient(base_url=cfg.gateway_url, token=get_gateway_token() or "",
-                            llm_model=cfg.llm_model, embed_model=cfg.embed_model)
+    chat_fn, stream_fn = make_chat_fn()
+    embed_client = make_embed_client()
     chroma = ChromaStore()
-    embedding_service = EmbeddingService(gateway=gateway, chroma_store=chroma)
+    embedding_service = EmbeddingService(embed_client=embed_client, chroma_store=chroma)
     app_state["chroma_store"] = chroma
-    inference_queue = InferenceQueue(gateway=gateway, db_path_fn=get_db_path,
+    inference_queue = InferenceQueue(chat_fn=chat_fn, db_path_fn=get_db_path,
                                      embedding_service=embedding_service)
-    journal_gen = JournalGenerator(gateway=gateway)
+    journal_gen = JournalGenerator(chat_fn=chat_fn)
     journal_mirror = JournalMirror(token=cfg.joplin_token)
-    blog_gen = BlogGenerator(gateway=gateway)
+    blog_gen = BlogGenerator(chat_fn=chat_fn)
     blog_mirror = BlogMirror(token=cfg.joplin_token)
     app_state["blog_generator"] = blog_gen
-    resume_updater = ResumeUpdater(gateway=gateway, token=cfg.joplin_token)
-    chat_service = ChatService(gateway=gateway, chroma_store=chroma)
+    resume_updater = ResumeUpdater(chat_fn=chat_fn, token=cfg.joplin_token)
+    chat_service = ChatService(chat_fn=chat_fn, stream_fn=stream_fn, embed_client=embed_client, chroma_store=chroma)
 
     # VaultWatcher: bulk-embed existing notes, then watch for changes
     vault_watcher = JoplinWatcher(
-        gateway=gateway,
+        embed_client=embed_client,
         chroma_client=chroma.chroma_client,
     )
     app_state["vault_watcher"] = vault_watcher
@@ -135,7 +136,7 @@ async def lifespan(app: FastAPI):
     inference_task.cancel()
     vault_watcher.stop()
     scheduler.shutdown()
-    await gateway.aclose()
+    await embed_client.aclose()
 
 
 async def _nightly_pipeline(

@@ -60,10 +60,9 @@ def test_build_blog_prompt_empty_day():
 
 async def test_blog_generator_creates_post(db, tmp_home):
     from brn_daemon.db import get_db_path
-    gateway = MagicMock()
-    gateway.chat_complete = AsyncMock(return_value="## April 26 — Dev Log\n\nBuilt the blog feature today.")
+    chat_fn = AsyncMock(return_value="## April 26 — Dev Log\n\nBuilt the blog feature today.")
 
-    gen = BlogGenerator(gateway=gateway)
+    gen = BlogGenerator(chat_fn=chat_fn)
     result = await gen.generate(target_date=date(2026, 4, 26))
 
     assert result == "## April 26 — Dev Log\n\nBuilt the blog feature today."
@@ -87,14 +86,13 @@ async def test_blog_generator_skips_if_edited_by_user(db, tmp_home):
         )
         await conn.commit()
 
-    gateway = MagicMock()
-    gateway.chat_complete = AsyncMock(return_value="New generated content")
+    chat_fn = AsyncMock(return_value="New generated content")
 
-    gen = BlogGenerator(gateway=gateway)
+    gen = BlogGenerator(chat_fn=chat_fn)
     result = await gen.generate(target_date=date(2026, 4, 26))
 
     assert result is None
-    gateway.chat_complete.assert_not_called()
+    chat_fn.assert_not_called()
 
 
 async def test_blog_generator_uses_activities(db, tmp_home):
@@ -111,13 +109,12 @@ async def test_blog_generator_uses_activities(db, tmp_home):
         )
         await conn.commit()
 
-    gateway = MagicMock()
-    gateway.chat_complete = AsyncMock(return_value="Dev log content")
+    chat_fn = AsyncMock(return_value="Dev log content")
 
-    gen = BlogGenerator(gateway=gateway)
+    gen = BlogGenerator(chat_fn=chat_fn)
     await gen.generate(target_date=date(2026, 4, 26))
 
-    call_args = gateway.chat_complete.call_args[0][0]
+    call_args = chat_fn.call_args[0][0]
     user_msg = next(m["content"] for m in call_args if m["role"] == "user")
     assert "BlogGenerator" in user_msg
 

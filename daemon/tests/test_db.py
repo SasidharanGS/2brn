@@ -9,7 +9,7 @@ async def test_init_db_creates_all_tables(tmp_home):
             "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
         )
         tables = {row[0] for row in await cursor.fetchall()}
-    assert tables == {"activities", "app_exclusions", "captures", "journals", "blog_posts"}
+    assert tables == {"activities", "app_exclusions", "captures", "journals", "blog_posts", "user_instructions"}
 
 async def test_init_db_idempotent(tmp_home):
     await init_db()

@@ -90,7 +90,7 @@ A scheduled job (runs daily at, say, 23:00) that:
 
 2. **Calls your AI provider with a structured prompt:**
    ```
-   You are updating a personal knowledge base for Sasidharan Govindan.
+   You are updating a personal knowledge base for the user.
    
    Today's data:
    - Activities: [list of summaries]
@@ -150,7 +150,7 @@ Over time, the memory system builds an implicit model of who you are, how you wo
 
 ### 5.1 "Working patterns" note
 ```markdown
-# Working Patterns — Sasidharan Govindan
+# Working Patterns — User Profile
 *Auto-updated by 2brn distillation. Last updated: 2026-04-25*
 
 ## Peak focus windows

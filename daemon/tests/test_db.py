@@ -106,3 +106,12 @@ async def test_blog_posts_unique_date(db):
             "INSERT INTO blog_posts (date, content, generated_at, edited_by_user) VALUES (?, ?, ?, 0)",
             ("2026-04-26", "Duplicate", now)
         )
+
+async def test_activities_has_app_name_override_column(tmp_home):
+    await init_db()
+    import aiosqlite
+    from brn_daemon.db import get_db_path
+    async with aiosqlite.connect(get_db_path()) as conn:
+        cursor = await conn.execute("PRAGMA table_info(activities)")
+        columns = {row[1] for row in await cursor.fetchall()}
+    assert "app_name_override" in columns

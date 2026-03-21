@@ -25,6 +25,12 @@ async def init_db() -> None:
         except Exception:
             pass  # Column already exists — safe to ignore
 
+        try:
+            await conn.execute("ALTER TABLE activities ADD COLUMN app_name_override TEXT")
+            await conn.commit()
+        except Exception:
+            pass  # Column already exists — safe to ignore
+
         await conn.executescript("""
             CREATE TABLE IF NOT EXISTS captures (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -56,7 +62,8 @@ async def init_db() -> None:
                     'distracted','in-meeting','idle'
                 )),
                 productivity_confidence REAL,
-                category_overridden_by_user INTEGER DEFAULT 0
+                category_overridden_by_user INTEGER DEFAULT 0,
+                app_name_override TEXT
             );
 
             CREATE TABLE IF NOT EXISTS journals (

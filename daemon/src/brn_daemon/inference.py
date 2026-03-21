@@ -128,11 +128,13 @@ class InferenceQueue:
                 cur = await conn.execute(
                     """INSERT INTO activities
                        (capture_id, started_at, summary, tags, task_category,
-                        task_category_confidence, productivity_state, productivity_confidence)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                        task_category_confidence, productivity_state, productivity_confidence,
+                        app_name_override)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (capture_id, now, result.summary, json.dumps(result.tags),
                      result.task_category, result.task_category_confidence,
-                     result.productivity_state, result.productivity_confidence),
+                     result.productivity_state, result.productivity_confidence,
+                     result.app_name_override),
                 )
                 await conn.commit()
                 activity_id = cur.lastrowid

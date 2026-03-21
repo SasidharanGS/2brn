@@ -150,6 +150,13 @@ class InferenceQueue:
                     summary=result.summary,
                     metadata=metadata,
                 )
+            logger.info(
+                "Inference done for capture %d — %s | %s | %s",
+                capture_id,
+                result.task_category,
+                result.productivity_state,
+                (result.summary or "")[:80],
+            )
         except Exception as exc:
             logger.error("Inference failed for capture %d: %s", capture_id, exc)
 

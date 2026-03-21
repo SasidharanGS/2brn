@@ -38,8 +38,14 @@ class LogBufferHandler(logging.Handler):
         super().__init__()
         self._buf = buf
 
+    # Loggers whose INFO/DEBUG messages are internal chatter we don't want
+    _SUPPRESSED_INFO_LOGGERS = {"LiteLLM", "litellm", "httpx", "httpcore", "openai"}
+
     def emit(self, record: logging.LogRecord) -> None:
         try:
+            root = record.name.split(".")[0]
+            if record.levelno < logging.WARNING and root in self._SUPPRESSED_INFO_LOGGERS:
+                return
             self._buf.append(record)
         except Exception:
             self.handleError(record)

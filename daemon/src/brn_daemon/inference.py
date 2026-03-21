@@ -30,6 +30,7 @@ INFERENCE_SYSTEM_PROMPT = """You are analyzing screen activity. Given screen con
 - task_category_confidence: float between 0 and 1
 - productivity_state: one of exactly: productive, focused, chilling, procrastinating, distracted, in-meeting, idle
 - productivity_confidence: float between 0 and 1
+- app_name: string or null — ONLY set this when a user-defined rule explicitly says to override the app name (e.g. "classify YouTube as YouTube"). Otherwise always return null.
 Return ONLY the JSON. No explanation. No markdown."""
 
 
@@ -61,6 +62,7 @@ class InferenceResult:
     task_category_confidence: float = 0.0
     productivity_state: str = "idle"
     productivity_confidence: float = 0.0
+    app_name_override: str | None = None
 
 
 def build_inference_prompt(app_name: str, window_title: str, ocr_text: str) -> str:
@@ -85,6 +87,7 @@ def parse_inference_response(raw: str) -> InferenceResult:
             task_category_confidence=float(data.get("task_category_confidence", 0.0)),
             productivity_state=state,
             productivity_confidence=float(data.get("productivity_confidence", 0.0)),
+            app_name_override=data.get("app_name") or None,
         )
     except Exception as exc:
         logger.warning("Failed to parse inference response: %s | raw: %s", exc, raw[:200])

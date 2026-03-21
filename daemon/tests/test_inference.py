@@ -50,3 +50,44 @@ def test_parse_unknown_category_falls_back_to_other():
     })
     result = parse_inference_response(raw)
     assert result.task_category == "other"
+
+
+def test_parse_response_with_app_name_override():
+    raw = json.dumps({
+        "summary": "User was watching a video.",
+        "tags": ["youtube", "video"],
+        "task_category": "play",
+        "task_category_confidence": 0.95,
+        "productivity_state": "chilling",
+        "productivity_confidence": 0.9,
+        "app_name": "YouTube"
+    })
+    result = parse_inference_response(raw)
+    assert result.app_name_override == "YouTube"
+
+
+def test_parse_response_without_app_name_override():
+    raw = json.dumps({
+        "summary": "User was writing code.",
+        "tags": ["coding"],
+        "task_category": "work",
+        "task_category_confidence": 0.9,
+        "productivity_state": "focused",
+        "productivity_confidence": 0.85
+    })
+    result = parse_inference_response(raw)
+    assert result.app_name_override is None
+
+
+def test_parse_response_with_null_app_name_override():
+    raw = json.dumps({
+        "summary": "User was writing code.",
+        "tags": ["coding"],
+        "task_category": "work",
+        "task_category_confidence": 0.9,
+        "productivity_state": "focused",
+        "productivity_confidence": 0.85,
+        "app_name": None
+    })
+    result = parse_inference_response(raw)
+    assert result.app_name_override is None

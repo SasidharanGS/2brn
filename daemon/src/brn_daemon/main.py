@@ -323,9 +323,9 @@ async def _capture_loop(cfg, inference_queue: InferenceQueue):
 
                     if not is_text_sparse(ocr_text):
                         await inference_queue.enqueue(capture_id, app_name, window_title, ocr_text)
-                        logger.info("Capture #%d queued for inference — %s (%s)", capture_id, app_name or "unknown", trigger)
+                        logger.info("Capture #%d → inference queued", capture_id)
                     else:
-                        logger.info("Capture #%d saved — %s (%s, sparse text, skipping inference)", capture_id, app_name or "unknown", trigger)
+                        logger.info("Capture #%d → saved (sparse text, skipping inference)", capture_id)
 
             app_state["last_captured_at"] = datetime.now(timezone.utc).isoformat()
             app_state["capture_count_today"] = app_state.get("capture_count_today", 0) + 1

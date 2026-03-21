@@ -89,7 +89,7 @@ The short task description is the first line of the LLM-generated summary, trunc
 # 2026-04-25 14:32 — 2brn
 
 **Duration:** 47 minutes  
-**Repo:** `/Users/sasidharan/…/2brn`  
+**Repo:** `/path/to/2brn`  
 **Branch:** `feat/implementation`  
 
 ## Summary
@@ -165,7 +165,7 @@ Add a `PreToolUse` or a one-time write at session start that records:
 {
   "session_id": "uuid-v4",
   "started_at": "2026-04-25T14:32:00+05:30",
-  "working_dir": "/Users/sasidharan/…/2brn",
+  "working_dir": "/path/to/2brn",
   "repo_name": "2brn",
   "git_sha_start": "670dfb6",
   "git_branch": "feat/implementation"
@@ -178,8 +178,8 @@ This is written by a `PreToolUse` hook on the very first tool call, or by a star
 
 The summary field requires intelligence. Options:
 
-**Option A: Call JLL GPT Gateway directly from the hook (recommended)**
-- The hook script calls `http://localhost:8888/v1/chat/completions` with a structured prompt:
+**Option A: Call your AI provider directly from the hook (recommended)**
+- The hook script calls `http://<your-provider-host>/v1/chat/completions` with a structured prompt:
   ```
   Summarise this OpenClaude coding session in 2-3 sentences.
   Repo: 2brn | Duration: 47 min | Changed files: [list] | Commits: [list]
@@ -218,7 +218,7 @@ OpenClaude session ends (Stop hook fires)
     ├── runs: git log --oneline <start_sha>..HEAD
     ├── reads: .claude/todos.json (if exists)
     ├── reads: ~/.openclaude/session-decisions.jsonl (decisions logged mid-session)
-    ├── calls: JLL Gateway /v1/chat/completions → summary text
+    ├── calls: your AI provider /v1/chat/completions → summary text
     ├── formats: Markdown note body
     └── calls: Joplin Web Clipper POST /notes → creates note in "OpenClaude Sessions" notebook
         │

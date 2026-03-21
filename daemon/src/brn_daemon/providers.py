@@ -16,11 +16,10 @@ class EmbedClient(Protocol):
     async def embed_batch(self, texts: list[str]) -> list[list[float]]: ...
 
 
-class JLLEmbedClient:
-    """Embed client for JLL Gateway's custom format.
+class CustomEmbedClient:
+    """Embed client for gateways using a custom (non-OpenAI-standard) embedding format.
 
-    Request:  POST /v1/embeddings  {"model": "...", "inputs": ["text1", ...]}
-    Response: {"success": true, "data": {"embeddings": [[...], ...]}}
+    Expects POST body: {"inputs": [...], "model": "..."} and response: {"data": {"embeddings": [[...]]}}
     """
 
     def __init__(self, base_url: str, api_key: str, model: str):
@@ -55,7 +54,7 @@ class JLLEmbedClient:
                 return data["data"]["embeddings"]
             except Exception as exc:
                 wait = 2 ** attempt
-                logger.warning("JLL embed attempt %d failed (%d texts): %s — retrying in %ds",
+                logger.warning("CustomEmbed attempt %d failed (%d texts): %s — retrying in %ds",
                                attempt + 1, len(texts), exc, wait)
                 if attempt < _MAX_RETRIES - 1:
                     await asyncio.sleep(wait)
@@ -101,12 +100,12 @@ class OpenAIEmbedClient:
                     raise
 
 
-def make_embed_client() -> JLLEmbedClient | OpenAIEmbedClient:
+def make_embed_client() -> CustomEmbedClient | OpenAIEmbedClient:
     """Factory: reads config and returns the right embed driver."""
     from brn_daemon.config import load_config, get_embed_api_key
     cfg = load_config()
     ep = cfg.embed_provider
     api_key = get_embed_api_key() or ""
-    if ep.type == "jll":
-        return JLLEmbedClient(base_url=ep.base_url, api_key=api_key, model=ep.model)
+    if ep.type == "custom":
+        return CustomEmbedClient(base_url=ep.base_url, api_key=api_key, model=ep.model)
     return OpenAIEmbedClient(base_url=ep.base_url, api_key=api_key, model=ep.model)

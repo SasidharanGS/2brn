@@ -3,7 +3,7 @@
 **Version:** 1.0  
 **Date:** 2026-04-25  
 **Status:** Approved design, pending implementation  
-**Owner:** Sasidharan Govindan
+**Owner:** 2brn contributors
 
 ---
 
@@ -119,7 +119,7 @@ Each phase is independently valuable. Stopping after any phase still leaves you 
   - Reads `session-state.json` (start time, repo, branch, starting git SHA)
   - Runs `git diff --name-only <start_sha>..HEAD` for changed files
   - Runs `git log --oneline <start_sha>..HEAD` for commits
-  - Calls JLL Gateway for 2–3 sentence summary (falls back gracefully if unavailable)
+  - Calls your AI provider for 2–3 sentence summary (falls back gracefully if unavailable)
   - Formats Markdown note body (see `session-tracking.md §4`)
   - Posts to Joplin "OpenClaude Sessions" notebook via Web Clipper
   - Also writes the monthly "Memories" marker (backward compat)
@@ -177,7 +177,7 @@ Each phase is independently valuable. Stopping after any phase still leaves you 
 **Unlocks:** Memory system gets smarter automatically without any manual effort
 
 - [ ] Create `daemon/src/brn_daemon/distillation.py` — `DistillationJob` class
-- [ ] Job logic: gather today's activities + session notes + /remember calls → JLL Gateway prompt → structured JSON → write to Joplin (Learnings, Decisions, Patterns notes)
+- [ ] Job logic: gather today's activities + session notes + /remember calls → your AI provider prompt → structured JSON → write to Joplin (Learnings, Decisions, Patterns notes)
 - [ ] Add `distillation_daily@23:00` to APScheduler in `daemon/src/brn_daemon/main.py`
 - [ ] Verify JoplinWatcher picks up distillation output → embedded in ChromaDB
 - [ ] Test: after running, check "Learnings — YYYY-MM" note updated with today's new knowledge
@@ -259,7 +259,7 @@ All three detailed design documents live in `docs/design/`:
 
 ## Key constraints
 
-- **No LLM intelligence in 2brn** — 2brn uses JLL GPT Gateway for its own inference (journals, activity summaries, distillation). OpenClaude is never used as 2brn's intelligence layer. This boundary is intentional and preserved in all phases.
-- **Local-first** — All data stays on your machine / JLL infrastructure. Nothing goes to third-party clouds.
+- **No LLM intelligence in 2brn** — 2brn uses your AI provider for its own inference (journals, activity summaries, distillation). OpenClaude is never used as 2brn's intelligence layer. This boundary is intentional and preserved in all phases.
+- **Local-first** — All data stays on your machine / local infrastructure. Nothing goes to third-party clouds.
 - **Graceful degradation** — Every integration point degrades cleanly if 2brn daemon is offline, Joplin is closed, or the gateway is unreachable. OpenClaude always starts; 2brn always captures.
 - **Additive only** — Each phase adds capability without changing existing behaviour. Phase 1 does not break the daily journals. Phase 2 does not change how 2brn captures screens.

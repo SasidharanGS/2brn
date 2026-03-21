@@ -88,9 +88,9 @@ A scheduled job (runs daily at, say, 23:00) that:
    - Today's `/remember` calls from `session-decisions.jsonl`
    - Today's captures and inference results
 
-2. **Calls JLL GPT Gateway with a structured prompt:**
+2. **Calls your AI provider with a structured prompt:**
    ```
-   You are updating a personal knowledge base for Sasidharan Govindan.
+   You are updating a personal knowledge base for the user.
    
    Today's data:
    - Activities: [list of summaries]
@@ -122,7 +122,7 @@ Every Sunday, a scheduled job:
    - **2brn:** Completed TanStack Query migration, full Obsidian Glass redesign,
      24-issue code review resolved. Branch `feat/implementation` ready to merge.
    - **SDA:** No activity this week.
-   - **JLL Gateway:** 1 debugging session on embeddings format.
+   - **your AI provider:** 1 debugging session on embeddings format.
    ```
 3. These notes are the answer to "what's the current status of X?" — they accumulate history week by week
 
@@ -150,7 +150,7 @@ Over time, the memory system builds an implicit model of who you are, how you wo
 
 ### 5.1 "Working patterns" note
 ```markdown
-# Working Patterns — Sasidharan Govindan
+# Working Patterns — User Profile
 *Auto-updated by 2brn distillation. Last updated: 2026-04-25*
 
 ## Peak focus windows
@@ -180,7 +180,7 @@ Last session: Obsidian Glass UI redesign (complete).
 
 ## Key architectural decisions
 - Electron 31 + Python FastAPI daemon (port 7842)
-- JLL GPT Gateway for all LLM calls (non-OpenAI embeddings format)
+- your AI provider for all LLM calls (non-OpenAI embeddings format)
 - ChromaDB for semantic search (activity_memories + note_memories)
 - TanStack Query for UI data fetching (staleTime: 30s)
 - Joplin as notes layer (polling via JoplinWatcher every 60s)
@@ -230,11 +230,11 @@ As the memory system becomes more comprehensive, privacy becomes more important.
 - CLAUDE.md — stored in `~/.openclaude/`
 
 **Nothing leaves your machine except:**
-- Inference prompts to JLL GPT Gateway (contains OCR text summaries, not raw screenshots)
-- Chat queries to JLL GPT Gateway (contains activity summaries + note excerpts)
+- Inference prompts to your AI provider (contains OCR text summaries, not raw screenshots)
+- Chat queries to your AI provider (contains activity summaries + note excerpts)
 
-### What OpenClaude sends to JLL Gateway
-When OpenClaude calls 2brn MCP tools and uses the results in a conversation, the context (activity summaries, note excerpts) is included in the conversation payload sent to the JLL GPT Gateway.
+### What OpenClaude sends to your AI provider
+When OpenClaude calls 2brn MCP tools and uses the results in a conversation, the context (activity summaries, note excerpts) is included in the conversation payload sent to the your AI provider.
 
 **Mitigation:** App exclusions ensure sensitive apps (1Password, banking) are never captured. Only inferred summaries — not raw OCR text — are included in MCP tool responses.
 
@@ -297,7 +297,7 @@ When OpenClaude calls 2brn MCP tools and uses the results in a conversation, the
 
           ┌─────────────────────────────────────────────────────┐
           │          Nightly distillation (23:00 scheduled)      │
-          │  Today's data → JLL Gateway → Learnings/Decisions/   │
+          │  Today's data → your AI provider → Learnings/Decisions/   │
           │  Patterns notes in Joplin → embedded by JoplinWatcher│
           └─────────────────────────────────────────────────────┘
 ```
@@ -332,7 +332,7 @@ This is a long-term system. Build it incrementally, each phase delivering real v
 
 ### Phase 4 — Nightly distillation — ~1 day
 - Add `distillation` scheduled job to 2brn daemon (23:00 daily)
-- LLM call to JLL Gateway: today's data → Learnings/Decisions/Patterns
+- LLM call to your AI provider: today's data → Learnings/Decisions/Patterns
 - Write results to Joplin
 - Verify JoplinWatcher picks them up
 

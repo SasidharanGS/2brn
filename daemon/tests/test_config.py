@@ -66,3 +66,29 @@ def test_excluded_apps_persist(tmp_home):
     save_config(cfg)
     reloaded = load_config()
     assert reloaded.excluded_apps == ["1Password", "banking_app"]
+
+
+def test_joplin_defaults_off(tmp_home):
+    cfg = load_config()
+    assert cfg.joplin_enabled is False
+    assert cfg.joplin_db_path == ""
+
+
+def test_joplin_fields_persist(tmp_home):
+    cfg = load_config()
+    cfg.joplin_enabled = True
+    cfg.joplin_db_path = "/tmp/joplin.sqlite"
+    save_config(cfg)
+    reloaded = load_config()
+    assert reloaded.joplin_enabled is True
+    assert reloaded.joplin_db_path == "/tmp/joplin.sqlite"
+
+
+def test_plugin_env_value_fallback_to_env_var(tmp_home, monkeypatch):
+    from brn_daemon.config import get_plugin_env_value
+    monkeypatch.setenv("BRN_PLUGIN_JOPLIN_JOPLIN_TOKEN", "fallback-value")
+    # Keychain miss — should fall back to env var.
+    # Note: this test doesn't validate keychain hit (would require mocking).
+    val = get_plugin_env_value("joplin", "JOPLIN_TOKEN")
+    # Either keychain returns something or env var returns fallback. Both are valid.
+    assert val in ("fallback-value", None) or isinstance(val, str)

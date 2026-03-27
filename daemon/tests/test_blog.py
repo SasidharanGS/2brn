@@ -1,3 +1,11 @@
+"""Tests for the blog generator and nightly pipeline.
+
+BlogMirror and the Joplin-coupled prompt parameter were removed when the
+Joplin integration moved out of the core daemon into the generic plugin
+system. Mirroring is now expressed as a plugin rule that listens for the
+``blog_generated`` event.
+"""
+
 import pytest
 from datetime import date, datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
@@ -13,44 +21,34 @@ def test_build_blog_prompt_includes_date():
         target_date="2026-04-26",
         summaries=["Worked on TanStack Query setup"],
         journal_content=None,
-        joplin_notes=[],
     )
     assert "2026-04-26" in prompt
+
 
 def test_build_blog_prompt_includes_activities():
     prompt = build_blog_prompt(
         target_date="2026-04-26",
         summaries=["Built blog feature in 2brn", "Fixed Electron titlebar drag"],
         journal_content=None,
-        joplin_notes=[],
     )
     assert "blog feature" in prompt
     assert "titlebar" in prompt
+
 
 def test_build_blog_prompt_includes_journal():
     prompt = build_blog_prompt(
         target_date="2026-04-26",
         summaries=[],
         journal_content="Today I felt productive and learned a lot.",
-        joplin_notes=[],
     )
     assert "productive" in prompt
 
-def test_build_blog_prompt_includes_joplin_notes():
-    prompt = build_blog_prompt(
-        target_date="2026-04-26",
-        summaries=[],
-        journal_content=None,
-        joplin_notes=[("TanStack Query Notes", "staleTime controls cache freshness")],
-    )
-    assert "staleTime" in prompt
 
 def test_build_blog_prompt_empty_day():
     prompt = build_blog_prompt(
         target_date="2026-04-26",
         summaries=[],
         journal_content=None,
-        joplin_notes=[],
     )
     assert "2026-04-26" in prompt
     assert isinstance(prompt, str)
@@ -135,7 +133,6 @@ async def test_get_blog_post_404(tmp_home, db):
 async def test_get_blog_post_returns_post(tmp_home, db):
     from brn_daemon.db import get_db_path
     from brn_daemon.main import create_app
-    from datetime import datetime, timezone
     now = datetime.now(timezone.utc).isoformat()
     async with aiosqlite.connect(get_db_path()) as conn:
         await conn.execute(
@@ -156,7 +153,6 @@ async def test_get_blog_post_returns_post(tmp_home, db):
 async def test_put_blog_post_sets_edited(tmp_home, db):
     from brn_daemon.db import get_db_path
     from brn_daemon.main import create_app
-    from datetime import datetime, timezone
     now = datetime.now(timezone.utc).isoformat()
     async with aiosqlite.connect(get_db_path()) as conn:
         await conn.execute(
@@ -177,117 +173,56 @@ async def test_put_blog_post_sets_edited(tmp_home, db):
     assert row[1] == 1
 
 
-# ── _nightly_pipeline sequencing ───────────────────────────────────────────────
+# ── _nightly_pipeline event firing ─────────────────────────────────────────────
 
-async def test_nightly_pipeline_runs_journal_resume_blog_in_order(tmp_home, db):
-    """Journal runs first, resume second (receives journal content), blog third."""
+async def test_nightly_pipeline_fires_journal_and_blog_events(tmp_home, db):
+    """Journal runs first → journal_generated event; blog runs second → blog_generated event."""
     from brn_daemon.main import _nightly_pipeline
-    from brn_daemon.journal import JournalMirror, ResumeUpdater
-    from brn_daemon.blog import BlogMirror
-    from types import SimpleNamespace
+    from brn_daemon.plugins import EventBus, EventNames
 
-    call_order = []
-
-    # Journal generator — returns content
     journal_gen = MagicMock()
     journal_gen.generate = AsyncMock(return_value="Today I built something great.")
-
-    # Journal mirror — records call
-    journal_mirror = MagicMock(spec=JournalMirror)
-    journal_mirror.write_daily_note = MagicMock(side_effect=lambda *a, **kw: call_order.append("journal_mirror"))
-
-    # Resume updater — records call and checks it receives journal content
-    resume_updater = MagicMock(spec=ResumeUpdater)
-    async def fake_resume_update(content, target_date):
-        assert content == "Today I built something great."
-        call_order.append("resume_updater")
-    resume_updater.update_from_journal = fake_resume_update
-
-    # Blog generator — records call
     blog_gen = MagicMock()
-    async def fake_blog_generate(target_date):
-        call_order.append("blog_generate")
-        return "## Dev Log\n\nBuilt something."
-    blog_gen.generate = fake_blog_generate
+    blog_gen.generate = AsyncMock(return_value="## Dev Log\n\nBuilt something.")
 
-    # Blog mirror — records call
-    blog_mirror = MagicMock(spec=BlogMirror)
-    blog_mirror.mirror = MagicMock(side_effect=lambda *a, **kw: call_order.append("blog_mirror"))
+    received: list[tuple[str, dict]] = []
 
-    cfg = SimpleNamespace(blog_mirror_enabled=True)
+    async def listener(name: str, payload: dict) -> None:
+        received.append((name, payload))
 
-    await _nightly_pipeline(
-        journal_gen, journal_mirror, resume_updater,
-        blog_gen, blog_mirror, cfg,
-        date(2026, 4, 26)
-    )
+    bus = EventBus()
+    bus.subscribe(EventNames.JOURNAL_GENERATED, listener)
+    bus.subscribe(EventNames.BLOG_GENERATED, listener)
 
-    assert call_order == ["journal_mirror", "resume_updater", "blog_generate", "blog_mirror"]
+    await _nightly_pipeline(journal_gen, blog_gen, bus, date(2026, 4, 26))
+
+    names = [evt[0] for evt in received]
+    assert names == [EventNames.JOURNAL_GENERATED, EventNames.BLOG_GENERATED]
+    assert received[0][1]["date"] == "2026-04-26"
+    assert received[0][1]["journal_content"] == "Today I built something great."
+    assert received[1][1]["blog_content"] == "## Dev Log\n\nBuilt something."
 
 
-async def test_nightly_pipeline_skips_resume_and_blog_if_no_journal(tmp_home, db):
-    """If journal generation returns None (user edited), resume and blog still run independently."""
+async def test_nightly_pipeline_skips_journal_event_when_user_edited(tmp_home, db):
+    """If journal generator returns None (user edited), no journal_generated event fires; blog still runs."""
     from brn_daemon.main import _nightly_pipeline
-    from brn_daemon.journal import JournalMirror, ResumeUpdater
-    from brn_daemon.blog import BlogMirror
-    from types import SimpleNamespace
+    from brn_daemon.plugins import EventBus, EventNames
 
     journal_gen = MagicMock()
     journal_gen.generate = AsyncMock(return_value=None)  # user edited — skipped
-
-    journal_mirror = MagicMock(spec=JournalMirror)
-    journal_mirror.write_daily_note = MagicMock()
-
-    resume_updater = MagicMock(spec=ResumeUpdater)
-    resume_updater.update_from_journal = AsyncMock()
-
     blog_gen = MagicMock()
     blog_gen.generate = AsyncMock(return_value="Blog content")
 
-    blog_mirror = MagicMock(spec=BlogMirror)
-    blog_mirror.mirror = MagicMock()
+    received: list[str] = []
 
-    cfg = SimpleNamespace(blog_mirror_enabled=True)
+    async def listener(name: str, payload: dict) -> None:
+        received.append(name)
 
-    await _nightly_pipeline(
-        journal_gen, journal_mirror, resume_updater,
-        blog_gen, blog_mirror, cfg,
-        date(2026, 4, 26)
-    )
+    bus = EventBus()
+    bus.subscribe(EventNames.JOURNAL_GENERATED, listener)
+    bus.subscribe(EventNames.BLOG_GENERATED, listener)
 
-    # journal was skipped — mirror and resume not called
-    journal_mirror.write_daily_note.assert_not_called()
-    resume_updater.update_from_journal.assert_not_called()
-    # blog still runs regardless
+    await _nightly_pipeline(journal_gen, blog_gen, bus, date(2026, 4, 26))
+
+    assert received == [EventNames.BLOG_GENERATED]
     blog_gen.generate.assert_called_once()
-    blog_mirror.mirror.assert_called_once()
-
-
-async def test_nightly_pipeline_respects_blog_mirror_disabled(tmp_home, db):
-    """Blog mirror is skipped when blog_mirror_enabled=False."""
-    from brn_daemon.main import _nightly_pipeline
-    from brn_daemon.journal import JournalMirror, ResumeUpdater
-    from brn_daemon.blog import BlogMirror
-    from types import SimpleNamespace
-
-    journal_gen = MagicMock()
-    journal_gen.generate = AsyncMock(return_value="Journal content")
-    journal_mirror = MagicMock(spec=JournalMirror)
-    journal_mirror.write_daily_note = MagicMock()
-    resume_updater = MagicMock(spec=ResumeUpdater)
-    resume_updater.update_from_journal = AsyncMock()
-    blog_gen = MagicMock()
-    blog_gen.generate = AsyncMock(return_value="Blog content")
-    blog_mirror = MagicMock(spec=BlogMirror)
-    blog_mirror.mirror = MagicMock()
-
-    cfg = SimpleNamespace(blog_mirror_enabled=False)
-
-    await _nightly_pipeline(
-        journal_gen, journal_mirror, resume_updater,
-        blog_gen, blog_mirror, cfg,
-        date(2026, 4, 26)
-    )
-
-    blog_gen.generate.assert_called_once()   # blog is still generated and saved to DB
-    blog_mirror.mirror.assert_not_called()   # but NOT mirrored to Joplin

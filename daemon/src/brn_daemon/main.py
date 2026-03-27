@@ -17,16 +17,16 @@ from brn_daemon.config import load_config, get_screenshot_password
 from brn_daemon.encryption import load_encryption_state, verify_password
 from brn_daemon.llm import make_chat_fn
 from brn_daemon.providers import make_embed_client
-from brn_daemon.capture import capture_all_monitors_with_rects, get_active_app, get_app_for_monitor, get_windows_snapshot, save_screenshot
+from brn_daemon.capture import capture_all_monitors_with_rects, get_app_for_monitor, get_windows_snapshot, save_screenshot
 from brn_daemon.dedup import compute_phash, is_duplicate
 from brn_daemon.ocr import extract_text, is_text_sparse
 from brn_daemon.inference import InferenceQueue
 from brn_daemon.embeddings import ChromaStore, EmbeddingService
-from brn_daemon.journal import JournalGenerator, JournalMirror, ResumeUpdater
-from brn_daemon.blog import BlogGenerator, BlogMirror
+from brn_daemon.journal import JournalGenerator
+from brn_daemon.blog import BlogGenerator
 from brn_daemon.chat import ChatService
 from brn_daemon.purge import purge_old_captures
-from brn_daemon.joplin_watcher import JoplinWatcher
+from brn_daemon.plugins import EventBus, EventNames, PluginOrchestrator
 
 logging.basicConfig(
     level=logging.INFO,
@@ -47,13 +47,15 @@ class AppState(TypedDict, total=False):
     last_captured_at: str | None
     journal_generator: JournalGenerator | None
     chat_service: ChatService | None
-    vault_watcher: JoplinWatcher | None
+    vault_watcher: object | None  # JoplinWatcher when joplin_enabled, else None
     journal_generating: set[str]
     blog_generator: BlogGenerator | None
     blog_generating: set[str]
     chroma_store: ChromaStore | None
     exclusions_dirty: bool
     screenshot_key: bytes | None
+    event_bus: EventBus | None
+    plugin_orchestrator: PluginOrchestrator | None
 
 
 app_state: AppState = {
@@ -69,6 +71,8 @@ app_state: AppState = {
     "chroma_store": None,
     "exclusions_dirty": True,
     "screenshot_key": None,
+    "event_bus": None,
+    "plugin_orchestrator": None,
 }
 
 
@@ -106,23 +110,20 @@ async def lifespan(app: FastAPI):
     chroma = ChromaStore()
     embedding_service = EmbeddingService(embed_client=embed_client, chroma_store=chroma)
     app_state["chroma_store"] = chroma
-    inference_queue = InferenceQueue(chat_fn=chat_fn, db_path_fn=get_db_path,
-                                     embedding_service=embedding_service)
-    journal_gen = JournalGenerator(chat_fn=chat_fn)
-    journal_mirror = JournalMirror(token=cfg.joplin_token)
-    blog_gen = BlogGenerator(chat_fn=chat_fn)
-    blog_mirror = BlogMirror(token=cfg.joplin_token)
-    app_state["blog_generator"] = blog_gen
-    resume_updater = ResumeUpdater(chat_fn=chat_fn, token=cfg.joplin_token)
-    chat_service = ChatService(chat_fn=chat_fn, stream_fn=stream_fn, embed_client=embed_client, chroma_store=chroma)
 
-    # VaultWatcher: bulk-embed existing notes, then watch for changes
-    vault_watcher = JoplinWatcher(
-        embed_client=embed_client,
-        chroma_client=chroma.chroma_client,
+    event_bus = EventBus()
+    app_state["event_bus"] = event_bus
+
+    inference_queue = InferenceQueue(
+        chat_fn=chat_fn,
+        db_path_fn=get_db_path,
+        embedding_service=embedding_service,
+        event_bus=event_bus,
     )
-    app_state["vault_watcher"] = vault_watcher
-
+    journal_gen = JournalGenerator(chat_fn=chat_fn)
+    blog_gen = BlogGenerator(chat_fn=chat_fn)
+    app_state["blog_generator"] = blog_gen
+    chat_service = ChatService(chat_fn=chat_fn, stream_fn=stream_fn, embed_client=embed_client, chroma_store=chroma)
     app_state["journal_generator"] = journal_gen
     app_state["chat_service"] = chat_service
 
@@ -133,7 +134,7 @@ async def lifespan(app: FastAPI):
     scheduler.add_job(
         _nightly_pipeline_job,
         "cron", hour=21, minute=0, id="nightly_pipeline",
-        args=[journal_gen, journal_mirror, resume_updater, blog_gen, blog_mirror],
+        args=[journal_gen, blog_gen, event_bus],
     )
     scheduler.add_job(
         _purge_job,
@@ -145,48 +146,70 @@ async def lifespan(app: FastAPI):
     )
     scheduler.start()
 
-    asyncio.create_task(_startup_backfill(
-        journal_gen, journal_mirror, resume_updater, blog_gen, blog_mirror
-    ))
+    orchestrator = PluginOrchestrator(event_bus=event_bus, scheduler=scheduler, chat_fn=chat_fn)
+    await orchestrator.start()
+    app_state["plugin_orchestrator"] = orchestrator
+
+    asyncio.create_task(_startup_backfill(journal_gen, blog_gen, event_bus))
 
     inference_task = asyncio.create_task(inference_queue.run())
     capture_task = asyncio.create_task(_capture_loop(cfg, inference_queue))
 
-    # Start vault watcher in background (bulk embed on startup, then watch)
-    loop = asyncio.get_running_loop()
-    asyncio.create_task(_start_vault_watcher(vault_watcher, loop))
+    # Optional Joplin note embedding watcher — off by default for OSS users.
+    vault_watcher = None
+    if cfg.joplin_enabled:
+        try:
+            from brn_daemon.joplin_watcher import JoplinWatcher
+            vault_watcher = JoplinWatcher(
+                embed_client=embed_client,
+                chroma_client=chroma.chroma_client,
+                db_path=Path(cfg.joplin_db_path) if cfg.joplin_db_path else None,
+            )
+            app_state["vault_watcher"] = vault_watcher
+            loop = asyncio.get_running_loop()
+            asyncio.create_task(_start_vault_watcher(vault_watcher, loop))
+        except Exception:
+            logger.exception("Failed to start JoplinWatcher — continuing without it")
 
-    yield
-
-    capture_task.cancel()
-    inference_task.cancel()
-    vault_watcher.stop()
-    scheduler.shutdown()
-    await embed_client.aclose()
+    try:
+        yield
+    finally:
+        capture_task.cancel()
+        inference_task.cancel()
+        if vault_watcher is not None:
+            try:
+                vault_watcher.stop()
+            except Exception:
+                logger.exception("Vault watcher stop failed")
+        try:
+            await orchestrator.stop()
+        except Exception:
+            logger.exception("Plugin orchestrator stop failed")
+        scheduler.shutdown()
+        await embed_client.aclose()
 
 
 async def _nightly_pipeline(
     journal_gen: JournalGenerator,
-    journal_mirror: JournalMirror,
-    resume_updater: ResumeUpdater,
     blog_gen: BlogGenerator,
-    blog_mirror: BlogMirror,
-    cfg,
+    event_bus: EventBus,
     target_date: dt_date,
 ) -> None:
+    """Generate the day's journal + blog, firing events so plugins can react."""
     try:
-        loop = asyncio.get_running_loop()
-
         journal_content = await journal_gen.generate(target_date=target_date)
         if journal_content:
-            await loop.run_in_executor(None, journal_mirror.write_daily_note, target_date, journal_content)
-
-        if journal_content:
-            await resume_updater.update_from_journal(journal_content, target_date)
+            await event_bus.emit(EventNames.JOURNAL_GENERATED, {
+                "date": target_date.isoformat(),
+                "journal_content": journal_content,
+            })
 
         blog_content = await blog_gen.generate(target_date=target_date)
-        if blog_content and cfg.blog_mirror_enabled:
-            await loop.run_in_executor(None, blog_mirror.mirror, target_date, blog_content)
+        if blog_content:
+            await event_bus.emit(EventNames.BLOG_GENERATED, {
+                "date": target_date.isoformat(),
+                "blog_content": blog_content,
+            })
     except Exception:
         logger.exception("Nightly pipeline failed for %s", target_date)
         raise
@@ -194,15 +217,10 @@ async def _nightly_pipeline(
 
 async def _nightly_pipeline_job(
     journal_gen: JournalGenerator,
-    journal_mirror: JournalMirror,
-    resume_updater: ResumeUpdater,
     blog_gen: BlogGenerator,
-    blog_mirror: BlogMirror,
+    event_bus: EventBus,
 ) -> None:
-    cfg = load_config()
-    await _nightly_pipeline(
-        journal_gen, journal_mirror, resume_updater, blog_gen, blog_mirror, cfg, dt_date.today()
-    )
+    await _nightly_pipeline(journal_gen, blog_gen, event_bus, dt_date.today())
 
 
 async def _purge_job() -> None:
@@ -216,10 +234,8 @@ async def _reset_capture_count_job() -> None:
 
 async def _startup_backfill(
     journal_gen: JournalGenerator,
-    journal_mirror: JournalMirror,
-    resume_updater: ResumeUpdater,
     blog_gen: BlogGenerator,
-    blog_mirror: BlogMirror,
+    event_bus: EventBus,
 ) -> None:
     if datetime.now().hour < 21:
         return
@@ -229,13 +245,10 @@ async def _startup_backfill(
         if await cur.fetchone():
             return
     logger.info("Startup backfill: nightly pipeline missed for %s — running now", today)
-    cfg = load_config()
-    await _nightly_pipeline(
-        journal_gen, journal_mirror, resume_updater, blog_gen, blog_mirror, cfg, today
-    )
+    await _nightly_pipeline(journal_gen, blog_gen, event_bus, today)
 
 
-async def _start_vault_watcher(vault_watcher: JoplinWatcher, loop) -> None:
+async def _start_vault_watcher(vault_watcher, loop) -> None:
     """Bulk-embed existing vault files, then start the file watcher."""
     try:
         await vault_watcher.bulk_embed_all()
@@ -345,6 +358,7 @@ def create_app() -> FastAPI:
     from brn_daemon.routes import debug_routes
     from brn_daemon.routes import blog_routes
     from brn_daemon.routes import instructions_routes
+    from brn_daemon.routes import plugins_routes
 
     app = FastAPI(title="2brn Daemon", lifespan=lifespan)
     # Allow requests from Vite dev server and Electron renderer
@@ -365,6 +379,7 @@ def create_app() -> FastAPI:
     app.include_router(debug_routes.router)
     app.include_router(blog_routes.router)
     app.include_router(instructions_routes.router)
+    app.include_router(plugins_routes.router)
     return app
 
 

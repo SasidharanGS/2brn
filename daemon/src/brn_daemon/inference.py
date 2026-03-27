@@ -95,11 +95,12 @@ def parse_inference_response(raw: str) -> InferenceResult:
 
 
 class InferenceQueue:
-    def __init__(self, chat_fn, db_path_fn, embedding_service=None):
+    def __init__(self, chat_fn, db_path_fn, embedding_service=None, event_bus=None):
         self._queue: asyncio.Queue = asyncio.Queue(maxsize=INFERENCE_QUEUE_MAX)
         self._chat_fn = chat_fn
         self._db_path_fn = db_path_fn
         self._embedding_service = embedding_service
+        self._event_bus = event_bus  # plugins.EventBus or None
 
     async def enqueue(self, capture_id: int, app_name: str, window_title: str, ocr_text: str) -> None:
         try:
@@ -156,6 +157,18 @@ class InferenceQueue:
                     metadata=metadata,
                 )
             logger.info("Capture #%d → inference done → activity #%d → embed queued", capture_id, activity_id)
+
+            if self._event_bus is not None:
+                # Fire-and-forget: handler exceptions are swallowed inside the bus.
+                from brn_daemon.plugins.events import EventNames as _EN
+                await self._event_bus.emit(_EN.CAPTURE_INFERRED, {
+                    "summary": result.summary,
+                    "task_category": result.task_category,
+                    "productivity_state": result.productivity_state,
+                    "app_name": result.app_name_override or app_name or "",
+                    "timestamp": now,
+                    "tags": result.tags,
+                })
         except Exception as exc:
             logger.error("Inference failed for capture %d: %s", capture_id, exc)
 

@@ -67,6 +67,8 @@ export interface AppSettings {
   paused: boolean
   blog_mirror_enabled: boolean
   screenshot_encryption_enabled: boolean
+  joplin_enabled: boolean
+  joplin_db_path: string
 }
 
 export interface ProviderConfigUpdate {
@@ -83,6 +85,8 @@ export interface SettingsUpdateRequest {
   capture_interval_seconds?: number
   purge_months?: number
   blog_mirror_enabled?: boolean
+  joplin_enabled?: boolean
+  joplin_db_path?: string
 }
 
 export interface AppExclusion {
@@ -121,6 +125,80 @@ export interface DebugStatus {
     note_memories: number
   }
   last_error: { ts: string; msg: string } | null
+}
+
+// ── Plugins ───────────────────────────────────────────────────────────────────
+
+export interface Plugin {
+  id: number
+  name: string
+  command: string
+  args: string[]
+  env_keys: string[]
+  enabled: boolean
+  created_at: string
+  last_health_at: string | null
+  last_health_ok: boolean | null
+  last_health_error: string | null
+}
+
+export interface PluginRule {
+  id: number
+  plugin_id: number
+  title: string
+  rule_text: string
+  enabled: boolean
+  trigger: string
+  tool_name: string | null
+  args_template: Record<string, unknown> | null
+  parse_status: 'pending' | 'ok' | 'error'
+  parse_error: string | null
+  parsed_at: string | null
+  created_at: string
+}
+
+export interface PluginTool {
+  name: string
+  description: string
+  input_schema: Record<string, unknown>
+}
+
+export interface RuleExecution {
+  id: number
+  rule_id: number
+  started_at: string
+  ended_at: string | null
+  status: 'ok' | 'error' | 'timeout' | 'running'
+  error: string | null
+  payload: Record<string, unknown> | null
+  result: Record<string, unknown> | null
+}
+
+export interface PluginCreate {
+  name: string
+  command: string
+  args?: string[]
+  env?: Record<string, string>  // values are stashed in keychain; only key names persist
+}
+
+export interface PluginUpdate {
+  command?: string
+  args?: string[]
+  env?: Record<string, string>
+  enabled?: boolean
+}
+
+export interface RuleCreate {
+  plugin_id: number
+  title: string
+  rule_text: string
+  enabled?: boolean
+}
+
+export interface RuleUpdate {
+  title?: string
+  rule_text?: string
+  enabled?: boolean
 }
 
 declare global {

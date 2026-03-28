@@ -9,7 +9,10 @@ async def test_init_db_creates_all_tables(tmp_home):
             "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
         )
         tables = {row[0] for row in await cursor.fetchall()}
-    assert tables == {"activities", "app_exclusions", "captures", "journals", "blog_posts", "user_instructions"}
+    assert tables == {
+        "activities", "app_exclusions", "captures", "journals", "blog_posts",
+        "user_instructions", "plugins", "plugin_rules", "plugin_rule_executions",
+    }
 
 async def test_init_db_idempotent(tmp_home):
     await init_db()
@@ -106,6 +109,56 @@ async def test_blog_posts_unique_date(db):
             "INSERT INTO blog_posts (date, content, generated_at, edited_by_user) VALUES (?, ?, ?, 0)",
             ("2026-04-26", "Duplicate", now)
         )
+
+async def test_plugins_name_unique(db):
+    await db.execute("INSERT INTO plugins (name, command) VALUES ('joplin', 'node')")
+    await db.commit()
+    import aiosqlite
+    with pytest.raises(aiosqlite.IntegrityError):
+        await db.execute("INSERT INTO plugins (name, command) VALUES ('joplin', 'other')")
+        await db.commit()
+
+
+async def test_plugin_rules_cascade_delete(db):
+    await db.execute("INSERT INTO plugins (name, command) VALUES ('p1', 'node')")
+    await db.commit()
+    cur = await db.execute("SELECT id FROM plugins WHERE name = 'p1'")
+    pid = (await cur.fetchone())[0]
+    await db.execute(
+        "INSERT INTO plugin_rules (plugin_id, title, rule_text, trigger) VALUES (?, 't', 'r', 'manual')",
+        (pid,),
+    )
+    await db.commit()
+    await db.execute("PRAGMA foreign_keys = ON")
+    await db.execute("DELETE FROM plugins WHERE id = ?", (pid,))
+    await db.commit()
+    cur = await db.execute("SELECT COUNT(*) FROM plugin_rules WHERE plugin_id = ?", (pid,))
+    assert (await cur.fetchone())[0] == 0
+
+
+async def test_plugin_rule_executions_cascade_delete(db):
+    await db.execute("INSERT INTO plugins (name, command) VALUES ('p1', 'node')")
+    await db.commit()
+    cur = await db.execute("SELECT id FROM plugins WHERE name = 'p1'")
+    pid = (await cur.fetchone())[0]
+    await db.execute(
+        "INSERT INTO plugin_rules (plugin_id, title, rule_text, trigger) VALUES (?, 't', 'r', 'manual')",
+        (pid,),
+    )
+    await db.commit()
+    cur = await db.execute("SELECT id FROM plugin_rules")
+    rid = (await cur.fetchone())[0]
+    await db.execute(
+        "INSERT INTO plugin_rule_executions (rule_id, started_at, status) VALUES (?, datetime('now'), 'ok')",
+        (rid,),
+    )
+    await db.commit()
+    await db.execute("PRAGMA foreign_keys = ON")
+    await db.execute("DELETE FROM plugin_rules WHERE id = ?", (rid,))
+    await db.commit()
+    cur = await db.execute("SELECT COUNT(*) FROM plugin_rule_executions WHERE rule_id = ?", (rid,))
+    assert (await cur.fetchone())[0] == 0
+
 
 async def test_activities_has_app_name_override_column(tmp_home):
     await init_db()

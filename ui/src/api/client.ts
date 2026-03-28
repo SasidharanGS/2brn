@@ -1,6 +1,7 @@
 import type {
   DaemonStatus, CaptureRecord, ActivityRecord, JournalEntry, BlogPost,
-  DailyInsights, AppSettings, SettingsUpdateRequest, AppExclusion, UserInstruction, LogLine, DebugStatus
+  DailyInsights, AppSettings, SettingsUpdateRequest, AppExclusion, UserInstruction, LogLine, DebugStatus,
+  Plugin, PluginRule, PluginTool, RuleExecution, PluginCreate, PluginUpdate, RuleCreate, RuleUpdate,
 } from './types'
 
 const BASE_URL = 'http://127.0.0.1:7842'
@@ -99,6 +100,32 @@ export const api = {
     put<UserInstruction>(`/instructions/${id}`, patch),
   deleteInstruction: (id: number) =>
     fetch(`${BASE_URL}/instructions/${id}`, { method: 'DELETE' }).then(() => undefined),
+
+  // ── Plugins ─────────────────────────────────────────────────────────────────
+  listPlugins: () => get<Plugin[]>('/plugins'),
+  createPlugin: (body: PluginCreate) => post<Plugin>('/plugins', body),
+  updatePlugin: (id: number, body: PluginUpdate) => put<Plugin>(`/plugins/${id}`, body),
+  deletePlugin: (id: number) =>
+    fetch(`${BASE_URL}/plugins/${id}`, { method: 'DELETE' }).then(r => {
+      if (!r.ok) throw new Error(`DELETE failed: ${r.status}`)
+    }),
+  listPluginTools: (id: number) => get<PluginTool[]>(`/plugins/${id}/tools`),
+
+  listPluginRules: (plugin_id?: number) => {
+    const q = plugin_id ? `?plugin_id=${plugin_id}` : ''
+    return get<PluginRule[]>(`/plugin-rules${q}`)
+  },
+  createPluginRule: (body: RuleCreate) => post<PluginRule>('/plugin-rules', body),
+  updatePluginRule: (id: number, body: RuleUpdate) => put<PluginRule>(`/plugin-rules/${id}`, body),
+  deletePluginRule: (id: number) =>
+    fetch(`${BASE_URL}/plugin-rules/${id}`, { method: 'DELETE' }).then(r => {
+      if (!r.ok) throw new Error(`DELETE failed: ${r.status}`)
+    }),
+  reparsePluginRule: (id: number) => post<PluginRule>(`/plugin-rules/${id}/reparse`),
+  runPluginRule: (id: number) =>
+    post<{ ok: boolean; result?: Record<string, unknown>; error?: string }>(`/plugin-rules/${id}/run`),
+  listRuleExecutions: (id: number, limit = 50) =>
+    get<RuleExecution[]>(`/plugin-rules/${id}/executions?limit=${limit}`),
 
   chatStream: async function* (question: string, date_filter?: string, category_filter?: string, signal?: AbortSignal) {
     const res = await fetch(`${BASE_URL}/chat`, {

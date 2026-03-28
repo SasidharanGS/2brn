@@ -43,8 +43,9 @@ class SettingsResponse(BaseModel):
     capture_interval_seconds: int
     purge_months: int
     paused: bool
-    blog_mirror_enabled: bool
     screenshot_encryption_enabled: bool
+    joplin_enabled: bool
+    joplin_db_path: str
 
 
 class ProviderConfigIn(BaseModel):
@@ -60,7 +61,8 @@ class SettingsUpdateRequest(BaseModel):
     embed_provider: ProviderConfigIn | None = None
     capture_interval_seconds: int | None = None
     purge_months: int | None = None
-    blog_mirror_enabled: bool | None = None
+    joplin_enabled: bool | None = None
+    joplin_db_path: str | None = None
 
 
 class ExclusionRequest(BaseModel):
@@ -80,8 +82,9 @@ async def get_settings():
         capture_interval_seconds=cfg.capture_interval_seconds,
         purge_months=cfg.purge_months,
         paused=cfg.paused,
-        blog_mirror_enabled=cfg.blog_mirror_enabled,
         screenshot_encryption_enabled=is_initialised(),
+        joplin_enabled=cfg.joplin_enabled,
+        joplin_db_path=cfg.joplin_db_path,
     )
 
 
@@ -116,8 +119,10 @@ async def update_settings(body: SettingsUpdateRequest):
         cfg.capture_interval_seconds = body.capture_interval_seconds
     if body.purge_months is not None:
         cfg.purge_months = body.purge_months
-    if body.blog_mirror_enabled is not None:
-        cfg.blog_mirror_enabled = body.blog_mirror_enabled
+    if body.joplin_enabled is not None:
+        cfg.joplin_enabled = body.joplin_enabled
+    if body.joplin_db_path is not None:
+        cfg.joplin_db_path = body.joplin_db_path
     save_config(cfg)
     return {"ok": True}
 

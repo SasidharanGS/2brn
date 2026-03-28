@@ -39,19 +39,6 @@ def test_config_file_written_as_json(tmp_home):
     assert "embed_model" not in data
 
 
-def test_config_blog_defaults(tmp_home):
-    cfg = load_config()
-    assert cfg.blog_mirror_enabled is True
-
-
-def test_config_blog_fields_persist(tmp_home):
-    cfg = load_config()
-    cfg.blog_mirror_enabled = False
-    save_config(cfg)
-    loaded = load_config()
-    assert loaded.blog_mirror_enabled is False
-
-
 def test_provider_config_extra_headers(tmp_home):
     cfg = load_config()
     cfg.chat_provider.extra_headers = {"api-key": "abc123"}

@@ -1,9 +1,17 @@
 # Design Document: 2brn as OpenClaude's Persistent Memory
 
-**Version:** 1.0  
-**Date:** 2026-04-25  
-**Status:** Design / Long-term vision  
+**Version:** 1.0
+**Date:** 2026-04-25
+**Status:** Historical / partially superseded — see banner below
 **Scope:** Making 2brn the permanent, evolving memory layer for all OpenClaude sessions — the "second brain" that makes the assistant feel like it truly knows you
+
+> **2026-05-23 update.** The nightly distillation, weekly digest, and
+> CLAUDE.md evolution mechanisms described here would now be implemented as
+> plugin rules (see [`docs/integrations.md`](../integrations.md)) rather
+> than hardcoded daemon jobs. The vision (two-layer memory, structured
+> distillation into Joplin) still stands; the wiring described below
+> (`JournalMirror`, custom `DistillationJob`) does not — those classes have
+> been deleted from the daemon.
 
 ---
 
@@ -274,7 +282,7 @@ When OpenClaude calls 2brn MCP tools and uses the results in a conversation, the
                                       │ reads/writes
           ┌───────────────────────────▼──────────────────────────┐
           │                    Joplin SQLite                       │
-          │  • Daily journals (written by JournalMirror)           │
+          │  • Daily journals (written by a plugin rule)           │
           │  • Session notes (written by session-to-joplin.sh)     │
           │  • /remember entries (written by skill)                │
           │  • Decisions, Learnings, Patterns (written by distil)  │

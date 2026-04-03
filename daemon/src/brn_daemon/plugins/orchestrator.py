@@ -158,7 +158,7 @@ class PluginOrchestrator:
         async with aiosqlite.connect(get_db_path()) as conn:
             conn.row_factory = aiosqlite.Row
             cur = await conn.execute(
-                """SELECT r.id, r.plugin_id, r.tool_name, r.args_template,
+                """SELECT r.id, r.plugin_id, r.tool_name, r.args_template, r.trigger,
                           p.command, p.args AS p_args, p.env_keys, p.name AS plugin_name
                    FROM plugin_rules r JOIN plugins p ON p.id = r.plugin_id
                    WHERE r.id = ? AND r.enabled = 1 AND p.enabled = 1
@@ -309,16 +309,66 @@ class PluginOrchestrator:
                 await conn.commit()
             raise
 
+    async def _build_manual_payload(self, trigger: str, date_str: str, time_str: str) -> dict[str, Any]:
+        """Return a payload that matches what the real event would carry.
+
+        For journal_generated / blog_generated we fetch today's content from
+        the DB so {journal_content} / {blog_content} placeholders resolve.
+        For capture_inferred we inject the most-recent activity row.
+        For schedule / manual triggers only {date} and {time} are needed.
+        """
+        base = {"date": date_str, "time": time_str}
+        if trigger == EventNames.JOURNAL_GENERATED:
+            async with aiosqlite.connect(get_db_path()) as conn:
+                conn.row_factory = aiosqlite.Row
+                cur = await conn.execute(
+                    "SELECT content FROM journals WHERE date = ? ORDER BY generated_at DESC LIMIT 1",
+                    (date_str,),
+                )
+                row = await cur.fetchone()
+            base["journal_content"] = row["content"] if row and row["content"] else ""
+        elif trigger == EventNames.BLOG_GENERATED:
+            async with aiosqlite.connect(get_db_path()) as conn:
+                conn.row_factory = aiosqlite.Row
+                cur = await conn.execute(
+                    "SELECT content FROM blog_posts WHERE date = ? ORDER BY generated_at DESC LIMIT 1",
+                    (date_str,),
+                )
+                row = await cur.fetchone()
+            base["blog_content"] = row["content"] if row and row["content"] else ""
+        elif trigger == EventNames.CAPTURE_INFERRED:
+            async with aiosqlite.connect(get_db_path()) as conn:
+                conn.row_factory = aiosqlite.Row
+                cur = await conn.execute(
+                    """SELECT a.summary, a.task_category, a.productivity_state,
+                              a.app_name_override, a.started_at, a.tags,
+                              c.app_name
+                       FROM activities a
+                       LEFT JOIN captures c ON c.id = a.capture_id
+                       ORDER BY a.id DESC LIMIT 1""",
+                )
+                row = await cur.fetchone()
+            if row:
+                base.update({
+                    "summary": row["summary"] or "",
+                    "task_category": row["task_category"] or "",
+                    "productivity_state": row["productivity_state"] or "",
+                    "app_name": row["app_name_override"] or row["app_name"] or "",
+                    "timestamp": row["started_at"] or "",
+                    "tags": row["tags"] or "[]",
+                })
+        return base
+
     async def run_rule_now(self, rule_id: int) -> dict[str, Any]:
         """Trigger a rule manually. Used by the UI 'Run now' button."""
         rule = await self._load_rule(rule_id)
         if rule is None:
             raise ValueError(f"Rule {rule_id} not found, not enabled, or not parsed")
         now = datetime.now(timezone.utc)
-        payload = {
-            "date": now.strftime("%Y-%m-%d"),
-            "time": now.strftime("%H:%M:%S"),
-        }
+        date_str = now.strftime("%Y-%m-%d")
+        time_str = now.strftime("%H:%M:%S")
+        trigger = rule.get("trigger", "manual")
+        payload = await self._build_manual_payload(trigger, date_str, time_str)
         started = now.isoformat()
         try:
             args_template = json.loads(rule["args_template"] or "{}")

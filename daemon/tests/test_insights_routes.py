@@ -1,0 +1,318 @@
+"""Tests for the insights endpoints — focus on /insights/summary.
+
+Exercises the period/range math, hour-of-day heatmap, baseline comparison,
+and recurring-activity clustering. Uses a FastAPI TestClient against a
+locally-seeded SQLite DB.
+"""
+from __future__ import annotations
+
+import sqlite3
+from datetime import datetime, timedelta
+
+import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
+from brn_daemon.db import get_db_path, init_db
+from brn_daemon.routes.insights_routes import router as insights_router
+from brn_daemon.routes.insights_routes import _cluster_summaries
+
+
+# ---------------------------------------------------------------------------
+# Fixtures
+# ---------------------------------------------------------------------------
+
+
+def _seed_capture_and_activity(
+    cur: sqlite3.Cursor,
+    *,
+    started_at: str,
+    app_name: str = "Chrome",
+    summary: str = "writing code",
+    state: str = "productive",
+    category: str = "work",
+) -> None:
+    cur.execute(
+        "INSERT INTO captures (captured_at, app_name, trigger) VALUES (?, ?, 'heartbeat')",
+        (started_at, app_name),
+    )
+    capture_id = cur.lastrowid
+    cur.execute(
+        """INSERT INTO activities
+             (capture_id, started_at, summary, task_category,
+              task_category_confidence, productivity_state, productivity_confidence)
+           VALUES (?, ?, ?, ?, 0.9, ?, 0.8)""",
+        (capture_id, started_at, summary, category, state),
+    )
+
+
+@pytest.fixture
+async def seeded_client(tmp_home):
+    """FastAPI TestClient with a small synthetic DB.
+
+    Anchor date = 2026-05-23. Seeds:
+      - today (2026-05-23): 5 productive activities at 09:00, 09:01, 09:02
+        on Chrome; 2 distracted at 14:00 on Twitter.
+      - yesterday (2026-05-22): 3 productive at 10:00 on Chrome.
+      - last week (2026-05-16): 1 distracted at 21:00 on Twitter.
+      - one cluster of 3 near-duplicate summaries today.
+    """
+    await init_db()
+
+    today = "2026-05-23"
+    yesterday = "2026-05-22"
+    last_week = "2026-05-16"
+
+    db_path = get_db_path()
+    with sqlite3.connect(db_path) as conn:
+        cur = conn.cursor()
+
+        # Today — morning productive block on Chrome (5 activities, 09:00–09:04)
+        for i in range(5):
+            _seed_capture_and_activity(
+                cur,
+                started_at=f"{today}T09:0{i}:00",
+                app_name="Chrome",
+                summary="reviewing pull request comments on GitHub",
+                state="productive",
+                category="work",
+            )
+        # Today — afternoon distraction (2 activities, 14:00 + 14:01)
+        for i in range(2):
+            _seed_capture_and_activity(
+                cur,
+                started_at=f"{today}T14:0{i}:00",
+                app_name="Twitter",
+                summary="scrolling Twitter feed",
+                state="distracted",
+                category="play",
+            )
+        # Today — 3 near-duplicate recurring activity summaries.
+        # These intentionally share most tokens with the 09:* block so the
+        # Jaccard clustering can merge them at the default threshold (0.6).
+        _seed_capture_and_activity(
+            cur, started_at=f"{today}T10:00:00",
+            summary="reviewing pull request comments on GitHub channel",
+            state="productive", category="work",
+        )
+        _seed_capture_and_activity(
+            cur, started_at=f"{today}T10:01:00",
+            summary="reviewing pull request feedback comments on GitHub",
+            state="productive", category="work",
+        )
+        _seed_capture_and_activity(
+            cur, started_at=f"{today}T10:02:00",
+            summary="reviewing pull request review comments on GitHub",
+            state="productive", category="work",
+        )
+
+        # Yesterday — 3 productive activities (baseline)
+        for i in range(3):
+            _seed_capture_and_activity(
+                cur,
+                started_at=f"{yesterday}T10:0{i}:00",
+                state="productive", category="work",
+            )
+
+        # Last week — late-night distraction (1)
+        _seed_capture_and_activity(
+            cur,
+            started_at=f"{last_week}T21:00:00",
+            state="distracted", category="play",
+        )
+
+        conn.commit()
+
+    app = FastAPI()
+    app.include_router(insights_router)
+    return TestClient(app)
+
+
+# ---------------------------------------------------------------------------
+# /insights/summary — happy path
+# ---------------------------------------------------------------------------
+
+
+def test_summary_day_returns_required_shape(seeded_client):
+    r = seeded_client.get("/insights/summary?period=day&date=2026-05-23")
+    assert r.status_code == 200
+    data = r.json()
+
+    assert data["period"] == "day"
+    assert data["date"] == "2026-05-23"
+    assert data["range"]["span_days"] == 1
+    assert "categories" in data
+    assert "productivity_states" in data
+    assert "top_apps" in data
+    assert "hourly_heatmap" in data
+    assert "comparison" in data
+    assert "recurring_activities" in data
+    assert len(data["hourly_heatmap"]) == 24
+
+
+def test_summary_day_categories_have_minutes(seeded_client):
+    r = seeded_client.get("/insights/summary?period=day&date=2026-05-23")
+    data = r.json()
+    cats = data["categories"]
+    assert cats, "expected at least one category bucket"
+    for c in cats:
+        assert "task_category" in c
+        assert "count" in c
+        assert "total_minutes" in c
+        # interval defaults to 60s → minutes == count
+        assert c["total_minutes"] == round(c["count"], 1)
+
+
+def test_summary_day_top_apps_includes_chrome_and_twitter(seeded_client):
+    r = seeded_client.get("/insights/summary?period=day&date=2026-05-23")
+    apps = {a["app_name"]: a for a in r.json()["top_apps"]}
+    assert "Chrome" in apps
+    assert "Twitter" in apps
+    assert apps["Chrome"]["count"] > apps["Twitter"]["count"]
+
+
+def test_summary_day_heatmap_dominant_state_at_morning_hours(seeded_client):
+    r = seeded_client.get("/insights/summary?period=day&date=2026-05-23")
+    heatmap = {cell["hour"]: cell for cell in r.json()["hourly_heatmap"]}
+    # 09:* had only productive activities
+    assert heatmap[9]["dominant_state"] == "productive"
+    assert heatmap[9]["total_minutes"] > 0
+    # 14:* had only distracted
+    assert heatmap[14]["dominant_state"] == "distracted"
+    # 03:* had no activities — empty cell
+    assert heatmap[3]["total_minutes"] == 0
+    assert heatmap[3]["dominant_state"] is None
+
+
+def test_summary_day_comparison_baseline_label(seeded_client):
+    r = seeded_client.get("/insights/summary?period=day&date=2026-05-23")
+    comp = r.json()["comparison"]
+    assert comp["baseline_label"] == "7-day average"
+    assert "current_minutes" in comp["active"]
+    assert "baseline_minutes" in comp["active"]
+
+
+def test_summary_day_comparison_active_minutes_today(seeded_client):
+    """Today seeded with 10 activities → 10 minutes active at 60s interval."""
+    r = seeded_client.get("/insights/summary?period=day&date=2026-05-23")
+    comp = r.json()["comparison"]
+    assert comp["active"]["current_minutes"] == 10.0
+    assert comp["productive"]["current_minutes"] == 8.0
+    assert comp["distracted"]["current_minutes"] == 2.0
+
+
+def test_summary_day_baseline_averaged_over_7_days(seeded_client):
+    """Yesterday had 3 productive activities, the 6 days before are empty.
+    Per-day average over a 7-day baseline window = 3/7 ≈ 0.4 minutes.
+    """
+    r = seeded_client.get("/insights/summary?period=day&date=2026-05-23")
+    comp = r.json()["comparison"]
+    # 3 activities yesterday / 7 days ≈ 0.4 min/day
+    assert comp["productive"]["baseline_minutes"] == pytest.approx(0.4, abs=0.1)
+
+
+def test_summary_recurring_clusters_near_duplicates(seeded_client):
+    r = seeded_client.get("/insights/summary?period=day&date=2026-05-23")
+    recurring = r.json()["recurring_activities"]
+    assert recurring, "expected at least one recurring cluster"
+    top = recurring[0]
+    # The top cluster should fold the 5 'reviewing pull request comments…'
+    # rows plus the 3 near-duplicates (8 total).
+    assert top["session_count"] >= 6
+    assert top["variant_count"] >= 2
+    assert "github" in top["canonical_summary"].lower() or "pr" in top["canonical_summary"].lower()
+
+
+def test_summary_week_period_widens_range(seeded_client):
+    r = seeded_client.get("/insights/summary?period=week&date=2026-05-23")
+    data = r.json()
+    assert data["period"] == "week"
+    assert data["range"]["span_days"] == 7
+    # Range includes today + 6 prior days → 10 (today) + 3 (yesterday) = 13 minutes
+    comp = data["comparison"]
+    assert comp["active"]["current_minutes"] == 13.0
+    assert comp["baseline_label"] == "4-week average"
+
+
+def test_summary_month_period_baseline_label(seeded_client):
+    r = seeded_client.get("/insights/summary?period=month&date=2026-05-23")
+    data = r.json()
+    assert data["period"] == "month"
+    assert data["range"]["span_days"] == 30
+    assert data["comparison"]["baseline_label"] == "3-month average"
+
+
+# ---------------------------------------------------------------------------
+# /insights/summary — error paths
+# ---------------------------------------------------------------------------
+
+
+def test_summary_rejects_unknown_period(seeded_client):
+    r = seeded_client.get("/insights/summary?period=year&date=2026-05-23")
+    assert r.status_code == 400
+
+
+def test_summary_rejects_malformed_date(seeded_client):
+    r = seeded_client.get("/insights/summary?period=day&date=not-a-date")
+    assert r.status_code == 400
+
+
+# ---------------------------------------------------------------------------
+# /insights/daily — back-compat
+# ---------------------------------------------------------------------------
+
+
+def test_legacy_daily_endpoint_still_returns_counts(seeded_client):
+    r = seeded_client.get("/insights/daily?date=2026-05-23")
+    assert r.status_code == 200
+    data = r.json()
+    assert "categories" in data
+    assert "productivity_states" in data
+    assert "top_apps" in data
+    # Legacy endpoint must not include total_minutes (back-compat contract).
+    assert all("total_minutes" not in c for c in data["categories"])
+
+
+# ---------------------------------------------------------------------------
+# _cluster_summaries — unit tests
+# ---------------------------------------------------------------------------
+
+
+def test_cluster_summaries_groups_near_duplicates():
+    rows = [
+        ("reviewing pull request comments on GitHub", 5),
+        ("reading PR review feedback on GitHub", 1),
+        ("looking at PR comments on GitHub", 1),
+        ("scrolling Twitter feed", 4),
+        ("reading documentation about FastAPI", 2),
+    ]
+    clusters = _cluster_summaries(rows, threshold=0.3)
+    assert len(clusters) >= 2  # GitHub group, Twitter group, docs group
+    # The largest cluster should be the GitHub PR-comments family.
+    top = clusters[0]
+    assert top["total_count"] >= 5
+    assert len(top["variants"]) >= 2
+
+
+def test_cluster_summaries_keeps_distinct_when_no_overlap():
+    rows = [
+        ("walking the dog", 1),
+        ("brewing coffee", 1),
+        ("playing chess", 1),
+    ]
+    clusters = _cluster_summaries(rows, threshold=0.6)
+    assert len(clusters) == 3
+
+
+def test_cluster_summaries_empty_input():
+    assert _cluster_summaries([]) == []
+
+
+def test_cluster_summaries_canonical_is_highest_count():
+    rows = [
+        ("scrolling Twitter feed", 1),
+        ("scrolling Twitter posts feed", 10),
+    ]
+    clusters = _cluster_summaries(rows, threshold=0.3)
+    assert len(clusters) == 1
+    assert clusters[0]["canonical_summary"] == "scrolling Twitter posts feed"

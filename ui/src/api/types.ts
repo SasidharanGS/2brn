@@ -50,6 +50,68 @@ export interface DailyInsights {
   top_apps: { app_name: string; count: number }[]
 }
 
+// ── Insights summary (Day / Week / Month) ─────────────────────────────────────
+
+export type InsightsPeriod = 'day' | 'week' | 'month'
+
+export interface InsightsCategoryBucket {
+  task_category: string
+  count: number
+  total_minutes: number
+  avg_confidence: number
+}
+
+export interface InsightsStateBucket {
+  productivity_state: string
+  count: number
+  total_minutes: number
+}
+
+export interface InsightsAppBucket {
+  app_name: string
+  count: number
+  total_minutes: number
+}
+
+export interface HeatmapCell {
+  hour: number  // 0–23
+  total_minutes: number
+  dominant_state: string | null
+  by_state_minutes: Record<string, number>
+}
+
+export interface ComparisonMetric {
+  current_minutes: number
+  baseline_minutes: number
+}
+
+export interface InsightsComparison {
+  baseline_label: string  // "7-day average" | "4-week average" | "3-month average"
+  active: ComparisonMetric
+  productive: ComparisonMetric
+  distracted: ComparisonMetric
+}
+
+export interface RecurringActivity {
+  canonical_summary: string
+  total_minutes: number
+  session_count: number
+  variant_count: number
+}
+
+export interface InsightsSummary {
+  period: InsightsPeriod
+  date: string
+  range: { start: string; end: string; span_days: number }
+  interval_seconds: number
+  categories: InsightsCategoryBucket[]
+  productivity_states: InsightsStateBucket[]
+  top_apps: InsightsAppBucket[]
+  hourly_heatmap: HeatmapCell[]
+  comparison: InsightsComparison
+  recurring_activities: RecurringActivity[]
+}
+
 export interface ProviderConfig {
   type: string
   base_url: string

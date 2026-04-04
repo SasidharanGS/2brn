@@ -36,7 +36,9 @@ logger = logging.getLogger(__name__)
 
 # Wire log buffer into root logger so all modules' logs are captured
 from brn_daemon.log_buffer import log_buffer as _log_buffer, LogBufferHandler as _LogBufferHandler
-logging.getLogger().addHandler(_LogBufferHandler(_log_buffer))
+_root_logger = logging.getLogger()
+if not any(isinstance(h, _LogBufferHandler) for h in _root_logger.handlers):
+    _root_logger.addHandler(_LogBufferHandler(_log_buffer))
 
 from typing import TypedDict
 
@@ -388,4 +390,4 @@ app = create_app()
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("brn_daemon.main:app", host="127.0.0.1", port=7842, reload=False)
+    uvicorn.run(app, host="127.0.0.1", port=7842, reload=False)

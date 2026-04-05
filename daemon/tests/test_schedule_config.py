@@ -53,3 +53,70 @@ def test_schedule_config_validates_minute_range(tmp_path, monkeypatch):
     monkeypatch.setenv("BRN_HOME", str(tmp_path))
     with pytest.raises(ValueError, match="minute"):
         ScheduleConfig(hour=21, minute=60)
+
+
+import asyncio
+from datetime import date
+from unittest.mock import AsyncMock, MagicMock
+from brn_daemon.main import _journal_job, _blog_job, _startup_backfill_journal, _startup_backfill_blog
+
+
+async def test_journal_job_calls_generate_and_emits_event(tmp_path, monkeypatch):
+    monkeypatch.setenv("BRN_HOME", str(tmp_path))
+    from brn_daemon.db import init_db
+    await init_db()
+
+    journal_gen = MagicMock()
+    journal_gen.generate = AsyncMock(return_value="Today I worked on X")
+    event_bus = MagicMock()
+    event_bus.emit = AsyncMock()
+
+    await _journal_job(journal_gen, event_bus)
+    journal_gen.generate.assert_called_once_with(target_date=date.today())
+    event_bus.emit.assert_called_once()
+
+
+async def test_blog_job_calls_generate(tmp_path, monkeypatch):
+    monkeypatch.setenv("BRN_HOME", str(tmp_path))
+    from brn_daemon.db import init_db
+    await init_db()
+
+    blog_gen = MagicMock()
+    blog_gen.generate = AsyncMock(return_value="Blog post content")
+    event_bus = MagicMock()
+    event_bus.emit = AsyncMock()
+
+    await _blog_job(blog_gen, event_bus)
+    blog_gen.generate.assert_called_once_with(target_date=date.today())
+    event_bus.emit.assert_called_once()
+
+
+async def test_blog_job_does_not_emit_when_no_content(tmp_path, monkeypatch):
+    monkeypatch.setenv("BRN_HOME", str(tmp_path))
+    from brn_daemon.db import init_db
+    await init_db()
+
+    blog_gen = MagicMock()
+    blog_gen.generate = AsyncMock(return_value=None)
+    event_bus = MagicMock()
+    event_bus.emit = AsyncMock()
+
+    await _blog_job(blog_gen, event_bus)
+    blog_gen.generate.assert_called_once()
+    event_bus.emit.assert_not_called()
+
+
+async def test_startup_backfill_journal_skips_if_not_past_schedule(tmp_path, monkeypatch):
+    monkeypatch.setenv("BRN_HOME", str(tmp_path))
+    from brn_daemon.db import init_db
+    from brn_daemon.config import ScheduleConfig
+    await init_db()
+
+    journal_gen = MagicMock()
+    journal_gen.generate = AsyncMock(return_value=None)
+    event_bus = MagicMock()
+    event_bus.emit = AsyncMock()
+
+    schedule = ScheduleConfig(hour=23, minute=59)
+    await _startup_backfill_journal(journal_gen, event_bus, schedule)
+    journal_gen.generate.assert_not_called()

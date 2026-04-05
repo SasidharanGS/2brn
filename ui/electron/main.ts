@@ -68,7 +68,7 @@ function resolvePython(daemonCwd: string): { cmd: string; args: string[]; extraE
     const pythonPath = buildPythonPath(daemonCwd)
     console.log(`[daemon] using venv python: ${venvPython}`)
     console.log(`[daemon] PYTHONPATH: ${pythonPath}`)
-    return { cmd: venvPython, args: ['-m', 'brn_daemon.main'], extraEnv: { PYTHONPATH: pythonPath } }
+    return { cmd: venvPython, args: ['-m', 'uvicorn', 'brn_daemon.main:app', '--host', '127.0.0.1', '--port', '7842'], extraEnv: { PYTHONPATH: pythonPath } }
   }
 
   console.log(`[daemon] .venv not found at ${daemonCwd}/.venv, trying uv fallback`)
@@ -84,12 +84,12 @@ function resolvePython(daemonCwd: string): { cmd: string; args: string[]; extraE
     const real = resolveReal(uvPath)
     if (real) {
       console.log(`[daemon] using uv: ${real}`)
-      return { cmd: real, args: ['run', 'python', '-m', 'brn_daemon.main'], extraEnv: {} }
+      return { cmd: real, args: ['run', 'python', '-m', 'uvicorn', 'brn_daemon.main:app', '--host', '127.0.0.1', '--port', '7842'], extraEnv: {} }
     }
   }
 
   console.error('[daemon] could not find python or uv — spawn will fail')
-  return { cmd: 'python3', args: ['-m', 'brn_daemon.main'], extraEnv: {} }
+  return { cmd: 'python3', args: ['-m', 'uvicorn', 'brn_daemon.main:app', '--host', '127.0.0.1', '--port', '7842'], extraEnv: {} }
 }
 
 function probeDaemon(): Promise<boolean> {

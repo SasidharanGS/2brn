@@ -24,6 +24,18 @@ class ProviderConfig:
 
 
 @dataclass
+class ScheduleConfig:
+    hour: int = 21
+    minute: int = 0
+
+    def __post_init__(self):
+        if not (0 <= self.hour <= 23):
+            raise ValueError(f"hour must be 0-23, got {self.hour}")
+        if not (0 <= self.minute <= 59):
+            raise ValueError(f"minute must be 0-59, got {self.minute}")
+
+
+@dataclass
 class Config:
     chat_provider: ProviderConfig = field(default_factory=lambda: ProviderConfig(
         type="openai_compatible",
@@ -43,6 +55,8 @@ class Config:
     # When True, JoplinWatcher polls joplin_db_path and embeds notes into note_memories.
     joplin_enabled: bool = False
     joplin_db_path: str = ""
+    journal_schedule: ScheduleConfig = field(default_factory=lambda: ScheduleConfig(hour=21, minute=0))
+    blog_schedule: ScheduleConfig = field(default_factory=lambda: ScheduleConfig(hour=21, minute=0))
 
 
 def _config_path() -> Path:
@@ -55,6 +69,13 @@ def _parse_provider(data: dict) -> ProviderConfig:
         base_url=data.get("base_url", ""),
         model=data.get("model", ""),
         extra_headers=data.get("extra_headers", {}),
+    )
+
+
+def _parse_schedule(data: dict) -> ScheduleConfig:
+    return ScheduleConfig(
+        hour=data.get("hour", 21),
+        minute=data.get("minute", 0),
     )
 
 
@@ -73,6 +94,8 @@ def load_config() -> Config:
             excluded_apps=data.get("excluded_apps", []),
             joplin_enabled=data.get("joplin_enabled", False),
             joplin_db_path=data.get("joplin_db_path", ""),
+            journal_schedule=_parse_schedule(data.get("journal_schedule", {})),
+            blog_schedule=_parse_schedule(data.get("blog_schedule", {})),
         )
     except (json.JSONDecodeError, KeyError):
         logger.warning("Corrupt config.json — using defaults")
@@ -97,6 +120,8 @@ def save_config(cfg: Config) -> None:
         "excluded_apps": cfg.excluded_apps,
         "joplin_enabled": cfg.joplin_enabled,
         "joplin_db_path": cfg.joplin_db_path,
+        "journal_schedule": {"hour": cfg.journal_schedule.hour, "minute": cfg.journal_schedule.minute},
+        "blog_schedule": {"hour": cfg.blog_schedule.hour, "minute": cfg.blog_schedule.minute},
     }
     _config_path().write_text(json.dumps(data, indent=2))
 

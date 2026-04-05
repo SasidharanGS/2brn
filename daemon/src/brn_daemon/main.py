@@ -216,7 +216,7 @@ async def _journal_job(
     try:
         journal_content = await journal_gen.generate(target_date=target_date)
         if journal_content and event_bus:
-            await event_bus.emit("journal_generated", {
+            await event_bus.emit(EventNames.JOURNAL_GENERATED, {
                 "date": target_date.isoformat(),
                 "journal_content": journal_content,
             })
@@ -234,7 +234,7 @@ async def _blog_job(
     try:
         blog_content = await blog_gen.generate(target_date=target_date)
         if blog_content and event_bus:
-            await event_bus.emit("blog_generated", {
+            await event_bus.emit(EventNames.BLOG_GENERATED, {
                 "date": target_date.isoformat(),
                 "blog_content": blog_content,
             })

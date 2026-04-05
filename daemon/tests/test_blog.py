@@ -175,7 +175,7 @@ async def test_put_blog_post_sets_edited(tmp_home, db):
 
 # ── _journal_job / _blog_job event firing ──────────────────────────────────────
 
-async def test_nightly_pipeline_fires_journal_and_blog_events(tmp_home, db):
+async def test_split_jobs_fire_journal_and_blog_events(tmp_home, db):
     """Journal job fires journal_generated event; blog job fires blog_generated event."""
     from brn_daemon.main import _journal_job, _blog_job
     from brn_daemon.plugins import EventBus, EventNames
@@ -204,7 +204,7 @@ async def test_nightly_pipeline_fires_journal_and_blog_events(tmp_home, db):
     assert received[1][1]["blog_content"] == "## Dev Log\n\nBuilt something."
 
 
-async def test_nightly_pipeline_skips_journal_event_when_user_edited(tmp_home, db):
+async def test_journal_job_skips_event_when_user_edited(tmp_home, db):
     """If journal generator returns None (user edited), no journal_generated event fires; blog still runs."""
     from brn_daemon.main import _journal_job, _blog_job
     from brn_daemon.plugins import EventBus, EventNames

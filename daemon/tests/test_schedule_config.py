@@ -119,3 +119,40 @@ async def test_startup_backfill_journal_skips_if_not_past_schedule(tmp_path, mon
     schedule = ScheduleConfig(hour=23, minute=59)
     await _startup_backfill_journal(journal_gen, event_bus, schedule)
     journal_gen.generate.assert_not_called()
+
+
+from httpx import AsyncClient, ASGITransport
+from brn_daemon.main import create_app
+
+
+async def test_get_settings_returns_schedules(tmp_path, monkeypatch):
+    monkeypatch.setenv("BRN_HOME", str(tmp_path))
+    from brn_daemon.db import init_db
+    await init_db()
+
+    app = create_app()
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        resp = await client.get("/settings")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["journal_schedule"] == {"hour": 21, "minute": 0}
+    assert data["blog_schedule"] == {"hour": 21, "minute": 0}
+
+
+async def test_update_settings_persists_schedules(tmp_path, monkeypatch):
+    monkeypatch.setenv("BRN_HOME", str(tmp_path))
+    from brn_daemon.db import init_db
+    await init_db()
+
+    app = create_app()
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        resp = await client.put("/settings", json={
+            "journal_schedule": {"hour": 8, "minute": 0},
+            "blog_schedule": {"hour": 22, "minute": 30},
+        })
+        assert resp.status_code == 200
+
+        resp2 = await client.get("/settings")
+        data = resp2.json()
+    assert data["journal_schedule"] == {"hour": 8, "minute": 0}
+    assert data["blog_schedule"] == {"hour": 22, "minute": 30}

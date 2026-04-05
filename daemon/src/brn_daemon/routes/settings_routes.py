@@ -8,6 +8,7 @@ from brn_daemon.config import (
     get_chat_api_key, get_embed_api_key,
     set_chat_api_key, set_embed_api_key,
     get_screenshot_password, set_screenshot_password, delete_screenshot_password,
+    ScheduleConfig,
 )
 from brn_daemon.encryption import (
     decrypt_all_screenshots,
@@ -46,6 +47,8 @@ class SettingsResponse(BaseModel):
     screenshot_encryption_enabled: bool
     joplin_enabled: bool
     joplin_db_path: str
+    journal_schedule: dict
+    blog_schedule: dict
 
 
 class ProviderConfigIn(BaseModel):
@@ -56,6 +59,11 @@ class ProviderConfigIn(BaseModel):
     api_key: str | None = None
 
 
+class ScheduleConfigIn(BaseModel):
+    hour: int
+    minute: int
+
+
 class SettingsUpdateRequest(BaseModel):
     chat_provider: ProviderConfigIn | None = None
     embed_provider: ProviderConfigIn | None = None
@@ -63,6 +71,8 @@ class SettingsUpdateRequest(BaseModel):
     purge_months: int | None = None
     joplin_enabled: bool | None = None
     joplin_db_path: str | None = None
+    journal_schedule: ScheduleConfigIn | None = None
+    blog_schedule: ScheduleConfigIn | None = None
 
 
 class ExclusionRequest(BaseModel):
@@ -85,6 +95,8 @@ async def get_settings():
         screenshot_encryption_enabled=is_initialised(),
         joplin_enabled=cfg.joplin_enabled,
         joplin_db_path=cfg.joplin_db_path,
+        journal_schedule={"hour": cfg.journal_schedule.hour, "minute": cfg.journal_schedule.minute},
+        blog_schedule={"hour": cfg.blog_schedule.hour, "minute": cfg.blog_schedule.minute},
     )
 
 
@@ -123,6 +135,18 @@ async def update_settings(body: SettingsUpdateRequest):
         cfg.joplin_enabled = body.joplin_enabled
     if body.joplin_db_path is not None:
         cfg.joplin_db_path = body.joplin_db_path
+    if body.journal_schedule is not None:
+        cfg.journal_schedule = ScheduleConfig(hour=body.journal_schedule.hour, minute=body.journal_schedule.minute)
+        from brn_daemon.main import app_state
+        scheduler = app_state.get("scheduler")
+        if scheduler:
+            scheduler.reschedule_job("journal_job", trigger="cron", hour=cfg.journal_schedule.hour, minute=cfg.journal_schedule.minute)
+    if body.blog_schedule is not None:
+        cfg.blog_schedule = ScheduleConfig(hour=body.blog_schedule.hour, minute=body.blog_schedule.minute)
+        from brn_daemon.main import app_state
+        scheduler = app_state.get("scheduler")
+        if scheduler:
+            scheduler.reschedule_job("blog_job", trigger="cron", hour=cfg.blog_schedule.hour, minute=cfg.blog_schedule.minute)
     save_config(cfg)
     return {"ok": True}
 

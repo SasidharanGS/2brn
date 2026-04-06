@@ -156,3 +156,16 @@ async def test_update_settings_persists_schedules(tmp_path, monkeypatch):
         data = resp2.json()
     assert data["journal_schedule"] == {"hour": 8, "minute": 0}
     assert data["blog_schedule"] == {"hour": 22, "minute": 30}
+
+
+async def test_update_settings_rejects_invalid_hour(tmp_path, monkeypatch):
+    monkeypatch.setenv("BRN_HOME", str(tmp_path))
+    from brn_daemon.db import init_db
+    await init_db()
+
+    app = create_app()
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        resp = await client.put("/settings", json={
+            "journal_schedule": {"hour": 25, "minute": 0},
+        })
+    assert resp.status_code == 422

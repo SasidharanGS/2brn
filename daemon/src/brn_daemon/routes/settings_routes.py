@@ -1,8 +1,10 @@
 import asyncio
 import logging
 
+from typing import Annotated
+
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from brn_daemon.config import (
     load_config, save_config,
     get_chat_api_key, get_embed_api_key,
@@ -47,8 +49,8 @@ class SettingsResponse(BaseModel):
     screenshot_encryption_enabled: bool
     joplin_enabled: bool
     joplin_db_path: str
-    journal_schedule: dict
-    blog_schedule: dict
+    journal_schedule: ScheduleConfigIn
+    blog_schedule: ScheduleConfigIn
 
 
 class ProviderConfigIn(BaseModel):
@@ -60,8 +62,8 @@ class ProviderConfigIn(BaseModel):
 
 
 class ScheduleConfigIn(BaseModel):
-    hour: int
-    minute: int
+    hour: Annotated[int, Field(ge=0, le=23)]
+    minute: Annotated[int, Field(ge=0, le=59)]
 
 
 class SettingsUpdateRequest(BaseModel):
@@ -95,8 +97,8 @@ async def get_settings():
         screenshot_encryption_enabled=is_initialised(),
         joplin_enabled=cfg.joplin_enabled,
         joplin_db_path=cfg.joplin_db_path,
-        journal_schedule={"hour": cfg.journal_schedule.hour, "minute": cfg.journal_schedule.minute},
-        blog_schedule={"hour": cfg.blog_schedule.hour, "minute": cfg.blog_schedule.minute},
+        journal_schedule=ScheduleConfigIn(hour=cfg.journal_schedule.hour, minute=cfg.journal_schedule.minute),
+        blog_schedule=ScheduleConfigIn(hour=cfg.blog_schedule.hour, minute=cfg.blog_schedule.minute),
     )
 
 
@@ -135,18 +137,23 @@ async def update_settings(body: SettingsUpdateRequest):
         cfg.joplin_enabled = body.joplin_enabled
     if body.joplin_db_path is not None:
         cfg.joplin_db_path = body.joplin_db_path
+    from brn_daemon.main import app_state
+    from apscheduler.jobstores.base import JobLookupError
+    scheduler = app_state.get("scheduler")
     if body.journal_schedule is not None:
         cfg.journal_schedule = ScheduleConfig(hour=body.journal_schedule.hour, minute=body.journal_schedule.minute)
-        from brn_daemon.main import app_state
-        scheduler = app_state.get("scheduler")
         if scheduler:
-            scheduler.reschedule_job("journal_job", trigger="cron", hour=cfg.journal_schedule.hour, minute=cfg.journal_schedule.minute)
+            try:
+                scheduler.reschedule_job("journal_job", trigger="cron", hour=cfg.journal_schedule.hour, minute=cfg.journal_schedule.minute)
+            except JobLookupError:
+                logger.warning("journal_job not found in scheduler; schedule saved but not live-applied")
     if body.blog_schedule is not None:
         cfg.blog_schedule = ScheduleConfig(hour=body.blog_schedule.hour, minute=body.blog_schedule.minute)
-        from brn_daemon.main import app_state
-        scheduler = app_state.get("scheduler")
         if scheduler:
-            scheduler.reschedule_job("blog_job", trigger="cron", hour=cfg.blog_schedule.hour, minute=cfg.blog_schedule.minute)
+            try:
+                scheduler.reschedule_job("blog_job", trigger="cron", hour=cfg.blog_schedule.hour, minute=cfg.blog_schedule.minute)
+            except JobLookupError:
+                logger.warning("blog_job not found in scheduler; schedule saved but not live-applied")
     save_config(cfg)
     return {"ok": True}
 

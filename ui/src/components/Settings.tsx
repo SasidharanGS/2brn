@@ -135,28 +135,36 @@ export default function Settings() {
       setJoplinEnabled(settings.joplin_enabled ?? false)
       setJoplinDbPath(settings.joplin_db_path ?? '')
       setBlogMirror(settings.blog_mirror_enabled ?? false)
-      if (settings.journal_schedule) {
-        setJournalTime(
-          `${String(settings.journal_schedule.hour).padStart(2, '0')}:${String(settings.journal_schedule.minute).padStart(2, '0')}`
-        )
-      }
-      if (settings.blog_schedule) {
-        setBlogTime(
-          `${String(settings.blog_schedule.hour).padStart(2, '0')}:${String(settings.blog_schedule.minute).padStart(2, '0')}`
-        )
-      }
     }
   }, [settings?.chat_provider?.base_url]) // eslint-disable-line
 
+  useEffect(() => {
+    if (settings?.journal_schedule) {
+      setJournalTime(
+        `${String(settings.journal_schedule.hour).padStart(2, '0')}:${String(settings.journal_schedule.minute).padStart(2, '0')}`
+      )
+    }
+    if (settings?.blog_schedule) {
+      setBlogTime(
+        `${String(settings.blog_schedule.hour).padStart(2, '0')}:${String(settings.blog_schedule.minute).padStart(2, '0')}`
+      )
+    }
+  }, [settings?.journal_schedule?.hour, settings?.journal_schedule?.minute, settings?.blog_schedule?.hour, settings?.blog_schedule?.minute]) // eslint-disable-line
+
   const flash = (msg: string) => { setSaveMessage(msg); setTimeout(() => setSaveMessage(''), 3000) }
 
-  const parseTime = (value: string): ScheduleConfig => {
+  const parseTime = (value: string): ScheduleConfig | null => {
     const [h, m] = value.split(':').map(Number)
+    if (!value || isNaN(h) || isNaN(m)) return null
     return { hour: h, minute: m }
   }
 
   const saveJournalSchedule = useMutation({
-    mutationFn: () => api.updateSettings({ journal_schedule: parseTime(journalTime) }),
+    mutationFn: () => {
+      const t = parseTime(journalTime)
+      if (!t) return Promise.reject(new Error('Invalid time'))
+      return api.updateSettings({ journal_schedule: t })
+    },
     onSuccess: () => {
       flash('Journal schedule saved')
       qc.invalidateQueries({ queryKey: queryKeys.settings() })
@@ -165,7 +173,11 @@ export default function Settings() {
   })
 
   const saveBlogSchedule = useMutation({
-    mutationFn: () => api.updateSettings({ blog_schedule: parseTime(blogTime), blog_mirror_enabled: blogMirror }),
+    mutationFn: () => {
+      const t = parseTime(blogTime)
+      if (!t) return Promise.reject(new Error('Invalid time'))
+      return api.updateSettings({ blog_schedule: t, blog_mirror_enabled: blogMirror })
+    },
     onSuccess: () => {
       flash('Blog settings saved')
       qc.invalidateQueries({ queryKey: queryKeys.settings() })

@@ -44,7 +44,7 @@ class BlogScheduleConfig:
     hour: int = 21
     minute: int = 0
     day: int = 1
-    days_of_week: list = field(default_factory=list)
+    days_of_week: list[str] = field(default_factory=list)
 
     def __post_init__(self):
         if self.frequency not in ("daily", "monthly", "weekly"):

@@ -275,7 +275,7 @@ async def _startup_backfill_blog(
     now = datetime.now()
     if schedule.frequency == "monthly" and now.day != schedule.day:
         return
-    if schedule.frequency == "weekly":
+    if schedule.frequency == "weekly" and schedule.days_of_week:
         day_names = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
         if day_names[now.weekday()] not in schedule.days_of_week:
             return

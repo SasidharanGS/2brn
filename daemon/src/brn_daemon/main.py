@@ -13,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from brn_daemon.db import init_db, get_db_path
-from brn_daemon.config import load_config, get_screenshot_password, ScheduleConfig
+from brn_daemon.config import load_config, get_screenshot_password, ScheduleConfig, BlogScheduleConfig
 from brn_daemon.encryption import load_encryption_state, verify_password
 from brn_daemon.llm import make_chat_fn
 from brn_daemon.providers import make_embed_client
@@ -102,6 +102,15 @@ def _load_screenshot_key() -> bytes | None:
     return key
 
 
+def _blog_cron_kwargs(s: "BlogScheduleConfig") -> dict:
+    """Convert a BlogScheduleConfig to APScheduler cron trigger kwargs."""
+    if s.frequency == "monthly":
+        return {"day": s.day, "hour": s.hour, "minute": s.minute}
+    if s.frequency == "weekly" and s.days_of_week:
+        return {"day_of_week": ",".join(s.days_of_week), "hour": s.hour, "minute": s.minute}
+    return {"hour": s.hour, "minute": s.minute}
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
@@ -146,8 +155,7 @@ async def lifespan(app: FastAPI):
     scheduler.add_job(
         _blog_job,
         "cron",
-        hour=cfg.blog_schedule.hour,
-        minute=cfg.blog_schedule.minute,
+        **_blog_cron_kwargs(cfg.blog_schedule),
         id="blog_job",
         args=[blog_gen, event_bus],
     )
@@ -262,9 +270,15 @@ async def _startup_backfill_journal(
 async def _startup_backfill_blog(
     blog_gen: BlogGenerator,
     event_bus,
-    schedule: ScheduleConfig,
+    schedule: "BlogScheduleConfig",
 ) -> None:
     now = datetime.now()
+    if schedule.frequency == "monthly" and now.day != schedule.day:
+        return
+    if schedule.frequency == "weekly":
+        day_names = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+        if day_names[now.weekday()] not in schedule.days_of_week:
+            return
     if now.hour < schedule.hour or (now.hour == schedule.hour and now.minute < schedule.minute):
         return
     today = dt_date.today()

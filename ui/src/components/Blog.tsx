@@ -77,17 +77,16 @@ export default function Blog() {
     },
   })
 
-  // Human-readable summary of the current saved schedule
+  // Human-readable summary built from local state (always populated — defaults to 21:00 daily)
   const scheduleSummary = (() => {
-    if (!srv) return null
-    const time = `${String(srv.hour).padStart(2,'0')}:${String(srv.minute).padStart(2,'0')}`
-    if (srv.frequency === 'monthly') {
-      const suffix = srv.day === 1 ? 'st' : srv.day === 2 ? 'nd' : srv.day === 3 ? 'rd' : 'th'
-      return { label: 'Monthly', detail: `${srv.day}${suffix} at ${time}` }
+    const time = scheduleHour
+    if (scheduleFreq === 'monthly') {
+      const suffix = scheduleDay === 1 ? 'st' : scheduleDay === 2 ? 'nd' : scheduleDay === 3 ? 'rd' : 'th'
+      return { label: 'Monthly', detail: `${scheduleDay}${suffix} at ${time}` }
     }
-    if (srv.frequency === 'weekly') {
-      const detail = srv.days_of_week.length
-        ? `${srv.days_of_week.map(d => d[0].toUpperCase() + d[1]).join(', ')} at ${time}`
+    if (scheduleFreq === 'weekly') {
+      const detail = scheduleDays.length
+        ? `${scheduleDays.map(d => d[0].toUpperCase() + d[1]).join(', ')} at ${time}`
         : `no days set`
       return { label: 'Weekly', detail }
     }
@@ -219,19 +218,12 @@ export default function Blog() {
           </div>
         ) : (
           <div className="flex items-center gap-2">
-            {scheduleSummary ? (
-              <span className="text-[12px]" style={{ color: 'var(--text-dim)' }}>
-                {scheduleSummary.label}{scheduleSummary.label !== 'Daily at' ? ' — ' : ' '}
-                <span className="font-medium" style={{ color: 'var(--text)' }}>
-                  {scheduleSummary.detail}
-                </span>
+            <span className="text-[12px]" style={{ color: 'var(--text-dim)' }}>
+              {scheduleSummary.label}{scheduleSummary.label !== 'Daily at' ? ' — ' : ' '}
+              <span className="font-medium" style={{ color: 'var(--text)' }}>
+                {scheduleSummary.detail}
               </span>
-            ) : (
-              <span
-                className="rounded-[6px] h-4 w-28 animate-pulse inline-block"
-                style={{ background: 'var(--bg-surface-2)' }}
-              />
-            )}
+            </span>
             <button
               onClick={() => setScheduleEditing(true)}
               className="px-3 py-1 rounded-[9px] text-[12px] font-medium transition-all"

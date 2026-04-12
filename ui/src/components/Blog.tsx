@@ -83,15 +83,15 @@ export default function Blog() {
     const time = `${String(srv.hour).padStart(2,'0')}:${String(srv.minute).padStart(2,'0')}`
     if (srv.frequency === 'monthly') {
       const suffix = srv.day === 1 ? 'st' : srv.day === 2 ? 'nd' : srv.day === 3 ? 'rd' : 'th'
-      return `Monthly — ${srv.day}${suffix} at ${time}`
+      return { label: 'Monthly', detail: `${srv.day}${suffix} at ${time}` }
     }
     if (srv.frequency === 'weekly') {
-      const label = srv.days_of_week.length
-        ? srv.days_of_week.map(d => d[0].toUpperCase() + d[1]).join(', ')
-        : 'no days set'
-      return `Weekly — ${label} at ${time}`
+      const detail = srv.days_of_week.length
+        ? `${srv.days_of_week.map(d => d[0].toUpperCase() + d[1]).join(', ')} at ${time}`
+        : `no days set`
+      return { label: 'Weekly', detail }
     }
-    return `Daily at ${time}`
+    return { label: 'Daily at', detail: time }
   })()
 
   const { data: post } = useQuery({
@@ -219,23 +219,18 @@ export default function Blog() {
           </div>
         ) : (
           <div className="flex items-center gap-2">
-            {scheduleSummary && (
+            {scheduleSummary ? (
               <span className="text-[12px]" style={{ color: 'var(--text-dim)' }}>
-                {scheduleSummary.split(' — ').length > 1 ? (
-                  <>
-                    <span>{scheduleSummary.split(' — ')[0]}</span>
-                    <span style={{ color: 'var(--text-muted)' }}> — </span>
-                    <span className="font-medium" style={{ color: 'var(--text)' }}>{scheduleSummary.split(' — ')[1]}</span>
-                  </>
-                ) : (
-                  <>
-                    Daily at{' '}
-                    <span className="font-medium" style={{ color: 'var(--text)' }}>
-                      {scheduleSummary.replace('Daily at ', '')}
-                    </span>
-                  </>
-                )}
+                {scheduleSummary.label}{scheduleSummary.label !== 'Daily at' ? ' — ' : ' '}
+                <span className="font-medium" style={{ color: 'var(--text)' }}>
+                  {scheduleSummary.detail}
+                </span>
               </span>
+            ) : (
+              <span
+                className="rounded-[6px] h-4 w-28 animate-pulse inline-block"
+                style={{ background: 'var(--bg-surface-2)' }}
+              />
             )}
             <button
               onClick={() => setScheduleEditing(true)}

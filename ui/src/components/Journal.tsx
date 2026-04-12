@@ -134,9 +134,16 @@ export default function Journal() {
           </div>
         ) : (
           <div className="flex items-center gap-2">
-            <span className="text-[12px]" style={{ color: 'var(--text-dim)' }}>
-              Daily at <span className="font-medium" style={{ color: 'var(--text)' }}>{serverTime}</span>
-            </span>
+            {settings?.journal_schedule ? (
+              <span className="text-[12px]" style={{ color: 'var(--text-dim)' }}>
+                Daily at <span className="font-medium" style={{ color: 'var(--text)' }}>{serverTime}</span>
+              </span>
+            ) : (
+              <span
+                className="rounded-[6px] h-4 w-24 animate-pulse inline-block"
+                style={{ background: 'var(--bg-surface-2)' }}
+              />
+            )}
             <button
               onClick={() => setScheduleEditing(true)}
               className="px-3 py-1 rounded-[9px] text-[12px] font-medium transition-all"

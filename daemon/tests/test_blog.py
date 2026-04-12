@@ -173,11 +173,11 @@ async def test_put_blog_post_sets_edited(tmp_home, db):
     assert row[1] == 1
 
 
-# ── _nightly_pipeline event firing ─────────────────────────────────────────────
+# ── _journal_job / _blog_job event firing ──────────────────────────────────────
 
-async def test_nightly_pipeline_fires_journal_and_blog_events(tmp_home, db):
-    """Journal runs first → journal_generated event; blog runs second → blog_generated event."""
-    from brn_daemon.main import _nightly_pipeline
+async def test_split_jobs_fire_journal_and_blog_events(tmp_home, db):
+    """Journal job fires journal_generated event; blog job fires blog_generated event."""
+    from brn_daemon.main import _journal_job, _blog_job
     from brn_daemon.plugins import EventBus, EventNames
 
     journal_gen = MagicMock()
@@ -194,7 +194,8 @@ async def test_nightly_pipeline_fires_journal_and_blog_events(tmp_home, db):
     bus.subscribe(EventNames.JOURNAL_GENERATED, listener)
     bus.subscribe(EventNames.BLOG_GENERATED, listener)
 
-    await _nightly_pipeline(journal_gen, blog_gen, bus, date(2026, 4, 26))
+    await _journal_job(journal_gen, bus, target_date=date(2026, 4, 26))
+    await _blog_job(blog_gen, bus, target_date=date(2026, 4, 26))
 
     names = [evt[0] for evt in received]
     assert names == [EventNames.JOURNAL_GENERATED, EventNames.BLOG_GENERATED]
@@ -203,9 +204,9 @@ async def test_nightly_pipeline_fires_journal_and_blog_events(tmp_home, db):
     assert received[1][1]["blog_content"] == "## Dev Log\n\nBuilt something."
 
 
-async def test_nightly_pipeline_skips_journal_event_when_user_edited(tmp_home, db):
+async def test_journal_job_skips_event_when_user_edited(tmp_home, db):
     """If journal generator returns None (user edited), no journal_generated event fires; blog still runs."""
-    from brn_daemon.main import _nightly_pipeline
+    from brn_daemon.main import _journal_job, _blog_job
     from brn_daemon.plugins import EventBus, EventNames
 
     journal_gen = MagicMock()
@@ -222,7 +223,8 @@ async def test_nightly_pipeline_skips_journal_event_when_user_edited(tmp_home, d
     bus.subscribe(EventNames.JOURNAL_GENERATED, listener)
     bus.subscribe(EventNames.BLOG_GENERATED, listener)
 
-    await _nightly_pipeline(journal_gen, blog_gen, bus, date(2026, 4, 26))
+    await _journal_job(journal_gen, bus, target_date=date(2026, 4, 26))
+    await _blog_job(blog_gen, bus, target_date=date(2026, 4, 26))
 
     assert received == [EventNames.BLOG_GENERATED]
     blog_gen.generate.assert_called_once()

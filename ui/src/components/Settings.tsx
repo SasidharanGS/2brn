@@ -107,7 +107,6 @@ export default function Settings() {
   const [saveMessage, setSaveMessage]     = useState('')
   const [joplinEnabled, setJoplinEnabled] = useState(false)
   const [joplinDbPath, setJoplinDbPath]   = useState('')
-
   // Screenshot encryption form state
   const [encPwd, setEncPwd]         = useState('')
   const [encPwdConfirm, setEncPwdConfirm] = useState('')

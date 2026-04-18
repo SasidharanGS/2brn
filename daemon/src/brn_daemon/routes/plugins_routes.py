@@ -34,6 +34,15 @@ logger = logging.getLogger(__name__)
 _SAFE_ID_RE = re.compile(r'^[A-Za-z0-9_-]+$')
 
 
+def _validate_env_keys(v: dict[str, str] | None) -> dict[str, str] | None:
+    if v is None:
+        return v
+    for key in v:
+        if not _SAFE_ID_RE.match(key):
+            raise ValueError(f"Env key '{key}' must match ^[A-Za-z0-9_-]+$")
+    return v
+
+
 class PluginOut(BaseModel):
     id: int
     name: str
@@ -66,10 +75,7 @@ class PluginCreate(BaseModel):
     @field_validator("env")
     @classmethod
     def env_keys_safe(cls, v: dict[str, str]) -> dict[str, str]:
-        for key in v:
-            if not _SAFE_ID_RE.match(key):
-                raise ValueError(f"Env key '{key}' must match ^[A-Za-z0-9_-]+$")
-        return v
+        return _validate_env_keys(v)
 
 
 class PluginUpdate(BaseModel):
@@ -81,12 +87,7 @@ class PluginUpdate(BaseModel):
     @field_validator("env")
     @classmethod
     def env_keys_safe(cls, v: dict[str, str] | None) -> dict[str, str] | None:
-        if v is None:
-            return v
-        for key in v:
-            if not _SAFE_ID_RE.match(key):
-                raise ValueError(f"Env key '{key}' must match ^[A-Za-z0-9_-]+$")
-        return v
+        return _validate_env_keys(v)
 
 
 class RuleOut(BaseModel):

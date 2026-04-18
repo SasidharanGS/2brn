@@ -1,5 +1,6 @@
 import asyncio
 import aiosqlite
+import json
 import logging
 from contextlib import asynccontextmanager
 from datetime import date as dt_date, datetime, timezone
@@ -114,6 +115,23 @@ def _blog_cron_kwargs(s: "BlogScheduleConfig") -> dict:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
+
+    # Migrate plugin secrets from legacy "2brn" keychain service to "2brn-plugins"
+    from brn_daemon.config import migrate_plugin_keychain_entries as _migrate_keychain
+    async with aiosqlite.connect(get_db_path()) as _mig_conn:
+        _mig_conn.row_factory = aiosqlite.Row
+        _mig_cur = await _mig_conn.execute(
+            "SELECT name, env_keys FROM plugins WHERE env_keys != '[]'"
+        )
+        _plugin_rows = await _mig_cur.fetchall()
+    _entries_to_migrate = []
+    for _row in _plugin_rows:
+        for _key in json.loads(_row["env_keys"] or "[]"):
+            _entries_to_migrate.append((_row["name"], _key))
+    if _entries_to_migrate:
+        _migrate_keychain(_entries_to_migrate)
+        logger.info("Migrated %d plugin keychain entries to 2brn-plugins", len(_entries_to_migrate))
+
     cfg = load_config()
     app_state["paused"] = cfg.paused
     app_state["screenshot_key"] = _load_screenshot_key()

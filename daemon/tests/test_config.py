@@ -1,7 +1,19 @@
 import json
 import pytest
 from unittest.mock import MagicMock
-from brn_daemon.config import load_config, save_config, Config, ProviderConfig
+from brn_daemon.config import (
+    load_config,
+    save_config,
+    Config,
+    ProviderConfig,
+    KEYCHAIN_SERVICE,
+    KEYCHAIN_SERVICE_PLUGINS,
+    get_plugin_env_value,
+    set_plugin_env_value,
+    delete_plugin_env_value,
+    migrate_plugin_keychain_entries,
+    _plugin_env_keychain_key,
+)
 
 
 def test_load_config_returns_defaults_when_no_file(tmp_home):
@@ -73,24 +85,9 @@ def test_joplin_fields_persist(tmp_home):
 
 
 def test_plugin_env_value_fallback_to_env_var(tmp_home, monkeypatch):
-    from brn_daemon.config import get_plugin_env_value
     monkeypatch.setenv("BRN_PLUGIN_JOPLIN_JOPLIN_TOKEN", "fallback-value")
-    # Keychain miss — should fall back to env var.
-    # Note: this test doesn't validate keychain hit (would require mocking).
     val = get_plugin_env_value("joplin", "JOPLIN_TOKEN")
-    # Either keychain returns something or env var returns fallback. Both are valid.
     assert val in ("fallback-value", None) or isinstance(val, str)
-
-
-from brn_daemon.config import (
-    KEYCHAIN_SERVICE,
-    KEYCHAIN_SERVICE_PLUGINS,
-    get_plugin_env_value,
-    set_plugin_env_value,
-    delete_plugin_env_value,
-    migrate_plugin_keychain_entries,
-    _plugin_env_keychain_key,
-)
 
 
 def test_plugin_keychain_uses_separate_service(tmp_home):
@@ -177,3 +174,16 @@ def test_migrate_plugin_keychain_entries_moves_and_deletes(tmp_home, monkeypatch
     assert (KEYCHAIN_SERVICE, "plugin.foo.BAR") in deleted
     assert (KEYCHAIN_SERVICE, "plugin.baz.SECRET") in deleted
     assert (KEYCHAIN_SERVICE, "chat_api_key") not in deleted
+
+
+def test_migrate_skips_delete_when_no_value_in_old_service(tmp_home, monkeypatch):
+    """Entries not in the old service must not trigger delete."""
+    deleted = []
+
+    mock_keyring = MagicMock()
+    mock_keyring.get_password.return_value = None
+    mock_keyring.delete_password.side_effect = lambda s, k: deleted.append((s, k))
+    monkeypatch.setattr("brn_daemon.config.keyring", mock_keyring)
+
+    migrate_plugin_keychain_entries([("noplugin", "NOKEY")])
+    assert deleted == [], f"delete was called when it should not have been: {deleted}"

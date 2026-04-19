@@ -126,3 +126,61 @@ async def test_started_at_stored_without_timezone_offset(tmp_home, db):
     assert "+" not in started_at, f"started_at contains offset: {started_at!r}"
     dt = datetime.fromisoformat(started_at)
     assert dt.tzinfo is None, f"expected naive datetime, got: {dt}"
+
+
+async def test_instructions_cache_is_used_on_second_call(tmp_home, db):
+    """Second _load_instructions call within TTL must not re-query the DB."""
+    import aiosqlite
+    from brn_daemon.inference import InferenceQueue
+    from brn_daemon.db import get_db_path
+
+    async with aiosqlite.connect(get_db_path()) as conn:
+        await conn.execute(
+            "INSERT INTO user_instructions (title, body, enabled, created_at) VALUES (?, ?, 1, datetime('now'))",
+            ("t", "do X"),
+        )
+        await conn.commit()
+
+    async def fake_chat(msgs):
+        return '{"summary":"s","tags":[],"task_category":"work","task_category_confidence":0.9,"productivity_state":"productive","productivity_confidence":0.9}'
+
+    queue = InferenceQueue(db_path_fn=lambda: str(tmp_home / "2brn.db"), chat_fn=fake_chat)
+
+    first = await queue._load_instructions()
+    assert first == ["do X"]
+    assert queue._instructions_cache == ["do X"]
+
+    async with aiosqlite.connect(get_db_path()) as conn:
+        await conn.execute("UPDATE user_instructions SET body = 'do Y'")
+        await conn.commit()
+
+    second = await queue._load_instructions()
+    assert second == ["do X"], "Cache must shield second call within TTL"
+
+
+async def test_invalidate_instructions_cache_forces_reload(tmp_home, db):
+    """invalidate_instructions_cache() must cause next load to re-query DB."""
+    import aiosqlite
+    from brn_daemon.inference import InferenceQueue
+    from brn_daemon.db import get_db_path
+
+    async with aiosqlite.connect(get_db_path()) as conn:
+        await conn.execute(
+            "INSERT INTO user_instructions (title, body, enabled, created_at) VALUES (?, ?, 1, datetime('now'))",
+            ("t", "do X"),
+        )
+        await conn.commit()
+
+    async def fake_chat(msgs):
+        return '{"summary":"s","tags":[],"task_category":"work","task_category_confidence":0.9,"productivity_state":"productive","productivity_confidence":0.9}'
+
+    queue = InferenceQueue(db_path_fn=lambda: str(tmp_home / "2brn.db"), chat_fn=fake_chat)
+    await queue._load_instructions()
+
+    async with aiosqlite.connect(get_db_path()) as conn:
+        await conn.execute("UPDATE user_instructions SET body = 'do Y'")
+        await conn.commit()
+    queue.invalidate_instructions_cache()
+
+    result = await queue._load_instructions()
+    assert result == ["do Y"], "After invalidation, fresh DB value must be returned"

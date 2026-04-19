@@ -68,7 +68,7 @@ class ChatService:
 
         # 3. Semantic search in activity_memories
         try:
-            results = self._store.query(
+            results = await self._store.query(
                 embedding=query_embedding,
                 n_results=n_results,
                 where=where if where else None,
@@ -79,7 +79,7 @@ class ChatService:
 
         # 4. Also search note_memories
         try:
-            note_results = self._store.query_notes(
+            note_results = await self._store.query_notes(
                 embedding=query_embedding,
                 n_results=5,
             )

@@ -1,8 +1,13 @@
 import logging
-from datetime import UTC, date, datetime
+from datetime import date
 
 import aiosqlite
 
+from brn_daemon.content_generator import (
+    fetch_day_summaries,
+    load_active_instruction_bodies,
+    upsert_generated_content,
+)
 from brn_daemon.db import get_db_path
 
 logger = logging.getLogger(__name__)
@@ -14,10 +19,7 @@ Do not be preachy or give unsolicited advice.
 Write 2-4 paragraphs in flowing prose. Use markdown."""
 
 
-def build_journal_prompt(
-    target_date: str,
-    summaries: list[str],
-) -> str:
+def build_journal_prompt(target_date: str, summaries: list[str]) -> str:
     from datetime import date as _date
     parsed = _date.fromisoformat(target_date)
     date_line = f"Date: {target_date} ({parsed.strftime('%A')})"
@@ -29,18 +31,6 @@ def build_journal_prompt(
         )
     joined = "\n".join(f"- {s}" for s in summaries)
     return f"{date_line}\n\nActivities:\n{joined}\n\nWrite the journal entry."
-
-
-async def _load_active_instruction_bodies() -> list[str]:
-    try:
-        async with aiosqlite.connect(get_db_path()) as conn:
-            cur = await conn.execute(
-                "SELECT body FROM user_instructions WHERE enabled = 1 ORDER BY created_at ASC"
-            )
-            rows = await cur.fetchall()
-        return [r[0] for r in rows]
-    except Exception:
-        return []
 
 
 def _build_journal_system_prompt(active_instructions: list[str]) -> str:
@@ -59,46 +49,23 @@ class JournalGenerator:
         date_str = target_date.isoformat()
 
         async with aiosqlite.connect(get_db_path()) as conn:
-            # Skip if user has edited this journal entry
             cur = await conn.execute(
-                "SELECT id, edited_by_user FROM journals WHERE date = ?",
-                (date_str,),
+                "SELECT id, edited_by_user FROM journals WHERE date = ?", (date_str,)
             )
             existing = await cur.fetchone()
             if existing and existing[1] == 1:
                 logger.info("Journal for %s was edited by user — skipping", date_str)
                 return None
 
-            # Fetch all activities for the day
-            cur = await conn.execute(
-                "SELECT summary FROM activities "
-                "WHERE started_at >= ? AND started_at <= ? "
-                "AND summary IS NOT NULL AND summary != '' "
-                "ORDER BY started_at",
-                (f"{date_str}T00:00:00", f"{date_str}T23:59:59.999999"),
-            )
-            rows = await cur.fetchall()
-            summaries = [r[0] for r in rows]
-
-        prompt = build_journal_prompt(date_str, summaries)
-        active_instructions = await _load_active_instruction_bodies()
+        summaries = await fetch_day_summaries(date_str)
+        active_instructions = await load_active_instruction_bodies()
         system_prompt = _build_journal_system_prompt(active_instructions)
+        prompt = build_journal_prompt(date_str, summaries)
+
         content = await self._chat_fn([
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": prompt},
         ])
 
-        now = datetime.now(UTC).isoformat()
-        async with aiosqlite.connect(get_db_path()) as conn:
-            await conn.execute(
-                    """INSERT INTO journals (date, content, generated_at, edited_by_user)
-                   VALUES (?, ?, ?, 0)
-                   ON CONFLICT(date) DO UPDATE SET
-                     content = excluded.content,
-                     generated_at = excluded.generated_at
-                   WHERE edited_by_user = 0""",
-                (date_str, content, now),
-            )
-            await conn.commit()
-
+        await upsert_generated_content("journals", date_str, content)
         return content

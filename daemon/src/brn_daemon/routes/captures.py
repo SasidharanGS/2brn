@@ -1,9 +1,10 @@
 from pathlib import Path
 
+import aiosqlite
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import Response
 from pydantic import BaseModel
-import aiosqlite
+
 from brn_daemon.db import get_db_path
 from brn_daemon.encryption import ENCRYPTED_EXT, decrypt_bytes
 

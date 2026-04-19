@@ -84,6 +84,28 @@ def test_joplin_fields_persist(tmp_home):
     assert reloaded.joplin_db_path == "/tmp/joplin.sqlite"
 
 
+def test_save_config_no_leftover_temp_on_success(tmp_home):
+    """os.replace ensures no .tmp file remains after a successful save."""
+    from brn_daemon.config import save_config, load_config
+    cfg = load_config()
+    save_config(cfg)
+    tmp_files = list(tmp_home.glob("*.tmp"))
+    assert tmp_files == []
+
+
+def test_save_config_writes_valid_json(tmp_home):
+    """Config file must be valid JSON and contain expected keys after save."""
+    import json
+    from brn_daemon.config import save_config, load_config
+    cfg = load_config()
+    cfg.paused = True
+    save_config(cfg)
+    config_path = tmp_home / "config.json"
+    data = json.loads(config_path.read_text())
+    assert data["paused"] is True
+    assert "chat_provider" in data
+
+
 def test_plugin_env_value_fallback_to_env_var(tmp_home, monkeypatch):
     monkeypatch.setenv("BRN_PLUGIN_JOPLIN_JOPLIN_TOKEN", "fallback-value")
     val = get_plugin_env_value("joplin", "JOPLIN_TOKEN")

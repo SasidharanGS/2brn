@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+
+jobs:
+  daemon:
+    name: Daemon — lint, typecheck, test
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python + uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: uv sync --extra dev
+        working-directory: daemon
+
+      - name: Ruff lint
+        run: uv run ruff check src/
+        working-directory: daemon
+
+      - name: Pyright typecheck
+        run: uv run pyright src/brn_daemon
+        working-directory: daemon
+
+      - name: Pytest
+        run: uv run --extra dev pytest tests/ -v --timeout=30
+        working-directory: daemon

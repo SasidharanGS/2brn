@@ -1,7 +1,9 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+
+import aiosqlite
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-import aiosqlite
+
 from brn_daemon.db import get_db_path
 
 router = APIRouter()
@@ -49,14 +51,14 @@ async def list_instructions():
 
 @router.post("/instructions", response_model=UserInstruction, status_code=201)
 async def create_instruction(body: CreateInstructionRequest):
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     async with aiosqlite.connect(get_db_path()) as conn:
         cur = await conn.execute(
             "INSERT INTO user_instructions (title, body, enabled, created_at) VALUES (?, ?, ?, ?)",
             (body.title, body.body, int(body.enabled), now),
         )
         await conn.commit()
-        row_id = cur.lastrowid
+        row_id: int = cur.lastrowid  # type: ignore[assignment]
     return UserInstruction(id=row_id, title=body.title, body=body.body, enabled=body.enabled, created_at=now)
 
 

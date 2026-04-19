@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import re
-from collections import Counter, defaultdict
+from collections import defaultdict
+from collections.abc import Iterable
 from datetime import datetime, timedelta
-from typing import Iterable
 
 import aiosqlite
 from fastapi import APIRouter, HTTPException, Query

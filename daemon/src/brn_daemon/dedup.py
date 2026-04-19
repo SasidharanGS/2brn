@@ -1,5 +1,5 @@
-from PIL import Image
 import imagehash
+from PIL import Image
 
 _HASH_BITS = 64  # whash produces 64-bit hash → max distance = 64
 

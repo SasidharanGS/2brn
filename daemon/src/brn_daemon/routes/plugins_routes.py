@@ -10,9 +10,8 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timezone
-
 import re
+from datetime import UTC, datetime
 
 import aiosqlite
 from fastapi import APIRouter, HTTPException
@@ -20,7 +19,6 @@ from pydantic import BaseModel, Field, field_validator
 
 from brn_daemon.config import (
     delete_plugin_env_value,
-    get_plugin_env_value,
     set_plugin_env_value,
 )
 from brn_daemon.db import get_db_path
@@ -75,7 +73,10 @@ class PluginCreate(BaseModel):
     @field_validator("env")
     @classmethod
     def env_keys_safe(cls, v: dict[str, str]) -> dict[str, str]:
-        return _validate_env_keys(v)
+        for key in v:
+            if not _SAFE_ID_RE.match(key):
+                raise ValueError(f"Env key '{key}' must match ^[A-Za-z0-9_-]+$")
+        return v
 
 
 class PluginUpdate(BaseModel):
@@ -226,7 +227,7 @@ async def create_plugin(body: PluginCreate):
             )
         except aiosqlite.IntegrityError:
             raise HTTPException(409, f"Plugin '{body.name}' already exists")
-        plugin_id = cur.lastrowid
+        plugin_id: int = cur.lastrowid  # type: ignore[assignment]
         await conn.commit()
         row = await _fetch_plugin(conn, plugin_id)
 
@@ -310,7 +311,7 @@ async def list_plugin_tools(plugin_id: int):
             plugin_name=row["name"],
         )
         # Mark plugin healthy.
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         async with aiosqlite.connect(get_db_path()) as conn:
             await conn.execute(
                 "UPDATE plugins SET last_health_at = ?, last_health_ok = 1, last_health_error = NULL WHERE id = ?",
@@ -319,7 +320,7 @@ async def list_plugin_tools(plugin_id: int):
             await conn.commit()
         return [ToolOut(**t) for t in tools]
     except Exception as exc:
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         async with aiosqlite.connect(get_db_path()) as conn:
             await conn.execute(
                 "UPDATE plugins SET last_health_at = ?, last_health_ok = 0, last_health_error = ? WHERE id = ?",
@@ -358,7 +359,7 @@ async def create_rule(body: RuleCreate):
                VALUES (?, ?, ?, ?, 'manual', 'pending')""",
             (body.plugin_id, body.title, body.rule_text, int(body.enabled)),
         )
-        rule_id = cur.lastrowid
+        rule_id: int = cur.lastrowid  # type: ignore[assignment]
         await conn.commit()
 
     orch = _get_orchestrator()

@@ -1,7 +1,9 @@
+from datetime import UTC, datetime
+
+import aiosqlite
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-import aiosqlite
-from datetime import datetime, timezone
+
 from brn_daemon.db import get_db_path
 
 router = APIRouter()
@@ -56,7 +58,7 @@ async def generate_blog_post(date: str):
 
 @router.put("/blog/{date}")
 async def update_blog_post(date: str, body: BlogPostUpdateRequest):
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     async with aiosqlite.connect(get_db_path()) as conn:
         await conn.execute(
             """INSERT INTO blog_posts (date, content, generated_at, edited_by_user)

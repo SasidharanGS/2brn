@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from typing import AsyncIterator
+from collections.abc import AsyncIterator
 
 import litellm
 
@@ -57,9 +57,9 @@ async def chat_complete(
     for attempt in range(_MAX_RETRIES):
         try:
             resp = await litellm.acompletion(**kwargs)
-            if resp is None or not resp.choices:
+            if resp is None or not resp.choices:  # type: ignore[union-attr]
                 raise ValueError("Provider returned empty response (check base_url and model name)")
-            return resp.choices[0].message.content
+            return resp.choices[0].message.content or ""  # type: ignore[union-attr]
         except Exception as exc:
             wait = 2 ** attempt
             logger.warning("Chat attempt %d failed: %s — retrying in %ds", attempt + 1, exc, wait)
@@ -67,6 +67,7 @@ async def chat_complete(
                 await asyncio.sleep(wait)
             else:
                 raise
+    raise RuntimeError("Unreachable")
 
 
 async def chat_stream(
@@ -91,7 +92,7 @@ async def chat_stream(
         logger.error("Chat stream failed: %s", exc)
         yield f"Error: {exc}"
         return
-    async for chunk in resp:
+    async for chunk in resp:  # type: ignore[union-attr]
         if not chunk.choices:
             continue
         delta = chunk.choices[0].delta.content
@@ -101,7 +102,7 @@ async def chat_stream(
 
 def make_chat_fn():
     """Return (chat_complete_fn, stream_fn) bound to current config."""
-    from brn_daemon.config import load_config, get_chat_api_key
+    from brn_daemon.config import get_chat_api_key, load_config
     cfg = load_config()
     cp = cfg.chat_provider
     api_key = get_chat_api_key() or ""

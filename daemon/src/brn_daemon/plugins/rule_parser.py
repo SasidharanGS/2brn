@@ -13,8 +13,9 @@ placeholders. Allowed variables depend on the trigger (see events.py).
 import json
 import logging
 import re
-from dataclasses import dataclass, asdict
-from typing import Any, Awaitable, Callable
+from collections.abc import Awaitable, Callable
+from dataclasses import asdict, dataclass
+from typing import Any
 
 from brn_daemon.plugins.events import EventNames
 

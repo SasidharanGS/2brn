@@ -13,8 +13,16 @@ def test_identical_images_are_duplicate():
     assert is_duplicate(h, h, threshold=0.95) is True
 
 def test_very_different_images_are_not_duplicate():
-    img_a = _solid_image((0, 0, 0))
-    img_b = _solid_image((255, 255, 255))
+    # Solid uniform images produce near-identical hashes because whash finds
+    # no frequency content in flat signals. Use a strong horizontal gradient
+    # vs a mid-grey solid — the gradient has clear directional frequency content
+    # that survives rescaling and produces a distinct hash on all platforms.
+    size = (64, 64)
+    arr_grad = np.zeros((size[1], size[0], 3), dtype=np.uint8)
+    for col in range(size[0]):
+        arr_grad[:, col] = int(col * 4)  # 0 → 252 left-to-right
+    img_a = Image.fromarray(arr_grad)
+    img_b = _solid_image((128, 128, 128), size=size)
     h_a = compute_phash(img_a)
     h_b = compute_phash(img_b)
     assert is_duplicate(h_a, h_b, threshold=0.95) is False

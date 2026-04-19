@@ -60,6 +60,7 @@ class CustomEmbedClient:
                     await asyncio.sleep(wait)
                 else:
                     raise
+        raise RuntimeError("Unreachable")
 
 
 class OpenAIEmbedClient:
@@ -98,11 +99,12 @@ class OpenAIEmbedClient:
                     await asyncio.sleep(wait)
                 else:
                     raise
+        raise RuntimeError("Unreachable")
 
 
 def make_embed_client() -> CustomEmbedClient | OpenAIEmbedClient:
     """Factory: reads config and returns the right embed driver."""
-    from brn_daemon.config import load_config, get_embed_api_key
+    from brn_daemon.config import get_embed_api_key, load_config
     cfg = load_config()
     ep = cfg.embed_provider
     api_key = get_embed_api_key() or ""

@@ -1,6 +1,5 @@
 import asyncio
 import aiosqlite
-import functools as _functools
 import json
 import logging
 from contextlib import asynccontextmanager

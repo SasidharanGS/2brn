@@ -1,6 +1,19 @@
 import json
 import pytest
-from brn_daemon.config import load_config, save_config, Config, ProviderConfig
+from unittest.mock import MagicMock
+from brn_daemon.config import (
+    load_config,
+    save_config,
+    Config,
+    ProviderConfig,
+    KEYCHAIN_SERVICE,
+    KEYCHAIN_SERVICE_PLUGINS,
+    get_plugin_env_value,
+    set_plugin_env_value,
+    delete_plugin_env_value,
+    migrate_plugin_keychain_entries,
+    _plugin_env_keychain_key,
+)
 
 
 def test_load_config_returns_defaults_when_no_file(tmp_home):
@@ -72,10 +85,105 @@ def test_joplin_fields_persist(tmp_home):
 
 
 def test_plugin_env_value_fallback_to_env_var(tmp_home, monkeypatch):
-    from brn_daemon.config import get_plugin_env_value
     monkeypatch.setenv("BRN_PLUGIN_JOPLIN_JOPLIN_TOKEN", "fallback-value")
-    # Keychain miss — should fall back to env var.
-    # Note: this test doesn't validate keychain hit (would require mocking).
     val = get_plugin_env_value("joplin", "JOPLIN_TOKEN")
-    # Either keychain returns something or env var returns fallback. Both are valid.
     assert val in ("fallback-value", None) or isinstance(val, str)
+
+
+def test_plugin_keychain_uses_separate_service(tmp_home):
+    assert KEYCHAIN_SERVICE_PLUGINS != KEYCHAIN_SERVICE
+
+
+def test_set_plugin_env_value_uses_plugin_service(tmp_home, monkeypatch):
+    mock_keyring = MagicMock()
+    monkeypatch.setattr("brn_daemon.config.keyring", mock_keyring)
+    set_plugin_env_value("myplugin", "MY_KEY", "secret")
+    mock_keyring.set_password.assert_called_once_with(
+        KEYCHAIN_SERVICE_PLUGINS, "plugin.myplugin.MY_KEY", "secret"
+    )
+
+
+def test_get_plugin_env_value_uses_plugin_service(tmp_home, monkeypatch):
+    mock_keyring = MagicMock()
+    mock_keyring.get_password.return_value = "retrieved"
+    monkeypatch.setattr("brn_daemon.config.keyring", mock_keyring)
+    val = get_plugin_env_value("myplugin", "MY_KEY")
+    mock_keyring.get_password.assert_called_once_with(
+        KEYCHAIN_SERVICE_PLUGINS, "plugin.myplugin.MY_KEY"
+    )
+    assert val == "retrieved"
+
+
+def test_delete_plugin_env_value_uses_plugin_service(tmp_home, monkeypatch):
+    mock_keyring = MagicMock()
+    monkeypatch.setattr("brn_daemon.config.keyring", mock_keyring)
+    delete_plugin_env_value("myplugin", "MY_KEY")
+    mock_keyring.delete_password.assert_called_once_with(
+        KEYCHAIN_SERVICE_PLUGINS, "plugin.myplugin.MY_KEY"
+    )
+
+
+def test_plugin_key_cannot_collide_with_daemon_key(tmp_home, monkeypatch):
+    daemon_calls = []
+    plugin_calls = []
+
+    def fake_set(service, key, value):
+        if service == KEYCHAIN_SERVICE:
+            daemon_calls.append(key)
+        elif service == KEYCHAIN_SERVICE_PLUGINS:
+            plugin_calls.append(key)
+
+    mock_keyring = MagicMock()
+    mock_keyring.set_password.side_effect = fake_set
+    monkeypatch.setattr("brn_daemon.config.keyring", mock_keyring)
+
+    set_plugin_env_value("2brn", "chat_api_key", "attacker")
+    assert "chat_api_key" not in daemon_calls
+    assert "plugin.2brn.chat_api_key" in plugin_calls
+
+
+def test_migrate_plugin_keychain_entries_moves_and_deletes(tmp_home, monkeypatch):
+    stored = {
+        (KEYCHAIN_SERVICE, "plugin.foo.BAR"): "val1",
+        (KEYCHAIN_SERVICE, "chat_api_key"): "daemon_secret",
+        (KEYCHAIN_SERVICE, "plugin.baz.SECRET"): "val2",
+    }
+    deleted = []
+    written = {}
+
+    def fake_get(service, key):
+        return stored.get((service, key))
+
+    def fake_set(service, key, value):
+        written[(service, key)] = value
+
+    def fake_delete(service, key):
+        deleted.append((service, key))
+
+    mock_keyring = MagicMock()
+    mock_keyring.get_password.side_effect = fake_get
+    mock_keyring.set_password.side_effect = fake_set
+    mock_keyring.delete_password.side_effect = fake_delete
+    monkeypatch.setattr("brn_daemon.config.keyring", mock_keyring)
+
+    entries = [("foo", "BAR"), ("baz", "SECRET")]
+    migrate_plugin_keychain_entries(entries)
+
+    assert written.get((KEYCHAIN_SERVICE_PLUGINS, "plugin.foo.BAR")) == "val1"
+    assert written.get((KEYCHAIN_SERVICE_PLUGINS, "plugin.baz.SECRET")) == "val2"
+    assert (KEYCHAIN_SERVICE, "plugin.foo.BAR") in deleted
+    assert (KEYCHAIN_SERVICE, "plugin.baz.SECRET") in deleted
+    assert (KEYCHAIN_SERVICE, "chat_api_key") not in deleted
+
+
+def test_migrate_skips_delete_when_no_value_in_old_service(tmp_home, monkeypatch):
+    """Entries not in the old service must not trigger delete."""
+    deleted = []
+
+    mock_keyring = MagicMock()
+    mock_keyring.get_password.return_value = None
+    mock_keyring.delete_password.side_effect = lambda s, k: deleted.append((s, k))
+    monkeypatch.setattr("brn_daemon.config.keyring", mock_keyring)
+
+    migrate_plugin_keychain_entries([("noplugin", "NOKEY")])
+    assert deleted == [], f"delete was called when it should not have been: {deleted}"

@@ -124,7 +124,7 @@ class InferenceQueue:
                 {"role": "user", "content": user_prompt},
             ])
             result = parse_inference_response(raw)
-            now = datetime.now(timezone.utc).isoformat()
+            now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")
             async with aiosqlite.connect(self._db_path_fn()) as conn:
                 cur = await conn.execute(
                     """INSERT INTO activities

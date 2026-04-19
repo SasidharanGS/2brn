@@ -4,33 +4,7 @@ import { api } from '../api/client'
 import { queryKeys } from '../api/queryKeys'
 import MarkdownRenderer from './shared/MarkdownRenderer'
 import { useAppDate } from '../context/DateContext'
-
-type BtnVariant = 'ghost' | 'primary' | 'danger'
-const btnStyles: Record<BtnVariant, React.CSSProperties> = {
-  ghost:   { background: 'var(--bg-surface-2)', color: 'var(--text-muted)', border: '1px solid var(--border)' },
-  primary: { background: 'var(--accent)',        color: '#fff',              border: 'none' },
-  danger:  { background: 'var(--red-bg)',        color: 'var(--red)',         border: '1px solid rgba(248,113,113,0.2)' },
-}
-
-function Btn({
-  onClick, disabled, children, variant = 'ghost',
-}: {
-  onClick?: () => void
-  disabled?: boolean
-  children: React.ReactNode
-  variant?: BtnVariant
-}) {
-  return (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      className="px-4 py-2 rounded-[9px] text-[13px] font-medium transition-all duration-150 disabled:opacity-40"
-      style={btnStyles[variant]}
-    >
-      {children}
-    </button>
-  )
-}
+import Btn from './shared/Btn'
 
 export default function Blog() {
   const { selectedDate } = useAppDate()

@@ -1,14 +1,14 @@
-"""Minimal MCP (Model Context Protocol) client over stdio JSON-RPC.
+"""
+mcp_client.py — Hand-rolled stdlib MCP JSON-RPC client.
 
-MCP servers communicate via newline-delimited JSON-RPC 2.0 over stdin/stdout.
-We support:
-    initialize          (handshake)
-    tools/list          (discover available tools)
-    tools/call          (invoke a tool)
+Why not the official `mcp` Python SDK?
+- The SDK is still evolving rapidly; pinning it as a dep adds risk for a desktop tool.
+- Our use case is narrow (tool-call dispatch only); the full SDK adds ~1MB of transitive deps.
+- Stdlib-only means zero extra install friction for end users.
+- TODO: Re-evaluate when mcp SDK reaches 1.0 stable and settles its transport API.
 
-This client deliberately depends only on the Python stdlib — no `mcp` package —
-so 2brn stays light. If we ever need streaming notifications, swap to the
-official SDK.
+Protocol: MCP 2024-11-05 over stdio JSON-RPC 2.0.
+Timeout: 30s per tool call.
 """
 import asyncio
 import json
@@ -106,6 +106,8 @@ class MCPClient:
         except FileNotFoundError as exc:
             raise MCPError(f"Command not found: {self.command}") from exc
         except Exception as exc:
+            # Keep broad: subprocess.Popen can fail with FileNotFoundError,
+            # PermissionError, or OSError depending on OS and PATH state.
             raise MCPError(f"Failed to start MCP server '{self.command}': {exc}") from exc
 
         self._reader_task = asyncio.create_task(self._read_loop(), name="mcp-stdout")

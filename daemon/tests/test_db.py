@@ -168,3 +168,10 @@ async def test_activities_has_app_name_override_column(tmp_home):
         cursor = await conn.execute("PRAGMA table_info(activities)")
         columns = {row[1] for row in await cursor.fetchall()}
     assert "app_name_override" in columns
+
+
+async def test_init_db_is_idempotent(tmp_home):
+    """Running init_db twice must not raise — migrations must be safe to re-apply."""
+    from brn_daemon.db import init_db
+    await init_db()
+    await init_db()  # second call: ALTER TABLE would fail if not caught correctly

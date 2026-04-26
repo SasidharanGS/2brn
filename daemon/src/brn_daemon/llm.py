@@ -61,6 +61,8 @@ async def chat_complete(
                 raise ValueError("Provider returned empty response (check base_url and model name)")
             return resp.choices[0].message.content or ""  # type: ignore[union-attr]
         except Exception as exc:
+            # Keep broad: litellm surfaces errors as its own exception hierarchy
+            # which varies by provider. Narrowing here would miss valid failures.
             wait = 2 ** attempt
             logger.warning("Chat attempt %d failed: %s — retrying in %ds", attempt + 1, exc, wait)
             if attempt < _MAX_RETRIES - 1:

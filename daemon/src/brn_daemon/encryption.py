@@ -169,6 +169,8 @@ def verify_password(password: str, state: EncryptionState | None = None) -> byte
             return None
         return key
     except Exception:
+        # Keep broad: can be OSError (missing file), json.JSONDecodeError, or
+        # unexpected crypto errors — all mean "no valid metadata, disable encryption"
         return None
 
 
@@ -202,7 +204,7 @@ def encrypt_existing_screenshots(key: bytes) -> tuple[int, int]:
             enc.write_bytes(blob)
             jpg.unlink()
             success += 1
-        except Exception as exc:
+        except (OSError, ValueError) as exc:
             logger.warning("Could not encrypt %s: %s", jpg, exc)
             if enc.exists():
                 enc.unlink()  # don't leave a half-written file
@@ -220,7 +222,7 @@ def decrypt_all_screenshots(key: bytes) -> tuple[int, int]:
             jpg.write_bytes(pt)
             enc.unlink()
             success += 1
-        except Exception as exc:
+        except (OSError, ValueError) as exc:
             logger.warning("Could not decrypt %s: %s", enc, exc)
             failed += 1
     return success, failed
@@ -234,7 +236,7 @@ def re_encrypt_all_screenshots(old_key: bytes, new_key: bytes) -> tuple[int, int
             pt = decrypt_bytes(enc.read_bytes(), old_key)
             enc.write_bytes(encrypt_bytes(pt, new_key))
             success += 1
-        except Exception as exc:
+        except (OSError, ValueError) as exc:
             logger.warning("Could not re-encrypt %s: %s", enc, exc)
             failed += 1
     return success, failed

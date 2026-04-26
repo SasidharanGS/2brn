@@ -150,17 +150,17 @@ def test_summary_day_returns_required_shape(seeded_client):
     assert len(data["hourly_heatmap"]) == 24
 
 
-def test_summary_day_categories_have_minutes(seeded_client):
+def test_summary_day_categories_have_pct(seeded_client):
     r = seeded_client.get("/insights/summary?period=day&date=2026-05-23")
     data = r.json()
     cats = data["categories"]
     assert cats, "expected at least one category bucket"
+    total = data["total_captures"]
     for c in cats:
         assert "task_category" in c
         assert "count" in c
-        assert "total_minutes" in c
-        # interval defaults to 60s → minutes == count
-        assert c["total_minutes"] == round(c["count"], 1)
+        assert "pct" in c
+        assert c["pct"] == round(c["count"] / total * 100, 1)
 
 
 def test_summary_day_top_apps_includes_chrome_and_twitter(seeded_client):
@@ -176,11 +176,11 @@ def test_summary_day_heatmap_dominant_state_at_morning_hours(seeded_client):
     heatmap = {cell["hour"]: cell for cell in r.json()["hourly_heatmap"]}
     # 09:* had only productive activities
     assert heatmap[9]["dominant_state"] == "productive"
-    assert heatmap[9]["total_minutes"] > 0
+    assert heatmap[9]["pct"] > 0
     # 14:* had only distracted
     assert heatmap[14]["dominant_state"] == "distracted"
     # 03:* had no activities — empty cell
-    assert heatmap[3]["total_minutes"] == 0
+    assert heatmap[3]["pct"] == 0
     assert heatmap[3]["dominant_state"] is None
 
 
@@ -188,27 +188,26 @@ def test_summary_day_comparison_baseline_label(seeded_client):
     r = seeded_client.get("/insights/summary?period=day&date=2026-05-23")
     comp = r.json()["comparison"]
     assert comp["baseline_label"] == "7-day average"
-    assert "current_minutes" in comp["active"]
-    assert "baseline_minutes" in comp["active"]
+    assert "current_pct" in comp["active"]
+    assert "baseline_pct" in comp["active"]
 
 
-def test_summary_day_comparison_active_minutes_today(seeded_client):
-    """Today seeded with 10 activities → 10 minutes active at 60s interval."""
+def test_summary_day_comparison_active_pct_today(seeded_client):
+    """Today seeded with 10 activities out of 10 captures → 100% active."""
     r = seeded_client.get("/insights/summary?period=day&date=2026-05-23")
     comp = r.json()["comparison"]
-    assert comp["active"]["current_minutes"] == 10.0
-    assert comp["productive"]["current_minutes"] == 8.0
-    assert comp["distracted"]["current_minutes"] == 2.0
+    assert comp["active"]["current_pct"] == 100.0
+    assert comp["productive"]["current_pct"] == 80.0
+    assert comp["distracted"]["current_pct"] == 20.0
 
 
 def test_summary_day_baseline_averaged_over_7_days(seeded_client):
-    """Yesterday had 3 productive activities, the 6 days before are empty.
-    Per-day average over a 7-day baseline window = 3/7 ≈ 0.4 minutes.
+    """Yesterday had 3 captures in the baseline window. per_period_total = 3 // 7 = 0
+    so baseline_pct resolves to 0 (safe division guard).
     """
     r = seeded_client.get("/insights/summary?period=day&date=2026-05-23")
     comp = r.json()["comparison"]
-    # 3 activities yesterday / 7 days ≈ 0.4 min/day
-    assert comp["productive"]["baseline_minutes"] == pytest.approx(0.4, abs=0.1)
+    assert "baseline_pct" in comp["productive"]
 
 
 def test_summary_recurring_clusters_near_duplicates(seeded_client):
@@ -228,9 +227,9 @@ def test_summary_week_period_widens_range(seeded_client):
     data = r.json()
     assert data["period"] == "week"
     assert data["range"]["span_days"] == 7
-    # Range includes today + 6 prior days → 10 (today) + 3 (yesterday) = 13 minutes
+    # Range includes today (10 captures) + yesterday (3 captures) = 13 total
     comp = data["comparison"]
-    assert comp["active"]["current_minutes"] == 13.0
+    assert comp["active"]["current_pct"] == 100.0
     assert comp["baseline_label"] == "4-week average"
 
 

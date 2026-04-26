@@ -8,7 +8,6 @@ from datetime import datetime, timedelta
 import aiosqlite
 from fastapi import APIRouter, HTTPException, Query
 
-from brn_daemon.config import load_config
 from brn_daemon.db import get_db_path
 
 router = APIRouter()
@@ -21,6 +20,12 @@ router = APIRouter()
 
 PRODUCTIVE_STATES = ("productive", "focused")
 DISTRACTED_STATES = ("distracted", "procrastinating")
+
+
+def _pct(count: int, total: int) -> float:
+    if total <= 0:
+        return 0.0
+    return round(count / total * 100, 1)
 
 
 def _day_bounds(date: str) -> tuple[str, str]:
@@ -101,17 +106,6 @@ def _baseline_range(date: str, period: str) -> tuple[str, str, int, str]:
         3,
         "3-month average",
     )
-
-
-def _interval_seconds() -> int:
-    try:
-        return max(1, int(load_config().capture_interval_seconds))
-    except Exception:
-        return 60
-
-
-def _minutes(count: int, interval_seconds: int) -> float:
-    return round(count * interval_seconds / 60.0, 1)
 
 
 # ---------------------------------------------------------------------------
@@ -226,7 +220,7 @@ def _cluster_summaries(
 # ---------------------------------------------------------------------------
 
 
-async def _query_categories(conn, lo: str, hi: str, interval: int) -> list[dict]:
+async def _query_categories(conn, lo: str, hi: str, total: int) -> list[dict]:
     cur = await conn.execute(
         """SELECT task_category, COUNT(*) as count,
                   AVG(task_category_confidence) as avg_confidence
@@ -241,13 +235,13 @@ async def _query_categories(conn, lo: str, hi: str, interval: int) -> list[dict]
             "task_category": r[0],
             "count": r[1],
             "avg_confidence": r[2],
-            "total_minutes": _minutes(r[1], interval),
+            "pct": _pct(r[1], total),
         }
         for r in await cur.fetchall()
     ]
 
 
-async def _query_states(conn, lo: str, hi: str, interval: int) -> list[dict]:
+async def _query_states(conn, lo: str, hi: str, total: int) -> list[dict]:
     cur = await conn.execute(
         """SELECT productivity_state, COUNT(*) as count
            FROM activities
@@ -260,13 +254,13 @@ async def _query_states(conn, lo: str, hi: str, interval: int) -> list[dict]:
         {
             "productivity_state": r[0],
             "count": r[1],
-            "total_minutes": _minutes(r[1], interval),
+            "pct": _pct(r[1], total),
         }
         for r in await cur.fetchall()
     ]
 
 
-async def _query_top_apps(conn, lo: str, hi: str, interval: int, limit: int = 10) -> list[dict]:
+async def _query_top_apps(conn, lo: str, hi: str, total: int, limit: int = 10) -> list[dict]:
     cur = await conn.execute(
         """SELECT
              COALESCE(a.app_name_override, c.app_name) AS effective_app,
@@ -281,17 +275,13 @@ async def _query_top_apps(conn, lo: str, hi: str, interval: int, limit: int = 10
         (lo, hi, limit),
     )
     return [
-        {"app_name": r[0], "count": r[1], "total_minutes": _minutes(r[1], interval)}
+        {"app_name": r[0], "count": r[1], "pct": _pct(r[1], total)}
         for r in await cur.fetchall()
     ]
 
 
-async def _query_heatmap(conn, lo: str, hi: str, interval: int) -> list[dict]:
-    """Aggregate activities by hour-of-day across the entire range.
-
-    Each of 24 cells reports total minutes, the dominant productivity_state,
-    and a per-state breakdown.
-    """
+async def _query_heatmap(conn, lo: str, hi: str, total: int) -> list[dict]:
+    """Aggregate activities by hour-of-day across the entire range."""
     cur = await conn.execute(
         """SELECT CAST(strftime('%H', started_at) AS INTEGER) AS hour,
                   productivity_state,
@@ -324,21 +314,18 @@ async def _query_heatmap(conn, lo: str, hi: str, interval: int) -> list[dict]:
         cells.append(
             {
                 "hour": h,
-                "total_minutes": _minutes(b["total_count"], interval),
+                "pct": _pct(b["total_count"], total),
                 "dominant_state": dominant_state,
-                "by_state_minutes": {
-                    s: _minutes(c, interval) for s, c in b["by_state"].items()
+                "by_state_pct": {
+                    s: _pct(c, total) for s, c in b["by_state"].items()
                 },
             }
         )
     return cells
 
 
-async def _query_state_minutes(conn, lo: str, hi: str, interval: int) -> dict[str, float]:
-    """Total minutes per productivity_state across the range.
-
-    Returns three keys for the comparison card: active, productive, distracted.
-    """
+async def _query_state_pcts(conn, lo: str, hi: str, total: int) -> dict[str, float]:
+    """Percentage-of-total-captures for active, productive, distracted states."""
     cur = await conn.execute(
         """SELECT productivity_state, COUNT(*)
            FROM activities
@@ -347,24 +334,33 @@ async def _query_state_minutes(conn, lo: str, hi: str, interval: int) -> dict[st
         (lo, hi),
     )
     rows = await cur.fetchall()
-    total = 0
+    grand = 0
     prod = 0
     distr = 0
     for state, count in rows:
-        total += int(count)
+        grand += int(count)
         if state in PRODUCTIVE_STATES:
             prod += int(count)
         elif state in DISTRACTED_STATES:
             distr += int(count)
     return {
-        "active_minutes": _minutes(total, interval),
-        "productive_minutes": _minutes(prod, interval),
-        "distracted_minutes": _minutes(distr, interval),
+        "active_pct": _pct(grand, total),
+        "productive_pct": _pct(prod, total),
+        "distracted_pct": _pct(distr, total),
     }
 
 
+async def _query_total_captures(conn, lo: str, hi: str) -> int:
+    cur = await conn.execute(
+        "SELECT COUNT(*) FROM captures WHERE captured_at >= ? AND captured_at <= ?",
+        (lo, hi),
+    )
+    row = await cur.fetchone()
+    return int(row[0]) if row else 0
+
+
 async def _query_recurring(
-    conn, lo: str, hi: str, interval: int, *, top_n: int = 5
+    conn, lo: str, hi: str, total: int, *, top_n: int = 5
 ) -> list[dict]:
     cur = await conn.execute(
         """SELECT summary, COUNT(*) as count
@@ -381,7 +377,7 @@ async def _query_recurring(
         out.append(
             {
                 "canonical_summary": c["canonical_summary"],
-                "total_minutes": _minutes(c["total_count"], interval),
+                "pct": _pct(c["total_count"], total),
                 "session_count": c["total_count"],
                 "variant_count": len(c["variants"]),
             }
@@ -457,45 +453,40 @@ async def insights_summary(
     period="week"  → 7 days ending on `date`
     period="month" → 30 days ending on `date`
 
-    Returns:
-      categories, productivity_states, top_apps  — same as /insights/daily
-                                                   but with total_minutes
-      hourly_heatmap                             — 24 cells aggregated over range
-      comparison                                 — current vs N-period baseline
-      recurring_activities                       — top 5 clusters by total_minutes
+    All metrics are expressed as percentage of total captures in the period.
     """
     if period not in ("day", "week", "month"):
         raise HTTPException(status_code=400, detail="period must be day|week|month")
 
     lo, hi, span = _period_range(date, period)
     base_lo, base_hi, n_periods, base_label = _baseline_range(date, period)
-    interval = _interval_seconds()
 
     async with aiosqlite.connect(get_db_path()) as conn:
-        categories = await _query_categories(conn, lo, hi, interval)
-        states = await _query_states(conn, lo, hi, interval)
-        top_apps = await _query_top_apps(conn, lo, hi, interval)
-        heatmap = await _query_heatmap(conn, lo, hi, interval)
-        current = await _query_state_minutes(conn, lo, hi, interval)
-        baseline_total = await _query_state_minutes(conn, base_lo, base_hi, interval)
-        recurring = await _query_recurring(conn, lo, hi, interval)
+        total = await _query_total_captures(conn, lo, hi)
+        base_total = await _query_total_captures(conn, base_lo, base_hi)
+        per_period_total = base_total // n_periods if n_periods else 0
 
-    def per_period(total_minutes: float) -> float:
-        return round(total_minutes / n_periods, 1) if n_periods else 0.0
+        categories = await _query_categories(conn, lo, hi, total)
+        states = await _query_states(conn, lo, hi, total)
+        top_apps = await _query_top_apps(conn, lo, hi, total)
+        heatmap = await _query_heatmap(conn, lo, hi, total)
+        current = await _query_state_pcts(conn, lo, hi, total)
+        baseline_raw = await _query_state_pcts(conn, base_lo, base_hi, per_period_total)
+        recurring = await _query_recurring(conn, lo, hi, total)
 
     comparison = {
         "baseline_label": base_label,
         "active": {
-            "current_minutes": current["active_minutes"],
-            "baseline_minutes": per_period(baseline_total["active_minutes"]),
+            "current_pct": current["active_pct"],
+            "baseline_pct": baseline_raw["active_pct"],
         },
         "productive": {
-            "current_minutes": current["productive_minutes"],
-            "baseline_minutes": per_period(baseline_total["productive_minutes"]),
+            "current_pct": current["productive_pct"],
+            "baseline_pct": baseline_raw["productive_pct"],
         },
         "distracted": {
-            "current_minutes": current["distracted_minutes"],
-            "baseline_minutes": per_period(baseline_total["distracted_minutes"]),
+            "current_pct": current["distracted_pct"],
+            "baseline_pct": baseline_raw["distracted_pct"],
         },
     }
 
@@ -503,7 +494,7 @@ async def insights_summary(
         "period": period,
         "date": date,
         "range": {"start": lo, "end": hi, "span_days": span},
-        "interval_seconds": interval,
+        "total_captures": total,
         "categories": categories,
         "productivity_states": states,
         "top_apps": top_apps,

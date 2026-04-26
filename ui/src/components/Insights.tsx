@@ -38,12 +38,8 @@ function useTooltipStyle() {
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
-function formatMinutes(m: number): string {
-  if (m <= 0) return '0m'
-  if (m < 60) return `${Math.round(m)}m`
-  const h = Math.floor(m / 60)
-  const r = Math.round(m % 60)
-  return r === 0 ? `${h}h` : `${h}h ${r}m`
+function fmtPct(p: number): string {
+  return `${p.toFixed(1)}%`
 }
 
 function deltaPct(current: number, baseline: number): number | null {
@@ -96,7 +92,7 @@ function PeriodToggle({ value, onChange }: { value: InsightsPeriod; onChange: (v
 // ── Cards ───────────────────────────────────────────────────────────────────
 
 function HeatmapCard({ cells }: { cells: HeatmapCell[] }) {
-  const max = Math.max(1, ...cells.map(c => c.total_minutes))
+  const max = Math.max(1, ...cells.map(c => c.pct))
   return (
     <div
       className="rounded-[12px] border p-5 lg:col-span-2"
@@ -107,25 +103,24 @@ function HeatmapCard({ cells }: { cells: HeatmapCell[] }) {
       </h2>
       <div className="flex gap-[3px]">
         {cells.map(cell => {
-          const intensity = cell.total_minutes / max  // 0–1
+          const intensity = cell.pct / max
           const color = cell.dominant_state
             ? STATE_COLORS[cell.dominant_state] ?? 'var(--accent)'
             : 'var(--bg-surface-2)'
-          // Show hour label every 3rd cell
           const showLabel = cell.hour % 3 === 0
           return (
             <div key={cell.hour} className="flex-1 flex flex-col items-center gap-1 min-w-0">
               <div
                 title={
-                  cell.total_minutes === 0
+                  cell.pct === 0
                     ? `${String(cell.hour).padStart(2, '0')}:00 — no activity`
-                    : `${String(cell.hour).padStart(2, '0')}:00 — ${formatMinutes(cell.total_minutes)} (${cell.dominant_state ?? '—'})`
+                    : `${String(cell.hour).padStart(2, '0')}:00 — ${fmtPct(cell.pct)} (${cell.dominant_state ?? '—'})`
                 }
                 className="w-full rounded-[3px]"
                 style={{
                   height: 28,
-                  background: cell.total_minutes === 0 ? 'var(--bg-surface-2)' : color,
-                  opacity: cell.total_minutes === 0 ? 0.4 : 0.25 + 0.75 * intensity,
+                  background: cell.pct === 0 ? 'var(--bg-surface-2)' : color,
+                  opacity: cell.pct === 0 ? 0.4 : 0.25 + 0.75 * intensity,
                 }}
               />
               <span
@@ -149,17 +144,17 @@ function ComparisonRow({
   metric: ComparisonMetric
   positiveGood: boolean
 }) {
-  const pct = deltaPct(metric.current_minutes, metric.baseline_minutes)
+  const pct = deltaPct(metric.current_pct, metric.baseline_pct)
   const arrow = pct === null ? '' : pct > 0 ? '▲' : pct < 0 ? '▼' : '='
   return (
     <div className="flex items-center justify-between py-2 border-b last:border-b-0" style={{ borderColor: 'var(--border)' }}>
       <span className="text-[13px]" style={{ color: 'var(--text-muted)' }}>{label}</span>
       <div className="flex items-center gap-4">
         <span className="text-[13px] font-mono" style={{ color: 'var(--text)' }}>
-          {formatMinutes(metric.current_minutes)}
+          {fmtPct(metric.current_pct)}
         </span>
         <span className="text-[11px] font-mono" style={{ color: 'var(--text-dim)' }}>
-          vs {formatMinutes(metric.baseline_minutes)}
+          vs {fmtPct(metric.baseline_pct)}
         </span>
         {pct !== null && (
           <span
@@ -217,7 +212,7 @@ export default function Insights() {
       ) : (
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
 
-          {/* Bar chart — Time by Category (now minutes) */}
+          {/* Bar chart — Time by Category (%) */}
           <div
             className="rounded-[12px] border p-5"
             style={{ background: 'var(--bg-surface)', borderColor: 'var(--border)' }}
@@ -241,14 +236,15 @@ export default function Insights() {
                 <YAxis
                   tick={{ fill: TT.axisTickFill, fontSize: 11 }}
                   axisLine={false} tickLine={false}
-                  tickFormatter={(v: number) => formatMinutes(v)}
+                  tickFormatter={(v: number) => `${v}%`}
+                  domain={[0, 100]}
                 />
                 <Tooltip
                   {...TT}
                   active={barActive}
-                  formatter={(value: number) => [formatMinutes(value), 'Time']}
+                  formatter={(value: number) => [fmtPct(value), '% of captures']}
                 />
-                <Bar dataKey="total_minutes" radius={[4, 4, 0, 0]}>
+                <Bar dataKey="pct" radius={[4, 4, 0, 0]}>
                   {summary.categories.map(entry => (
                     <Cell
                       key={entry.task_category}
@@ -261,7 +257,7 @@ export default function Insights() {
             </ResponsiveContainer>
           </div>
 
-          {/* Donut — Productivity Split (minutes) */}
+          {/* Donut — Productivity Split (%) */}
           <div
             className="rounded-[12px] border p-5"
             style={{ background: 'var(--bg-surface)', borderColor: 'var(--border)' }}
@@ -273,7 +269,7 @@ export default function Insights() {
               <PieChart onMouseLeave={() => { setPieActive(false); setPieSegment(-1) }}>
                 <Pie
                   data={summary.productivity_states}
-                  dataKey="total_minutes"
+                  dataKey="pct"
                   nameKey="productivity_state"
                   cx="50%" cy="50%"
                   innerRadius={50} outerRadius={78}
@@ -297,7 +293,7 @@ export default function Insights() {
                 <Tooltip
                   {...TT}
                   active={pieActive}
-                  formatter={(value: number) => [formatMinutes(value), 'Time']}
+                  formatter={(value: number) => [fmtPct(value), '% of captures']}
                 />
                 <Legend
                   iconSize={7}
@@ -308,7 +304,7 @@ export default function Insights() {
             </ResponsiveContainer>
           </div>
 
-          {/* Top apps — minutes */}
+          {/* Top apps — % of total captures */}
           <div
             className="rounded-[12px] border p-5 lg:col-span-2"
             style={{ background: 'var(--bg-surface)', borderColor: 'var(--border)' }}
@@ -317,26 +313,22 @@ export default function Insights() {
               Top Apps
             </h2>
             <div className="space-y-2.5">
-              {summary.top_apps.slice(0, 8).map(app => {
-                const max = summary.top_apps[0]?.total_minutes ?? 1
-                const pct = max > 0 ? Math.round((app.total_minutes / max) * 100) : 0
-                return (
-                  <div key={app.app_name} className="flex items-center gap-3">
-                    <span className="text-[13px] w-36 truncate shrink-0" style={{ color: 'var(--text-muted)' }}>
-                      {app.app_name || 'Unknown'}
-                    </span>
-                    <div className="flex-1 rounded-full h-1.5 overflow-hidden" style={{ background: 'var(--bg-surface-2)' }}>
-                      <div
-                        className="h-full rounded-full transition-all duration-700"
-                        style={{ width: `${pct}%`, background: 'var(--accent)', opacity: 0.65 }}
-                      />
-                    </div>
-                    <span className="text-[11px] font-mono w-16 text-right shrink-0" style={{ color: 'var(--text-dim)' }}>
-                      {formatMinutes(app.total_minutes)}
-                    </span>
+              {summary.top_apps.slice(0, 8).map(app => (
+                <div key={app.app_name} className="flex items-center gap-3">
+                  <span className="text-[13px] w-36 truncate shrink-0" style={{ color: 'var(--text-muted)' }}>
+                    {app.app_name || 'Unknown'}
+                  </span>
+                  <div className="flex-1 rounded-full h-1.5 overflow-hidden" style={{ background: 'var(--bg-surface-2)' }}>
+                    <div
+                      className="h-full rounded-full transition-all duration-700"
+                      style={{ width: `${app.pct}%`, background: 'var(--accent)', opacity: 0.65 }}
+                    />
                   </div>
-                )
-              })}
+                  <span className="text-[11px] font-mono w-16 text-right shrink-0" style={{ color: 'var(--text-dim)' }}>
+                    {fmtPct(app.pct)}
+                  </span>
+                </div>
+              ))}
             </div>
           </div>
 
@@ -375,7 +367,7 @@ export default function Insights() {
                 {summary.recurring_activities.map((r, i) => (
                   <div key={i} className="flex items-start gap-3">
                     <span className="text-[11px] font-mono w-14 shrink-0 mt-0.5" style={{ color: 'var(--accent)' }}>
-                      {formatMinutes(r.total_minutes)}
+                      {fmtPct(r.pct)}
                     </span>
                     <div className="flex-1 min-w-0">
                       <div className="text-[13px] truncate" style={{ color: 'var(--text)' }}>

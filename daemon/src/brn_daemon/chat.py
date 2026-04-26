@@ -3,6 +3,8 @@ from collections.abc import AsyncIterator
 
 logger = logging.getLogger(__name__)
 
+DISTANCE_CUTOFF = 0.8  # cosine distance threshold; docs above this are too dissimilar to be useful
+
 CHAT_SYSTEM_PROMPT = """You are a personal second brain assistant.
 You help the user recall what they did on their computer and what they've noted in their knowledge vault.
 Answer questions based ONLY on the provided context.
@@ -54,8 +56,8 @@ class ChatService:
         # 1. Embed the query
         try:
             query_embedding = await self._embed_client.embed(question)
-        except Exception as exc:
-            logger.error("Failed to embed query: %s", exc)
+        except Exception:
+            logger.exception("Failed to embed query")
             yield "Sorry, I couldn't process your question right now."
             return
 
@@ -73,8 +75,8 @@ class ChatService:
                 n_results=n_results,
                 where=where if where else None,
             )
-        except Exception as exc:
-            logger.error("ChromaDB activity query failed: %s", exc)
+        except Exception:
+            logger.exception("ChromaDB activity query failed")
             results = {"documents": [[]], "metadatas": [[]]}
 
         # 4. Also search note_memories
@@ -83,21 +85,25 @@ class ChatService:
                 embedding=query_embedding,
                 n_results=5,
             )
-        except Exception as exc:
-            logger.warning("ChromaDB note query failed: %s", exc)
+        except Exception:
+            logger.exception("ChromaDB note query failed")
             note_results = {"documents": [[]], "metadatas": [[]]}
 
-        # 5. Build context chunks from both sources
+        # 5. Build context chunks from both sources, applying distance cutoff
         context_chunks = []
         docs = results.get("documents", [[]])[0]
         metas = results.get("metadatas", [[]])[0]
-        for doc, meta in zip(docs, metas):
-            context_chunks.append({"text": doc, "metadata": meta})
+        distances = results.get("distances", [[]])[0]
+        for doc, meta, dist in zip(docs, metas, distances):
+            if dist <= DISTANCE_CUTOFF:
+                context_chunks.append({"text": doc, "metadata": meta})
 
         note_docs = note_results.get("documents", [[]])[0]
         note_metas = note_results.get("metadatas", [[]])[0]
-        for doc, meta in zip(note_docs, note_metas):
-            context_chunks.append({"text": doc, "metadata": meta})
+        note_distances = note_results.get("distances", [[]])[0]
+        for doc, meta, dist in zip(note_docs, note_metas, note_distances):
+            if dist <= DISTANCE_CUTOFF:
+                context_chunks.append({"text": doc, "metadata": meta})
 
         # 6. Build and stream RAG response
         user_prompt = build_rag_prompt(question, context_chunks)

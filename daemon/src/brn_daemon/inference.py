@@ -76,8 +76,10 @@ def parse_inference_response(raw: str) -> InferenceResult:
             productivity_confidence=float(data.get("productivity_confidence", 0.0)),
             app_name_override=data.get("app_name") or None,
         )
-    except Exception as exc:
-        logger.warning("Failed to parse inference response: %s | raw: %s", exc, raw[:200])
+    except Exception:
+        logger.warning("Failed to parse inference response | raw: %s", raw[:200])
+        # Not logger.exception here — parse failures are expected (malformed LLM output)
+        # and the raw snippet is the relevant debug info, not the stack trace.
         return InferenceResult()
 
 
@@ -185,8 +187,8 @@ class InferenceQueue:
                     "timestamp": now,
                     "tags": result.tags,
                 })
-        except Exception as exc:
-            logger.error("Inference failed for capture %d: %s", capture_id, exc)
+        except Exception:
+            logger.exception("Inference failed for capture %d", capture_id)
 
     async def _worker(self) -> None:
         """A single concurrent worker: dequeues items and processes them indefinitely."""

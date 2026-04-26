@@ -37,7 +37,7 @@ async def chat_endpoint(body: ChatRequest):
             logger.debug("Chat SSE client disconnected")
             return
         except Exception as exc:
-            logger.error("Chat stream error: %s", exc)
+            logger.exception("Chat stream error")
             yield "data: " + json.dumps({"chunk": f"Error: {exc}"}) + "\n\n"
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")

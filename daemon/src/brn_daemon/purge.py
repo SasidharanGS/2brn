@@ -43,8 +43,8 @@ async def purge_old_captures(months: int = 12, chroma_store=None) -> int:
                     if p.exists():
                         p.unlink()
                         files_deleted += 1
-                except Exception as exc:
-                    logger.warning("Could not delete file %s: %s", file_path, exc)
+                except Exception:
+                    logger.exception("Could not delete file %s", file_path)
 
         ids = [row[0] for row in old_captures]
 
@@ -77,8 +77,8 @@ async def purge_old_captures(months: int = 12, chroma_store=None) -> int:
         try:
             chroma_store.collection.delete(ids=chroma_ids)
             logger.info("Removed %d stale embeddings from ChromaDB", len(chroma_ids))
-        except Exception as exc:
-            logger.warning("Failed to clean ChromaDB during purge: %s", exc)
+        except Exception:
+            logger.exception("Failed to clean ChromaDB during purge")
 
     logger.info(
         "Purged %d old captures (%d files deleted, cutoff: %s)",

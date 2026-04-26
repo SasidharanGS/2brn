@@ -344,8 +344,8 @@ async def _start_vault_watcher(vault_watcher, loop) -> None:
     """Bulk-embed existing vault files, then start the file watcher."""
     try:
         await vault_watcher.bulk_embed_all()
-    except Exception as exc:
-        logger.error("Vault bulk embed failed: %s", exc)
+    except Exception:
+        logger.exception("Vault bulk embed failed")
     vault_watcher.start(loop)
 
 
@@ -469,8 +469,8 @@ async def _capture_loop(cfg, inference_queue: InferenceQueue):
 
         except asyncio.CancelledError:
             break
-        except Exception as exc:
-            logger.error("Capture loop error: %s", exc)
+        except Exception:
+            logger.exception("Capture loop error")
 
 
 async def _rebuild_ai_clients() -> None:

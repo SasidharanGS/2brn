@@ -164,3 +164,48 @@ async def init_db() -> None:
             "WHERE captured_at LIKE '%+00:00'"
         )
         await conn.commit()
+
+        cur = await conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='activities'"
+        )
+        activities_ddl = (await cur.fetchone() or ("",))[0]
+        if activities_ddl and "ON DELETE CASCADE" not in activities_ddl:
+            await conn.executescript("""
+                PRAGMA foreign_keys = OFF;
+
+                ALTER TABLE activities RENAME TO activities_old;
+
+                CREATE TABLE activities (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    capture_id INTEGER REFERENCES captures(id) ON DELETE CASCADE,
+                    started_at DATETIME NOT NULL,
+                    ended_at DATETIME,
+                    summary TEXT,
+                    tags TEXT,
+                    chroma_id TEXT,
+                    task_category TEXT CHECK(task_category IN (
+                        'work','research','play','learning',
+                        'communication','creative','admin','other'
+                    )),
+                    task_category_confidence REAL,
+                    productivity_state TEXT CHECK(productivity_state IN (
+                        'productive','focused','chilling','procrastinating',
+                        'distracted','in-meeting','idle'
+                    )),
+                    productivity_confidence REAL,
+                    category_overridden_by_user INTEGER DEFAULT 0,
+                    app_name_override TEXT
+                );
+
+                INSERT INTO activities SELECT * FROM activities_old;
+
+                DROP TABLE activities_old;
+
+                CREATE INDEX IF NOT EXISTS idx_activities_capture_id ON activities(capture_id);
+                CREATE INDEX IF NOT EXISTS idx_activities_started_at ON activities(started_at);
+                CREATE INDEX IF NOT EXISTS idx_activities_task_category ON activities(task_category);
+                CREATE INDEX IF NOT EXISTS idx_activities_productivity_state ON activities(productivity_state);
+
+                PRAGMA foreign_keys = ON;
+            """)
+            await conn.commit()

@@ -29,6 +29,7 @@ SCHEDULED_PATTERNS = (
     re.compile(r"^every_\d+s$"),
 )
 MANUAL_TRIGGER = "manual"
+MIN_SCHEDULE_INTERVAL_SECONDS = 60
 
 
 @dataclass
@@ -54,11 +55,18 @@ def validate_trigger(trigger: str) -> None:
         return
     for pat in SCHEDULED_PATTERNS:
         if pat.match(trigger):
+            if trigger.startswith("every_") and trigger.endswith("s"):
+                interval = int(trigger[len("every_"):-1])
+                if interval < MIN_SCHEDULE_INTERVAL_SECONDS:
+                    raise RuleParseError(
+                        f"Scheduled trigger '{trigger}' has a minimum interval of "
+                        f"{MIN_SCHEDULE_INTERVAL_SECONDS}s to prevent abuse."
+                    )
             return
     raise RuleParseError(
         f"Invalid trigger '{trigger}'. Must be one of "
         f"{sorted(ALLOWED_EVENT_TRIGGERS) + [MANUAL_TRIGGER]} "
-        f"or match 'daily_at_HH:MM' / 'every_Xs'."
+        f"or match 'daily_at_HH:MM' / 'every_Xs' (minimum {MIN_SCHEDULE_INTERVAL_SECONDS}s)."
     )
 
 

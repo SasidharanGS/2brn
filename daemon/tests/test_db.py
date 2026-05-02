@@ -175,3 +175,14 @@ async def test_init_db_is_idempotent(tmp_home):
     from brn_daemon.db import init_db
     await init_db()
     await init_db()  # second call: ALTER TABLE would fail if not caught correctly
+
+
+async def test_activity_filter_indexes_exist(tmp_home, db):
+    """task_category and productivity_state indexes must exist after init_db."""
+    cur = await db.execute(
+        "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='activities'"
+    )
+    rows = await cur.fetchall()
+    index_names = {r[0] for r in rows}
+    assert "idx_activities_task_category" in index_names
+    assert "idx_activities_productivity_state" in index_names

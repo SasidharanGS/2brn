@@ -142,6 +142,8 @@ async def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_captures_monitor ON captures(monitor_index);
             CREATE INDEX IF NOT EXISTS idx_activities_capture_id ON activities(capture_id);
             CREATE INDEX IF NOT EXISTS idx_activities_started_at ON activities(started_at);
+            CREATE INDEX IF NOT EXISTS idx_activities_task_category ON activities(task_category);
+            CREATE INDEX IF NOT EXISTS idx_activities_productivity_state ON activities(productivity_state);
             CREATE INDEX IF NOT EXISTS idx_journals_date ON journals(date ASC);
             CREATE INDEX IF NOT EXISTS idx_blog_posts_date ON blog_posts(date);
             CREATE INDEX IF NOT EXISTS idx_plugin_rules_plugin_id ON plugin_rules(plugin_id);

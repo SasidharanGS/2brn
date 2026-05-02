@@ -1,7 +1,6 @@
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch, call as mock_call
+from unittest.mock import AsyncMock, MagicMock, patch
 from httpx import AsyncClient, ASGITransport
-from brn_daemon import config as brn_config
 
 
 @pytest.fixture
@@ -92,7 +91,7 @@ async def test_plugin_command_valid_absolute_path(client, tmp_home, db):
 
 async def test_update_plugin_deletes_removed_env_keys(client, tmp_home, db):
     """Keys removed from env on plugin update must be deleted from keychain."""
-    with patch.object(brn_config, "set_plugin_env_value"):
+    with patch("brn_daemon.routes.plugins_routes.set_plugin_env_value"):
         resp = await client.post("/plugins", json={
             "name": "env-test-plugin",
             "command": "echo",
@@ -102,8 +101,8 @@ async def test_update_plugin_deletes_removed_env_keys(client, tmp_home, db):
     assert resp.status_code == 201
     plugin_id = resp.json()["id"]
 
-    with patch.object(brn_config, "set_plugin_env_value"), \
-         patch.object(brn_config, "delete_plugin_env_value") as mock_delete:
+    with patch("brn_daemon.routes.plugins_routes.set_plugin_env_value"), \
+         patch("brn_daemon.routes.plugins_routes.delete_plugin_env_value") as mock_delete:
         resp = await client.put(f"/plugins/{plugin_id}", json={
             "env": {"KEY_A": "new_value_a"},
         })

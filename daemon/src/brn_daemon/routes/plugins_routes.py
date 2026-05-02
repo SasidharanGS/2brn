@@ -70,6 +70,17 @@ class PluginCreate(BaseModel):
             raise ValueError("Plugin name must match ^[A-Za-z0-9_-]+$")
         return v
 
+    @field_validator("command")
+    @classmethod
+    def command_safe(cls, v: str) -> str:
+        if len(v) > 512:
+            raise ValueError("Plugin command must not exceed 512 characters")
+        if "\x00" in v:
+            raise ValueError("Plugin command must not contain null bytes")
+        if ".." in v:
+            raise ValueError("Plugin command must not contain '..' (path traversal)")
+        return v
+
     @field_validator("env")
     @classmethod
     def env_keys_safe(cls, v: dict[str, str]) -> dict[str, str]:
@@ -84,6 +95,19 @@ class PluginUpdate(BaseModel):
     args: list[str] | None = None
     env: dict[str, str] | None = None
     enabled: bool | None = None
+
+    @field_validator("command")
+    @classmethod
+    def command_safe(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        if len(v) > 512:
+            raise ValueError("Plugin command must not exceed 512 characters")
+        if "\x00" in v:
+            raise ValueError("Plugin command must not contain null bytes")
+        if ".." in v:
+            raise ValueError("Plugin command must not contain '..' (path traversal)")
+        return v
 
     @field_validator("env")
     @classmethod

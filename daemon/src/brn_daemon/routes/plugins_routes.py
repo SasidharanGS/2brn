@@ -109,7 +109,7 @@ class RuleOut(BaseModel):
 class RuleCreate(BaseModel):
     plugin_id: int
     title: str = Field(..., min_length=1, max_length=120)
-    rule_text: str = Field(..., min_length=1)
+    rule_text: str = Field(..., min_length=1, max_length=2000)
     enabled: bool = True
 
 

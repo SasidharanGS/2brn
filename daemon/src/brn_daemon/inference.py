@@ -130,6 +130,46 @@ class InferenceQueue:
         self._instructions_cache = None
         self._instructions_cache_at = 0.0
 
+    async def heal_unembedded(self) -> int:
+        """Re-embed activities where chroma_id IS NULL. Called at daemon startup."""
+        if not self._embedding_service:
+            return 0
+        import aiosqlite
+        healed = 0
+        async with aiosqlite.connect(self._db_path_fn()) as conn:
+            conn.row_factory = aiosqlite.Row
+            cur = await conn.execute(
+                """SELECT a.id, a.summary, a.task_category, a.productivity_state,
+                          a.started_at, c.app_name
+                   FROM activities a
+                   LEFT JOIN captures c ON c.id = a.capture_id
+                   WHERE a.chroma_id IS NULL AND a.summary IS NOT NULL AND trim(a.summary) != ''
+                   LIMIT 200"""
+            )
+            rows = await cur.fetchall()
+        for row in rows:
+            try:
+                metadata = {
+                    "timestamp": row["started_at"] or "",
+                    "app_name": row["app_name"] or "",
+                    "tags": "[]",
+                    "date": (row["started_at"] or "")[:10],
+                    "task_category": row["task_category"] or "",
+                    "productivity_state": row["productivity_state"] or "",
+                    "source": "activity",
+                }
+                await self._embedding_service.embed_activity(
+                    activity_id=row["id"],
+                    summary=row["summary"],
+                    metadata=metadata,
+                )
+                healed += 1
+            except Exception:
+                logger.exception("Heal-pass failed for activity #%d", row["id"])
+        if healed:
+            logger.info("Heal-pass: re-embedded %d activities with chroma_id IS NULL", healed)
+        return healed
+
     async def _process_one(self, capture_id: int, app_name: str, window_title: str, ocr_text: str) -> None:
         """Process a single inference item: call LLM, write to SQLite, embed."""
         import aiosqlite
@@ -169,11 +209,17 @@ class InferenceQueue:
                     "productivity_state": result.productivity_state,
                     "source": "activity",
                 }
-                await self._embedding_service.embed_activity(
-                    activity_id=activity_id,
-                    summary=result.summary,
-                    metadata=metadata,
-                )
+                try:
+                    await self._embedding_service.embed_activity(
+                        activity_id=activity_id,
+                        summary=result.summary,
+                        metadata=metadata,
+                    )
+                except Exception:
+                    logger.exception(
+                        "Embedding failed for activity #%d (capture #%d) — chroma_id will remain NULL; heal-pass will retry on next startup",
+                        activity_id, capture_id,
+                    )
             logger.info("Capture #%d → inference done → activity #%d → embed queued", capture_id, activity_id)
 
             if self._event_bus is not None:

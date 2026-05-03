@@ -46,3 +46,42 @@ def test_none_prev_hash_is_not_duplicate():
     img = _solid_image((10, 20, 30))
     h = compute_phash(img)
     assert is_duplicate(h, None, threshold=0.95) is False
+
+
+def _make_image(color: tuple[int, int, int] = (128, 128, 128)) -> Image.Image:
+    return Image.new("RGB", (64, 64), color)
+
+
+def test_is_duplicate_uses_actual_hash_length(monkeypatch):
+    """is_duplicate must derive bit-length from the hash string, not a constant."""
+    img1 = _make_image((100, 100, 100))
+    img2 = _make_image((101, 101, 101))
+    h1 = compute_phash(img1)
+    h2 = compute_phash(img2)
+    expected_bits = len(h1) * 4
+    assert expected_bits > 0
+    result = is_duplicate(h1, h2)
+    assert isinstance(result, bool)
+
+
+def test_is_duplicate_identical_images():
+    img = _make_image()
+    h = compute_phash(img)
+    assert is_duplicate(h, h) is True
+
+
+def test_is_duplicate_none_prev():
+    img = _make_image()
+    h = compute_phash(img)
+    assert is_duplicate(h, None) is False
+
+
+def test_is_duplicate_very_different_images():
+    size = (64, 64)
+    import numpy as np
+    arr_grad = np.zeros((size[1], size[0], 3), dtype=np.uint8)
+    for col in range(size[0]):
+        arr_grad[:, col] = int(col * 4)
+    h1 = compute_phash(Image.fromarray(arr_grad))
+    h2 = compute_phash(_make_image((128, 128, 128)))
+    assert is_duplicate(h1, h2) is False

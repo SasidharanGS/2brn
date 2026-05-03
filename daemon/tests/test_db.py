@@ -175,3 +175,39 @@ async def test_init_db_is_idempotent(tmp_home):
     from brn_daemon.db import init_db
     await init_db()
     await init_db()  # second call: ALTER TABLE would fail if not caught correctly
+
+
+async def test_activity_filter_indexes_exist(tmp_home, db):
+    """task_category and productivity_state indexes must exist after init_db."""
+    cur = await db.execute(
+        "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='activities'"
+    )
+    rows = await cur.fetchall()
+    index_names = {r[0] for r in rows}
+    assert "idx_activities_task_category" in index_names
+    assert "idx_activities_productivity_state" in index_names
+
+
+async def test_activities_cascade_delete(tmp_home, db):
+    """Deleting a capture must cascade-delete its activity."""
+    await db.execute("PRAGMA foreign_keys = ON")
+    await db.execute(
+        "INSERT INTO captures (captured_at, app_name) VALUES ('2024-01-01T10:00:00', 'TestApp')"
+    )
+    await db.commit()
+    cur = await db.execute("SELECT last_insert_rowid()")
+    row = await cur.fetchone()
+    capture_id = row[0]
+
+    await db.execute(
+        "INSERT INTO activities (capture_id, started_at, summary) VALUES (?, '2024-01-01T10:00:00', 'test')",
+        (capture_id,),
+    )
+    await db.commit()
+
+    await db.execute("DELETE FROM captures WHERE id = ?", (capture_id,))
+    await db.commit()
+
+    cur = await db.execute("SELECT COUNT(*) FROM activities WHERE capture_id = ?", (capture_id,))
+    row = await cur.fetchone()
+    assert row[0] == 0, "activity should have been cascade-deleted"

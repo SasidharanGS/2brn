@@ -49,6 +49,16 @@ async function del<T>(path: string): Promise<T> {
   return res.json()
 }
 
+async function patch<T>(path: string, body?: unknown): Promise<T> {
+  const res = await fetch(`${BASE_URL}${path}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: body ? JSON.stringify(body) : undefined,
+  })
+  if (!res.ok) throw new ApiError(res.status, `PATCH ${path} failed: ${res.status}`)
+  return res.json()
+}
+
 export const api = {
   getStatus: () => get<DaemonStatus>('/status'),
   getCaptures: (date: string) => get<CaptureRecord[]>(`/captures?date=${date}`),
@@ -59,11 +69,7 @@ export const api = {
     return get<ActivityRecord[]>(`/activities?${q}`)
   },
   overrideActivity: (id: number, task_category: string, productivity_state: string) =>
-    fetch(`${BASE_URL}/activities/${id}/override`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ task_category, productivity_state }),
-    }).then(r => r.json()),
+    patch<ActivityRecord>(`/activities/${id}/override`, { task_category, productivity_state }),
   getJournal: (date: string) => get<JournalEntry>(`/journal/${date}`),
   generateJournal: (date: string) => post(`/journal/${date}/generate`),
   updateJournal: (date: string, content: string) => put(`/journal/${date}`, { content }),

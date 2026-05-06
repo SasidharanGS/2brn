@@ -93,6 +93,7 @@ class InferenceQueue:
         self._instructions_cache: list[str] | None = None
         self._instructions_cache_at: float = 0.0
         self._INSTRUCTIONS_CACHE_TTL = 30.0
+        self._failed_captures: set[int] = set()
     async def enqueue(self, capture_id: int, app_name: str, window_title: str, ocr_text: str) -> None:
         try:
             self._queue.put_nowait((capture_id, app_name, window_title, ocr_text))
@@ -170,6 +171,11 @@ class InferenceQueue:
             logger.info("Heal-pass: re-embedded %d activities with chroma_id IS NULL", healed)
         return healed
 
+    @property
+    def failed_capture_ids(self) -> list[int]:
+        """Return capture IDs that failed inference (for /debug/status)."""
+        return sorted(self._failed_captures)
+
     async def _process_one(self, capture_id: int, app_name: str, window_title: str, ocr_text: str) -> None:
         """Process a single inference item: call LLM, write to SQLite, embed."""
         import aiosqlite
@@ -235,6 +241,7 @@ class InferenceQueue:
                 })
         except Exception:
             logger.exception("Inference failed for capture %d", capture_id)
+            self._failed_captures.add(capture_id)
 
     async def _worker(self) -> None:
         """A single concurrent worker: dequeues items and processes them indefinitely."""

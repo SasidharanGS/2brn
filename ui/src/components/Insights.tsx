@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
   BarChart, Bar, PieChart, Pie, Cell,
@@ -10,13 +10,27 @@ import { CATEGORY_CHIP, STATE_COLORS } from '../utils/design'
 import { useAppDate } from '../context/DateContext'
 import type { InsightsPeriod, HeatmapCell, ComparisonMetric } from '../api/types'
 
+function useIsLight(): boolean {
+  const [isLight, setIsLight] = useState(
+    () => document.documentElement.classList.contains('light')
+  )
+  useEffect(() => {
+    const obs = new MutationObserver(() => {
+      setIsLight(document.documentElement.classList.contains('light'))
+    })
+    obs.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] })
+    return () => obs.disconnect()
+  }, [])
+  return isLight
+}
+
 function useTooltipStyle() {
+  const isLight = useIsLight()
   return useMemo(() => {
     const s = getComputedStyle(document.documentElement)
     const bg   = s.getPropertyValue('--tooltip-bg').trim()
     const text = s.getPropertyValue('--tooltip-text').trim()
     const dim  = s.getPropertyValue('--text-dim').trim()
-    const isLight = document.documentElement.classList.contains('light')
     return {
       contentStyle: {
         background: bg,
@@ -33,7 +47,7 @@ function useTooltipStyle() {
       wrapperStyle: { pointerEvents: 'none' as const },
       axisTickFill: dim,
     }
-  }, [document.documentElement.classList.contains('light')])
+  }, [isLight])
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────

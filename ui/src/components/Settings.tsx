@@ -132,17 +132,18 @@ export default function Settings() {
   }, [])
 
   useEffect(() => {
-    if (settings && !chatUrl) {
-      setChatType(settings.chat_provider.type)
-      setChatUrl(settings.chat_provider.base_url)
-      setChatModel(settings.chat_provider.model)
-      setEmbedType(settings.embed_provider.type)
-      setEmbedUrl(settings.embed_provider.base_url)
-      setEmbedModel(settings.embed_provider.model)
-      setJoplinEnabled(settings.joplin_enabled ?? false)
-      setJoplinDbPath(settings.joplin_db_path ?? '')
-    }
-  }, [settings?.chat_provider?.base_url]) // eslint-disable-line
+    if (!settings) return
+    const active = document.activeElement as HTMLElement | null
+    const activeId = active?.id ?? ''
+    if (activeId !== 'chat-type')  setChatType(settings.chat_provider.type)
+    if (activeId !== 'chat-url')   setChatUrl(settings.chat_provider.base_url)
+    if (activeId !== 'chat-model') setChatModel(settings.chat_provider.model)
+    if (activeId !== 'embed-type') setEmbedType(settings.embed_provider.type)
+    if (activeId !== 'embed-url')  setEmbedUrl(settings.embed_provider.base_url)
+    if (activeId !== 'embed-model') setEmbedModel(settings.embed_provider.model)
+    setJoplinEnabled(settings.joplin_enabled ?? false)
+    setJoplinDbPath(settings.joplin_db_path ?? '')
+  }, [settings])
 
   const flash = (msg: string) => { setSaveMessage(msg); setTimeout(() => setSaveMessage(''), 3000) }
 
@@ -292,17 +293,18 @@ export default function Settings() {
       <Section title="Chat Provider">
         <Field label="Provider">
           <Select
+            id="chat-type"
             options={CHAT_PROVIDER_OPTIONS}
             value={chatType}
             onChange={e => setChatType(e.target.value)}
           />
         </Field>
         <Field label="Base URL">
-          <Input value={chatUrl} onChange={e => setChatUrl(e.target.value)}
+          <Input id="chat-url" value={chatUrl} onChange={e => setChatUrl(e.target.value)}
                  placeholder="e.g. http://localhost:11434/v1 (Ollama)" />
         </Field>
         <Field label="Model">
-          <Input value={chatModel} onChange={e => setChatModel(e.target.value)}
+          <Input id="chat-model" value={chatModel} onChange={e => setChatModel(e.target.value)}
                  placeholder="e.g. GPT_5_2 / gpt-4o / claude-sonnet-4-6" />
         </Field>
         <Field label="API Key" sublabel={settings.has_chat_key ? '(keychain ✓)' : '(not set)'}>
@@ -315,17 +317,18 @@ export default function Settings() {
       <Section title="Embed Provider">
         <Field label="Provider">
           <Select
+            id="embed-type"
             options={EMBED_PROVIDER_OPTIONS}
             value={embedType}
             onChange={e => setEmbedType(e.target.value)}
           />
         </Field>
         <Field label="Base URL">
-          <Input value={embedUrl} onChange={e => setEmbedUrl(e.target.value)}
+          <Input id="embed-url" value={embedUrl} onChange={e => setEmbedUrl(e.target.value)}
                  placeholder="e.g. http://localhost:11434 (Ollama)" />
         </Field>
         <Field label="Model">
-          <Input value={embedModel} onChange={e => setEmbedModel(e.target.value)}
+          <Input id="embed-model" value={embedModel} onChange={e => setEmbedModel(e.target.value)}
                  placeholder="e.g. TEXT_EMBEDDING_3_LARGE / text-embedding-3-large" />
         </Field>
         <Field label="API Key" sublabel={settings.has_embed_key ? '(keychain ✓)' : '(not set)'}>

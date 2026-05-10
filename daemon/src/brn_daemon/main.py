@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import os as _os
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from datetime import date as dt_date
@@ -41,10 +42,33 @@ from brn_daemon.plugins import EventBus, EventNames, PluginOrchestrator
 from brn_daemon.providers import make_embed_client
 from brn_daemon.purge import purge_old_captures
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s %(name)s: %(message)s"
-)
+
+class JsonFormatter(logging.Formatter):
+    def format(self, record: logging.LogRecord) -> str:
+        obj: dict = {
+            "ts": datetime.now(UTC).isoformat(),
+            "level": record.levelname,
+            "logger": record.name,
+            "msg": record.getMessage(),
+        }
+        if record.exc_info:
+            obj["exc"] = self.formatException(record.exc_info)
+        return json.dumps(obj)
+
+
+def _configure_logging() -> None:
+    handler = logging.StreamHandler()
+    if _os.environ.get("BRN_LOG_JSON") == "1":
+        handler.setFormatter(JsonFormatter())
+    else:
+        handler.setFormatter(logging.Formatter(
+            "%(asctime)s %(levelname)-8s %(name)s — %(message)s",
+            datefmt="%H:%M:%S",
+        ))
+    logging.basicConfig(level=logging.INFO, handlers=[handler], force=True)
+
+
+_configure_logging()
 logger = logging.getLogger(__name__)
 
 # Wire log buffer into root logger so all modules' logs are captured

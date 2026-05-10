@@ -95,18 +95,20 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 
 export default function Settings() {
   const qc = useQueryClient()
-  const [chatType, setChatType]     = useState('')
-  const [chatUrl, setChatUrl]       = useState('')
-  const [chatModel, setChatModel]   = useState('')
-  const [chatKey, setChatKey]       = useState('')
-  const [embedType, setEmbedType]   = useState('')
-  const [embedUrl, setEmbedUrl]     = useState('')
-  const [embedModel, setEmbedModel] = useState('')
-  const [embedKey, setEmbedKey]     = useState('')
-  const [newApp, setNewApp]         = useState('')
-  const [saveMessage, setSaveMessage]     = useState('')
-  const [joplinEnabled, setJoplinEnabled] = useState(false)
-  const [joplinDbPath, setJoplinDbPath]   = useState('')
+  type FormState = {
+    chatType: string; chatUrl: string; chatModel: string; chatKey: string
+    embedType: string; embedUrl: string; embedModel: string; embedKey: string
+    joplinEnabled: boolean; joplinDbPath: string
+  }
+  const [form, setForm] = useState<FormState>({
+    chatType: '', chatUrl: '', chatModel: '', chatKey: '',
+    embedType: '', embedUrl: '', embedModel: '', embedKey: '',
+    joplinEnabled: false, joplinDbPath: '',
+  })
+  const setField = <K extends keyof FormState>(key: K, value: FormState[K]) =>
+    setForm(prev => ({ ...prev, [key]: value }))
+  const [newApp, setNewApp]       = useState('')
+  const [saveMessage, setSaveMessage] = useState('')
   const [daemonOwned, setDaemonOwned] = useState<boolean | null>(null)
   const [restartState, setRestartState] = useState<'idle' | 'restarting'>('idle')
   const restartIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -135,14 +137,18 @@ export default function Settings() {
     if (!settings) return
     const active = document.activeElement as HTMLElement | null
     const activeId = active?.id ?? ''
-    if (activeId !== 'chat-type')  setChatType(settings.chat_provider.type)
-    if (activeId !== 'chat-url')   setChatUrl(settings.chat_provider.base_url)
-    if (activeId !== 'chat-model') setChatModel(settings.chat_provider.model)
-    if (activeId !== 'embed-type') setEmbedType(settings.embed_provider.type)
-    if (activeId !== 'embed-url')  setEmbedUrl(settings.embed_provider.base_url)
-    if (activeId !== 'embed-model') setEmbedModel(settings.embed_provider.model)
-    setJoplinEnabled(settings.joplin_enabled ?? false)
-    setJoplinDbPath(settings.joplin_db_path ?? '')
+    setForm(prev => ({
+      chatType:     activeId === 'chat-type'  ? prev.chatType  : settings.chat_provider.type,
+      chatUrl:      activeId === 'chat-url'   ? prev.chatUrl   : settings.chat_provider.base_url,
+      chatModel:    activeId === 'chat-model' ? prev.chatModel : settings.chat_provider.model,
+      chatKey:      prev.chatKey,
+      embedType:    activeId === 'embed-type'  ? prev.embedType  : settings.embed_provider.type,
+      embedUrl:     activeId === 'embed-url'   ? prev.embedUrl   : settings.embed_provider.base_url,
+      embedModel:   activeId === 'embed-model' ? prev.embedModel : settings.embed_provider.model,
+      embedKey:     prev.embedKey,
+      joplinEnabled: settings.joplin_enabled ?? false,
+      joplinDbPath:  settings.joplin_db_path ?? '',
+    }))
   }, [settings])
 
   const flash = (msg: string) => { setSaveMessage(msg); setTimeout(() => setSaveMessage(''), 3000) }
@@ -174,18 +180,18 @@ export default function Settings() {
   const saveProviders = useMutation({
     mutationFn: () => api.updateSettings({
       chat_provider: {
-        type: chatType, base_url: chatUrl, model: chatModel,
-        ...(chatKey ? { api_key: chatKey } : {}),
+        type: form.chatType, base_url: form.chatUrl, model: form.chatModel,
+        ...(form.chatKey ? { api_key: form.chatKey } : {}),
       },
       embed_provider: {
-        type: embedType, base_url: embedUrl, model: embedModel,
-        ...(embedKey ? { api_key: embedKey } : {}),
+        type: form.embedType, base_url: form.embedUrl, model: form.embedModel,
+        ...(form.embedKey ? { api_key: form.embedKey } : {}),
       },
-      joplin_enabled: joplinEnabled,
-      joplin_db_path: joplinDbPath.trim(),
+      joplin_enabled: form.joplinEnabled,
+      joplin_db_path: form.joplinDbPath.trim(),
     }),
     onSuccess: () => {
-      setChatKey(''); setEmbedKey('')
+      setField('chatKey', ''); setField('embedKey', '')
       flash('Settings saved')
       qc.invalidateQueries({ queryKey: queryKeys.settings() })
     },
@@ -295,20 +301,20 @@ export default function Settings() {
           <Select
             id="chat-type"
             options={CHAT_PROVIDER_OPTIONS}
-            value={chatType}
-            onChange={e => setChatType(e.target.value)}
+            value={form.chatType}
+            onChange={e => setField('chatType', e.target.value)}
           />
         </Field>
         <Field label="Base URL">
-          <Input id="chat-url" value={chatUrl} onChange={e => setChatUrl(e.target.value)}
+          <Input id="chat-url" value={form.chatUrl} onChange={e => setField('chatUrl', e.target.value)}
                  placeholder="e.g. http://localhost:11434/v1 (Ollama)" />
         </Field>
         <Field label="Model">
-          <Input id="chat-model" value={chatModel} onChange={e => setChatModel(e.target.value)}
+          <Input id="chat-model" value={form.chatModel} onChange={e => setField('chatModel', e.target.value)}
                  placeholder="e.g. GPT_5_2 / gpt-4o / claude-sonnet-4-6" />
         </Field>
         <Field label="API Key" sublabel={settings.has_chat_key ? '(keychain ✓)' : '(not set)'}>
-          <Input type="password" value={chatKey} onChange={e => setChatKey(e.target.value)}
+          <Input type="password" value={form.chatKey} onChange={e => setField('chatKey', e.target.value)}
                  placeholder="Enter new key to update…" />
         </Field>
       </Section>
@@ -319,20 +325,20 @@ export default function Settings() {
           <Select
             id="embed-type"
             options={EMBED_PROVIDER_OPTIONS}
-            value={embedType}
-            onChange={e => setEmbedType(e.target.value)}
+            value={form.embedType}
+            onChange={e => setField('embedType', e.target.value)}
           />
         </Field>
         <Field label="Base URL">
-          <Input id="embed-url" value={embedUrl} onChange={e => setEmbedUrl(e.target.value)}
+          <Input id="embed-url" value={form.embedUrl} onChange={e => setField('embedUrl', e.target.value)}
                  placeholder="e.g. http://localhost:11434 (Ollama)" />
         </Field>
         <Field label="Model">
-          <Input id="embed-model" value={embedModel} onChange={e => setEmbedModel(e.target.value)}
+          <Input id="embed-model" value={form.embedModel} onChange={e => setField('embedModel', e.target.value)}
                  placeholder="e.g. TEXT_EMBEDDING_3_LARGE / text-embedding-3-large" />
         </Field>
         <Field label="API Key" sublabel={settings.has_embed_key ? '(keychain ✓)' : '(not set)'}>
-          <Input type="password" value={embedKey} onChange={e => setEmbedKey(e.target.value)}
+          <Input type="password" value={form.embedKey} onChange={e => setField('embedKey', e.target.value)}
                  placeholder="Enter new key to update…" />
         </Field>
         <button
@@ -556,26 +562,26 @@ export default function Settings() {
             </p>
           </div>
           <button
-            onClick={() => setJoplinEnabled(v => !v)}
+            onClick={() => setField('joplinEnabled', !form.joplinEnabled)}
             className="relative inline-flex h-6 w-11 items-center rounded-full transition-colors"
-            style={{ background: joplinEnabled ? 'var(--accent)' : 'var(--bg-surface-2)' }}
+            style={{ background: form.joplinEnabled ? 'var(--accent)' : 'var(--bg-surface-2)' }}
           >
             <span
               className="inline-block h-4 w-4 transform rounded-full transition-transform"
-              style={{ background: 'var(--toggle-knob)', transform: joplinEnabled ? 'translateX(24px)' : 'translateX(4px)' }}
+              style={{ background: 'var(--toggle-knob)', transform: form.joplinEnabled ? 'translateX(24px)' : 'translateX(4px)' }}
             />
           </button>
         </div>
 
-        {joplinEnabled && (
+        {form.joplinEnabled && (
           <Field
             label="Joplin database path"
             sublabel="(leave blank for default ~/.config/joplin-desktop/database.sqlite)"
           >
             <Input
               type="text"
-              value={joplinDbPath}
-              onChange={e => setJoplinDbPath(e.target.value)}
+              value={form.joplinDbPath}
+              onChange={e => setField('joplinDbPath', e.target.value)}
               placeholder="/Users/me/.config/joplin-desktop/database.sqlite"
               spellCheck={false}
             />

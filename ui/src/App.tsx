@@ -17,15 +17,15 @@ import CalendarPanel from './components/shared/CalendarPanel'
 import { DateProvider } from './context/DateContext'
 
 const NAV = [
-  { to: '/',              label: 'Home',         icon: '🏠',  end: true },
-  { to: '/chat',          label: 'Chat',         icon: '💬' },
-  { to: '/journal',       label: 'Journal',      icon: '📔' },
-  { to: '/blog',          label: 'Blog',         icon: '✍' },
-  { to: '/timeline',      label: 'Timeline',     icon: '🕐' },
-  { to: '/insights',      label: 'Insights',     icon: '💡' },
-  { to: '/instructions',  label: 'Instructions', icon: '📋' },
-  { to: '/plugins',       label: 'Plugins',      icon: '🔌' },
-  { to: '/settings',      label: 'Settings',     icon: '⚙️' },
+  { to: '/',              label: 'Home',         icon: '🏠',  end: true,  hasCalendar: false },
+  { to: '/chat',          label: 'Chat',         icon: '💬',              hasCalendar: true  },
+  { to: '/journal',       label: 'Journal',      icon: '📔',              hasCalendar: true  },
+  { to: '/blog',          label: 'Blog',         icon: '✍',               hasCalendar: true  },
+  { to: '/timeline',      label: 'Timeline',     icon: '🕐',              hasCalendar: true  },
+  { to: '/insights',      label: 'Insights',     icon: '💡',              hasCalendar: true  },
+  { to: '/instructions',  label: 'Instructions', icon: '📋',              hasCalendar: false },
+  { to: '/plugins',       label: 'Plugins',      icon: '🔌',              hasCalendar: false },
+  { to: '/settings',      label: 'Settings',     icon: '⚙️',              hasCalendar: false },
 ]
 
 type ThemeMode = 'light' | 'system' | 'dark'
@@ -79,11 +79,7 @@ export default function App() {
     }
   }, [applyThemeClass])
 
-  // Calendar is irrelevant on Home and Settings — hide toggle and panel
-  const calendarApplies = location.pathname !== '/'
-    && location.pathname !== '/settings'
-    && location.pathname !== '/instructions'
-    && location.pathname !== '/plugins'
+  const calendarApplies = NAV.find(n => n.to === location.pathname || (n.end && location.pathname === '/'))?.hasCalendar ?? false
 
   return (
     <DateProvider>

@@ -209,3 +209,23 @@ def test_migrate_skips_delete_when_no_value_in_old_service(tmp_home, monkeypatch
 
     migrate_plugin_keychain_entries([("noplugin", "NOKEY")])
     assert deleted == [], f"delete was called when it should not have been: {deleted}"
+
+
+def test_load_config_raises_on_corrupt_json(tmp_home):
+    """load_config must raise RuntimeError when config.json exists but is invalid JSON."""
+    from brn_daemon.db import get_brn_home
+    from brn_daemon.config import load_config
+
+    config_path = get_brn_home() / "config.json"
+    config_path.write_text("{ not valid json }")
+
+    with pytest.raises(RuntimeError, match="config.json"):
+        load_config()
+
+
+def test_load_config_returns_defaults_when_missing(tmp_home):
+    """load_config must return defaults when config.json does not exist."""
+    from brn_daemon.config import load_config, Config
+
+    result = load_config()
+    assert isinstance(result, Config)

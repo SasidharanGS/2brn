@@ -318,7 +318,7 @@ async def _startup_backfill_journal(
     event_bus,
     schedule: ScheduleConfig,
 ) -> None:
-    now = datetime.now()
+    now = datetime.now(UTC)
     if now.hour < schedule.hour or (now.hour == schedule.hour and now.minute < schedule.minute):
         return
     today = dt_date.today()
@@ -335,7 +335,7 @@ async def _startup_backfill_blog(
     event_bus,
     schedule: "BlogScheduleConfig",
 ) -> None:
-    now = datetime.now()
+    now = datetime.now(UTC)
     if schedule.frequency == "monthly" and now.day != schedule.day:
         return
     if schedule.frequency == "weekly" and schedule.days_of_week:

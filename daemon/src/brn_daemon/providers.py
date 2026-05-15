@@ -3,6 +3,7 @@ import logging
 from typing import Protocol, runtime_checkable
 
 import httpx
+import openai
 from openai import AsyncOpenAI
 
 logger = logging.getLogger(__name__)
@@ -52,7 +53,7 @@ class CustomEmbedClient:
                 if not data.get("success"):
                     raise ValueError(f"Embedding failed: {data.get('errorMessage', data)}")
                 return data["data"]["embeddings"]
-            except Exception as exc:
+            except (httpx.HTTPError, httpx.TimeoutException) as exc:
                 wait = 2 ** attempt
                 logger.warning("CustomEmbed attempt %d failed (%d texts): %s — retrying in %ds",
                                attempt + 1, len(texts), exc, wait)
@@ -91,7 +92,7 @@ class OpenAIEmbedClient:
                     input=texts,
                 )
                 return [item.embedding for item in resp.data]
-            except Exception as exc:
+            except (openai.APIConnectionError, openai.APITimeoutError, openai.RateLimitError) as exc:
                 wait = 2 ** attempt
                 logger.warning("OpenAI embed attempt %d failed (%d texts): %s — retrying in %ds",
                                attempt + 1, len(texts), exc, wait)

@@ -1,6 +1,7 @@
 import json
 import pytest
-from brn_daemon.inference import build_inference_prompt, parse_inference_response, InferenceResult
+from unittest.mock import AsyncMock, MagicMock, patch
+from brn_daemon.inference import build_inference_prompt, parse_inference_response, InferenceResult, InferenceQueue
 
 def test_build_prompt_includes_app_and_ocr():
     prompt = build_inference_prompt(
@@ -184,3 +185,53 @@ async def test_invalidate_instructions_cache_forces_reload(tmp_home, db):
 
     result = await queue._load_instructions()
     assert result == ["do Y"], "After invalidation, fresh DB value must be returned"
+
+
+async def test_process_one_embed_failure_activity_survives(tmp_home, db):
+    """If embedding fails, the activity row must still exist in SQLite."""
+    from brn_daemon.db import get_db_path
+
+    chat_fn = AsyncMock(return_value='{"summary":"test","tags":[],"task_category":"work","task_category_confidence":0.9,"productivity_state":"productive","productivity_confidence":0.8}')
+
+    mock_embed = MagicMock()
+    mock_embed.embed_activity = AsyncMock(side_effect=RuntimeError("embed failed"))
+
+    q = InferenceQueue(chat_fn=chat_fn, db_path_fn=get_db_path, embedding_service=mock_embed)
+
+    await db.execute("INSERT INTO captures (captured_at, app_name) VALUES ('2024-01-01T10:00:00', 'TestApp')")
+    await db.commit()
+    cur = await db.execute("SELECT last_insert_rowid()")
+    row = await cur.fetchone()
+    capture_id = row[0]
+
+    await q._process_one(capture_id, "TestApp", "Test Window", "some ocr text")
+
+    cur = await db.execute("SELECT id, chroma_id FROM activities WHERE capture_id = ?", (capture_id,))
+    activity = await cur.fetchone()
+    assert activity is not None, "activity should exist even after embed failure"
+    assert activity[1] is None, "chroma_id should be NULL after embed failure"
+
+
+async def test_heal_unembedded_re_embeds_null_chroma_id(tmp_home, db):
+    """heal_unembedded must call embed_activity for activities with chroma_id IS NULL."""
+    from brn_daemon.db import get_db_path
+
+    await db.execute("INSERT INTO captures (captured_at, app_name) VALUES ('2024-01-01T10:00:00', 'App')")
+    await db.commit()
+    cur = await db.execute("SELECT last_insert_rowid()")
+    capture_id = (await cur.fetchone())[0]
+
+    await db.execute(
+        "INSERT INTO activities (capture_id, started_at, summary, task_category, productivity_state) VALUES (?, '2024-01-01T10:00:00', 'did stuff', 'work', 'productive')",
+        (capture_id,),
+    )
+    await db.commit()
+
+    mock_embed = MagicMock()
+    mock_embed.embed_activity = AsyncMock()
+
+    q = InferenceQueue(chat_fn=AsyncMock(), db_path_fn=get_db_path, embedding_service=mock_embed)
+    count = await q.heal_unembedded()
+
+    assert count == 1
+    mock_embed.embed_activity.assert_called_once()

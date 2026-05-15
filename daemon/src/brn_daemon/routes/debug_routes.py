@@ -14,6 +14,7 @@ class DebugStatusResponse(BaseModel):
     gateway: dict
     chroma: dict
     last_error: dict | None
+    failed_capture_ids: list[int]
 
 
 @router.get("/logs", response_model=LogsResponse)
@@ -84,4 +85,9 @@ async def get_debug_status():
         gateway=gateway_section,
         chroma=chroma_section,
         last_error=last_error,
+        failed_capture_ids=(
+            app_state.get("inference_queue").failed_capture_ids  # type: ignore[union-attr]
+            if app_state.get("inference_queue") is not None
+            else []
+        ),
     )

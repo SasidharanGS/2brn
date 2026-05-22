@@ -115,6 +115,13 @@ cd daemon && uv run --extra dev pytest tests/ -v
 cd ui && pnpm exec tsc --noEmit
 ```
 
+## Contributing
+
+Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, the
+development workflow, and the project's design principles, and please review our
+[Code of Conduct](CODE_OF_CONDUCT.md). To report a security issue, follow
+[SECURITY.md](SECURITY.md) — don't open a public issue.
+
 ## License
 
-MIT
+[MIT](LICENSE) © 2026 SasidharanGS

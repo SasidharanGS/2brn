@@ -67,6 +67,22 @@ export const api = {
   getExclusions: () => get<AppExclusion[]>('/settings/exclusions'),
   addExclusion: (app_name: string) => post('/settings/exclusions', { app_name }),
   removeExclusion: (app_name: string) => del(`/settings/exclusions/${encodeURIComponent(app_name)}`),
+
+  // Screenshot encryption
+  setScreenshotPassword: (password: string, encrypt_existing = true) =>
+    post<{ ok: boolean; message: string }>('/settings/screenshot-password', { password, encrypt_existing }),
+  changeScreenshotPassword: (old_password: string, new_password: string) =>
+    put<{ ok: boolean; message: string }>('/settings/screenshot-password', { old_password, new_password }),
+  disableScreenshotPassword: (password: string, decrypt_existing = true) =>
+    fetch(`${BASE_URL}/settings/screenshot-password`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password, decrypt_existing }),
+    }).then(async r => {
+      if (!r.ok) throw new Error(`DELETE failed: ${r.status}`)
+      return r.json() as Promise<{ ok: boolean; message: string }>
+    }),
+
   getDailyInsights: (date: string) => get<DailyInsights>(`/insights/daily?date=${date}`),
   getLogs: (level?: string, limit?: number) => {
     const q = new URLSearchParams()

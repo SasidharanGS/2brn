@@ -32,6 +32,48 @@ function Input(props: React.InputHTMLAttributes<HTMLInputElement>) {
   )
 }
 
+function Select(props: React.SelectHTMLAttributes<HTMLSelectElement> & { options: { value: string; label: string }[] }) {
+  const { options, ...rest } = props
+  return (
+    <select
+      {...rest}
+      className="w-full rounded-[9px] border px-3 py-2 text-[14px] outline-none transition-shadow focus:shadow-glow-sm appearance-none"
+      style={{
+        background: 'var(--bg-input)',
+        borderColor: 'var(--border-2)',
+        color: 'var(--text)',
+        backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 width=%2710%27 height=%276%27 viewBox=%270 0 10 6%27%3E%3Cpath fill=%27%23888%27 d=%27M5 6L0 0h10z%27/%3E%3C/svg%3E")',
+        backgroundRepeat: 'no-repeat',
+        backgroundPosition: 'right 12px center',
+        paddingRight: '32px',
+        ...rest.style,
+      }}
+    >
+      {options.map(o => (
+        <option key={o.value} value={o.value}>{o.label}</option>
+      ))}
+    </select>
+  )
+}
+
+// ── Provider catalogues ──────────────────────────────────────────────────────
+
+const CHAT_PROVIDER_OPTIONS = [
+  { value: 'openai_compatible', label: 'OpenAI-Compatible (JLL Gateway, LM Studio, etc.)' },
+  { value: 'openai',            label: 'OpenAI' },
+  { value: 'anthropic',         label: 'Anthropic' },
+  { value: 'azure',             label: 'Azure OpenAI' },
+  { value: 'ollama',            label: 'Ollama (local)' },
+  { value: 'groq',              label: 'Groq' },
+  { value: 'together',          label: 'Together AI' },
+  { value: 'cohere',            label: 'Cohere' },
+]
+
+const EMBED_PROVIDER_OPTIONS = [
+  { value: 'jll',    label: 'JLL Gateway (custom format)' },
+  { value: 'openai', label: 'OpenAI-Compatible (OpenAI, Azure, Ollama, etc.)' },
+]
+
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section
@@ -64,6 +106,15 @@ export default function Settings() {
   const [newApp, setNewApp]         = useState('')
   const [saveMessage, setSaveMessage]     = useState('')
   const [blogMirror, setBlogMirror] = useState(true)
+
+  // Screenshot encryption form state
+  const [encPwd, setEncPwd]         = useState('')
+  const [encPwdConfirm, setEncPwdConfirm] = useState('')
+  const [encOldPwd, setEncOldPwd]   = useState('')
+  const [encNewPwd, setEncNewPwd]   = useState('')
+  const [encNewPwdConfirm, setEncNewPwdConfirm] = useState('')
+  const [encDisablePwd, setEncDisablePwd] = useState('')
+  const [encMode, setEncMode]       = useState<'idle' | 'change' | 'disable'>('idle')
 
   const { data: settings }     = useQuery({ queryKey: queryKeys.settings(),   queryFn: api.getSettings })
   const { data: exclusions = [] } = useQuery({ queryKey: queryKeys.exclusions(), queryFn: api.getExclusions })
@@ -118,6 +169,37 @@ export default function Settings() {
     onSuccess:  () => qc.invalidateQueries({ queryKey: queryKeys.exclusions() }),
   })
 
+  // ── Screenshot encryption mutations ────────────────────────────────────
+  const enableEncryption = useMutation({
+    mutationFn: () => api.setScreenshotPassword(encPwd, true),
+    onSuccess: (r) => {
+      setEncPwd(''); setEncPwdConfirm('')
+      flash(r.message || 'Encryption enabled. Encrypting existing screenshots in background…')
+      qc.invalidateQueries({ queryKey: queryKeys.settings() })
+    },
+    onError: () => flash('Failed to enable encryption'),
+  })
+
+  const changeEncryption = useMutation({
+    mutationFn: () => api.changeScreenshotPassword(encOldPwd, encNewPwd),
+    onSuccess: (r) => {
+      setEncOldPwd(''); setEncNewPwd(''); setEncNewPwdConfirm(''); setEncMode('idle')
+      flash(r.message || 'Password changed. Re-encrypting in background…')
+      qc.invalidateQueries({ queryKey: queryKeys.settings() })
+    },
+    onError: () => flash('Failed to change password (check old password)'),
+  })
+
+  const disableEncryption = useMutation({
+    mutationFn: () => api.disableScreenshotPassword(encDisablePwd, true),
+    onSuccess: (r) => {
+      setEncDisablePwd(''); setEncMode('idle')
+      flash(r.message || 'Encryption disabled. Screenshots decrypted.')
+      qc.invalidateQueries({ queryKey: queryKeys.settings() })
+    },
+    onError: () => flash('Failed to disable (check password)'),
+  })
+
   // Loading skeleton
   if (!settings) {
     return (
@@ -170,9 +252,12 @@ export default function Settings() {
 
       {/* Chat Provider */}
       <Section title="Chat Provider">
-        <Field label="Provider Type">
-          <Input value={chatType} onChange={e => setChatType(e.target.value)}
-                 placeholder="openai_compatible / anthropic / ollama / groq" />
+        <Field label="Provider">
+          <Select
+            options={CHAT_PROVIDER_OPTIONS}
+            value={chatType}
+            onChange={e => setChatType(e.target.value)}
+          />
         </Field>
         <Field label="Base URL">
           <Input value={chatUrl} onChange={e => setChatUrl(e.target.value)}
@@ -190,9 +275,12 @@ export default function Settings() {
 
       {/* Embed Provider */}
       <Section title="Embed Provider">
-        <Field label="Provider Type">
-          <Input value={embedType} onChange={e => setEmbedType(e.target.value)}
-                 placeholder="jll / openai" />
+        <Field label="Provider">
+          <Select
+            options={EMBED_PROVIDER_OPTIONS}
+            value={embedType}
+            onChange={e => setEmbedType(e.target.value)}
+          />
         </Field>
         <Field label="Base URL">
           <Input value={embedUrl} onChange={e => setEmbedUrl(e.target.value)}
@@ -258,6 +346,137 @@ export default function Settings() {
               </li>
             ))}
           </ul>
+        )}
+      </Section>
+
+      {/* Screenshot Encryption */}
+      <Section title="Screenshot Encryption">
+        <p className="text-[12px]" style={{ color: 'var(--text-dim)' }}>
+          Encrypt every screenshot at rest with AES-256-GCM. Password is stored in your OS keychain;
+          if you forget it, all encrypted screenshots are unrecoverable.
+        </p>
+
+        {!settings.screenshot_encryption_enabled ? (
+          // ── ENABLE FLOW ────────────────────────────────────────────────
+          <>
+            <div
+              className="px-3 py-2 rounded-[9px] text-[12px] border"
+              style={{ background: 'var(--bg-surface-2)', borderColor: 'var(--border)', color: 'var(--text-muted)' }}
+            >
+              Status: <span style={{ color: 'var(--text-dim)' }}>disabled</span> — screenshots are stored as plain JPEGs.
+            </div>
+            <Field label="Password" sublabel="(min 8 characters)">
+              <Input type="password" value={encPwd} onChange={e => setEncPwd(e.target.value)}
+                     placeholder="Choose a password…" autoComplete="new-password" />
+            </Field>
+            <Field label="Confirm Password">
+              <Input type="password" value={encPwdConfirm} onChange={e => setEncPwdConfirm(e.target.value)}
+                     placeholder="Re-enter password…" autoComplete="new-password" />
+            </Field>
+            <button
+              onClick={() => {
+                if (encPwd.length < 8) { flash('Password must be at least 8 characters'); return }
+                if (encPwd !== encPwdConfirm) { flash('Passwords do not match'); return }
+                enableEncryption.mutate()
+              }}
+              disabled={enableEncryption.isPending || !encPwd || !encPwdConfirm}
+              className="px-5 py-2 rounded-[9px] text-[13px] font-semibold transition-all disabled:opacity-40"
+              style={{ background: 'var(--accent)', color: '#fff' }}
+            >
+              {enableEncryption.isPending ? 'Enabling…' : 'Enable Encryption'}
+            </button>
+          </>
+        ) : encMode === 'idle' ? (
+          // ── ENABLED, IDLE ──────────────────────────────────────────────
+          <>
+            <div
+              className="px-3 py-2 rounded-[9px] text-[12px] border"
+              style={{ background: 'var(--green-bg)', borderColor: 'rgba(52,211,153,0.2)', color: 'var(--green)' }}
+            >
+              Status: <span className="font-semibold">enabled</span> — new screenshots are encrypted at capture time.
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setEncMode('change')}
+                className="px-4 py-2 rounded-[9px] text-[13px] font-medium transition-all"
+                style={{ background: 'var(--bg-surface-2)', color: 'var(--text)', border: '1px solid var(--border-2)' }}
+              >
+                Change Password
+              </button>
+              <button
+                onClick={() => setEncMode('disable')}
+                className="px-4 py-2 rounded-[9px] text-[13px] font-medium transition-all"
+                style={{ background: 'var(--red-bg)', color: 'var(--red)', border: '1px solid rgba(248,113,113,0.2)' }}
+              >
+                Disable Encryption
+              </button>
+            </div>
+          </>
+        ) : encMode === 'change' ? (
+          // ── CHANGE PASSWORD ────────────────────────────────────────────
+          <>
+            <Field label="Current Password">
+              <Input type="password" value={encOldPwd} onChange={e => setEncOldPwd(e.target.value)}
+                     autoComplete="current-password" />
+            </Field>
+            <Field label="New Password" sublabel="(min 8 characters)">
+              <Input type="password" value={encNewPwd} onChange={e => setEncNewPwd(e.target.value)}
+                     autoComplete="new-password" />
+            </Field>
+            <Field label="Confirm New Password">
+              <Input type="password" value={encNewPwdConfirm} onChange={e => setEncNewPwdConfirm(e.target.value)}
+                     autoComplete="new-password" />
+            </Field>
+            <div className="flex gap-2">
+              <button
+                onClick={() => {
+                  if (encNewPwd.length < 8) { flash('Password must be at least 8 characters'); return }
+                  if (encNewPwd !== encNewPwdConfirm) { flash('Passwords do not match'); return }
+                  changeEncryption.mutate()
+                }}
+                disabled={changeEncryption.isPending || !encOldPwd || !encNewPwd}
+                className="px-5 py-2 rounded-[9px] text-[13px] font-semibold transition-all disabled:opacity-40"
+                style={{ background: 'var(--accent)', color: '#fff' }}
+              >
+                {changeEncryption.isPending ? 'Changing…' : 'Change Password'}
+              </button>
+              <button
+                onClick={() => { setEncMode('idle'); setEncOldPwd(''); setEncNewPwd(''); setEncNewPwdConfirm('') }}
+                className="px-4 py-2 rounded-[9px] text-[13px] font-medium transition-all"
+                style={{ background: 'var(--bg-surface-2)', color: 'var(--text)', border: '1px solid var(--border-2)' }}
+              >
+                Cancel
+              </button>
+            </div>
+          </>
+        ) : (
+          // ── DISABLE ────────────────────────────────────────────────────
+          <>
+            <p className="text-[12px]" style={{ color: 'var(--red)' }}>
+              This will decrypt every existing screenshot and store them as plain JPEGs.
+            </p>
+            <Field label="Confirm with Current Password">
+              <Input type="password" value={encDisablePwd} onChange={e => setEncDisablePwd(e.target.value)}
+                     autoComplete="current-password" />
+            </Field>
+            <div className="flex gap-2">
+              <button
+                onClick={() => disableEncryption.mutate()}
+                disabled={disableEncryption.isPending || !encDisablePwd}
+                className="px-5 py-2 rounded-[9px] text-[13px] font-semibold transition-all disabled:opacity-40"
+                style={{ background: 'var(--red)', color: '#fff' }}
+              >
+                {disableEncryption.isPending ? 'Disabling…' : 'Disable & Decrypt All'}
+              </button>
+              <button
+                onClick={() => { setEncMode('idle'); setEncDisablePwd('') }}
+                className="px-4 py-2 rounded-[9px] text-[13px] font-medium transition-all"
+                style={{ background: 'var(--bg-surface-2)', color: 'var(--text)', border: '1px solid var(--border-2)' }}
+              >
+                Cancel
+              </button>
+            </div>
+          </>
         )}
       </Section>
 

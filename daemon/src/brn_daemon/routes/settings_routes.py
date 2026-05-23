@@ -1,14 +1,31 @@
+import asyncio
+import logging
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from brn_daemon.config import (
     load_config, save_config,
     get_chat_api_key, get_embed_api_key,
     set_chat_api_key, set_embed_api_key,
+    get_screenshot_password, set_screenshot_password, delete_screenshot_password,
+)
+from brn_daemon.encryption import (
+    decrypt_all_screenshots,
+    delete_encryption_state,
+    encrypt_existing_screenshots,
+    initialize_encryption,
+    is_initialised,
+    load_encryption_state,
+    mark_captures_decrypted,
+    mark_captures_encrypted,
+    re_encrypt_all_screenshots,
+    verify_password,
 )
 import aiosqlite
 from brn_daemon.db import get_db_path
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 class ProviderConfigOut(BaseModel):
@@ -27,6 +44,7 @@ class SettingsResponse(BaseModel):
     purge_months: int
     paused: bool
     blog_mirror_enabled: bool
+    screenshot_encryption_enabled: bool
 
 
 class ProviderConfigIn(BaseModel):
@@ -63,6 +81,7 @@ async def get_settings():
         purge_months=cfg.purge_months,
         paused=cfg.paused,
         blog_mirror_enabled=cfg.blog_mirror_enabled,
+        screenshot_encryption_enabled=is_initialised(),
     )
 
 
@@ -135,21 +154,34 @@ async def add_exclusion(body: ExclusionRequest):
     return {"ok": True}
 
 
+@router.delete("/settings/exclusions/{app_name}")
+async def remove_exclusion(app_name: str):
+    from brn_daemon.main import app_state
+    async with aiosqlite.connect(get_db_path()) as conn:
+        cur = await conn.execute(
+            "DELETE FROM app_exclusions WHERE app_name = ?", (app_name,)
+        )
+        await conn.commit()
+    if cur.rowcount == 0:
+        raise HTTPException(404, f"{app_name} is not excluded")
+    app_state["exclusions_dirty"] = True
+    return {"ok": True}
+
+
 @router.post("/settings/resync-chroma")
 async def resync_chroma():
     """Backfill all activities with summaries that are not yet in ChromaDB."""
-    import asyncio
     from brn_daemon.main import app_state
     from brn_daemon.embeddings import EmbeddingService
-    from brn_daemon.gateway import make_gateway_client
+    from brn_daemon.providers import make_embed_client
 
     async def _run_backfill() -> int:
-        gateway = make_gateway_client()
+        embed_client = make_embed_client()
         chroma = app_state.get("chroma_store")
         if chroma is None:
             from brn_daemon.embeddings import ChromaStore
             chroma = ChromaStore()
-        service = EmbeddingService(gateway=gateway, chroma_store=chroma)
+        service = EmbeddingService(embed_client=embed_client, chroma_store=chroma)
         synced = 0
         async with aiosqlite.connect(get_db_path()) as conn:
             conn.row_factory = aiosqlite.Row
@@ -204,3 +236,129 @@ async def chroma_status():
         chroma = ChromaStore()
     chroma_count = chroma.collection.count()
     return {"total_activities": total, "embedded": embedded, "chroma_count": chroma_count}
+
+
+# ── Screenshot encryption ────────────────────────────────────────────────────
+
+class ScreenshotPasswordSet(BaseModel):
+    password: str
+    encrypt_existing: bool = True
+
+
+class ScreenshotPasswordChange(BaseModel):
+    old_password: str
+    new_password: str
+
+
+class ScreenshotPasswordDisable(BaseModel):
+    password: str
+    decrypt_existing: bool = True
+
+
+@router.post("/settings/screenshot-password")
+async def set_screenshot_password_route(body: ScreenshotPasswordSet):
+    """Initialise screenshot encryption. Generates a salt, derives the key, persists the
+    verifier to ``~/.2brn/encryption.json``, stores the password in the OS keychain, and
+    (optionally) encrypts every existing screenshot in the background.
+    """
+    if is_initialised():
+        raise HTTPException(409, "Screenshot encryption is already configured. Use PUT to change it or DELETE to disable it.")
+    if not body.password or len(body.password) < 8:
+        raise HTTPException(400, "Password must be at least 8 characters")
+
+    from brn_daemon.main import app_state
+    key = initialize_encryption(body.password)
+    set_screenshot_password(body.password)
+    app_state["screenshot_key"] = key
+
+    if body.encrypt_existing:
+        async def _bulk_encrypt():
+            try:
+                logger.info("Encrypting existing screenshots in background…")
+                ok, fail = await asyncio.get_event_loop().run_in_executor(
+                    None, encrypt_existing_screenshots, key
+                )
+                rows = await mark_captures_encrypted()
+                logger.info("Bulk encrypt complete: %d ok, %d failed, %d DB rows updated", ok, fail, rows)
+            except Exception:
+                logger.exception("Bulk encrypt failed")
+        asyncio.create_task(_bulk_encrypt())
+
+    return {"ok": True, "message": "Screenshot encryption enabled"}
+
+
+@router.put("/settings/screenshot-password")
+async def change_screenshot_password_route(body: ScreenshotPasswordChange):
+    """Change the screenshot password. Verifies the old password against the stored verifier,
+    then re-encrypts every ``.jpg.enc`` file in the background with the new key.
+    """
+    state = load_encryption_state()
+    if state is None:
+        raise HTTPException(404, "Screenshot encryption is not configured")
+    if not body.new_password or len(body.new_password) < 8:
+        raise HTTPException(400, "New password must be at least 8 characters")
+
+    old_key = verify_password(body.old_password, state)
+    if old_key is None:
+        raise HTTPException(401, "Current password is incorrect")
+
+    # Build a new state with a new salt + verifier under the new password.
+    import os as _os
+    from brn_daemon.encryption import (
+        EncryptionState, KEY_LENGTH, SALT_LENGTH,  # noqa: F401  (constants only)
+        derive_key, encrypt_bytes, save_encryption_state, VERIFIER_PLAINTEXT,
+    )
+    new_salt = _os.urandom(SALT_LENGTH)
+    new_key = derive_key(body.new_password, new_salt)
+    new_verifier = encrypt_bytes(VERIFIER_PLAINTEXT, new_key)
+    save_encryption_state(EncryptionState(salt=new_salt, verifier=new_verifier))
+    set_screenshot_password(body.new_password)
+
+    from brn_daemon.main import app_state
+    app_state["screenshot_key"] = new_key
+
+    async def _bulk_reencrypt():
+        try:
+            logger.info("Re-encrypting existing screenshots in background…")
+            ok, fail = await asyncio.get_event_loop().run_in_executor(
+                None, re_encrypt_all_screenshots, old_key, new_key
+            )
+            logger.info("Bulk re-encrypt complete: %d ok, %d failed", ok, fail)
+        except Exception:
+            logger.exception("Bulk re-encrypt failed")
+    asyncio.create_task(_bulk_reencrypt())
+
+    return {"ok": True, "message": "Screenshot password changed"}
+
+
+@router.delete("/settings/screenshot-password")
+async def disable_screenshot_password_route(body: ScreenshotPasswordDisable):
+    """Disable screenshot encryption. Verifies the password, decrypts every ``.jpg.enc`` file
+    back to plaintext (optionally), removes the verifier and the keychain entry.
+    """
+    state = load_encryption_state()
+    if state is None:
+        raise HTTPException(404, "Screenshot encryption is not configured")
+
+    key = verify_password(body.password, state)
+    if key is None:
+        raise HTTPException(401, "Current password is incorrect")
+
+    if body.decrypt_existing:
+        # Block this request until decryption completes — the user is intentionally winding down
+        # encryption and may want to verify their files are readable before they leave the page.
+        try:
+            ok, fail = await asyncio.get_event_loop().run_in_executor(
+                None, decrypt_all_screenshots, key
+            )
+            await mark_captures_decrypted()
+            logger.info("Bulk decrypt complete: %d ok, %d failed", ok, fail)
+        except Exception:
+            logger.exception("Bulk decrypt failed")
+
+    delete_encryption_state()
+    delete_screenshot_password()
+    from brn_daemon.main import app_state
+    app_state["screenshot_key"] = None
+
+    return {"ok": True, "message": "Screenshot encryption disabled"}

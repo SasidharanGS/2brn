@@ -12,6 +12,7 @@ KEYCHAIN_SERVICE = "2brn"
 KEYCHAIN_USERNAME = "jll_gateway_token"
 KEYCHAIN_CHAT_KEY = "chat_api_key"
 KEYCHAIN_EMBED_KEY = "embed_api_key"
+KEYCHAIN_SCREENSHOT_PASSWORD = "screenshot_password"
 
 
 @dataclass
@@ -35,7 +36,7 @@ class Config:
         model="TEXT_EMBEDDING_3_LARGE",
     ))
     capture_interval_seconds: int = 60
-    purge_months: int = 6
+    purge_months: int = 12
     paused: bool = False
     excluded_apps: list[str] = field(default_factory=list)
     blog_mirror_enabled: bool = True
@@ -65,7 +66,7 @@ def load_config() -> Config:
             chat_provider=_parse_provider(data.get("chat_provider", {})),
             embed_provider=_parse_provider(data.get("embed_provider", {})),
             capture_interval_seconds=data.get("capture_interval_seconds", 60),
-            purge_months=data.get("purge_months", 6),
+            purge_months=data.get("purge_months", 12),
             paused=data.get("paused", False),
             excluded_apps=data.get("excluded_apps", []),
             blog_mirror_enabled=data.get("blog_mirror_enabled", True),
@@ -131,6 +132,28 @@ def set_embed_api_key(token: str) -> None:
         keyring.set_password(KEYCHAIN_SERVICE, KEYCHAIN_EMBED_KEY, token)
     except Exception as exc:
         raise RuntimeError(f"Could not save embed API key to keychain: {exc}") from exc
+
+
+def get_screenshot_password() -> str | None:
+    """Return the screenshot password from the OS keychain (or BRN_SCREENSHOT_PASSWORD env var)."""
+    return get_api_key(KEYCHAIN_SCREENSHOT_PASSWORD, "BRN_SCREENSHOT_PASSWORD")
+
+
+def set_screenshot_password(password: str) -> None:
+    try:
+        import keyring
+        keyring.set_password(KEYCHAIN_SERVICE, KEYCHAIN_SCREENSHOT_PASSWORD, password)
+    except Exception as exc:
+        raise RuntimeError(f"Could not save screenshot password to keychain: {exc}") from exc
+
+
+def delete_screenshot_password() -> None:
+    try:
+        import keyring
+        keyring.delete_password(KEYCHAIN_SERVICE, KEYCHAIN_SCREENSHOT_PASSWORD)
+    except Exception:
+        # already gone — fine
+        pass
 
 
 def get_gateway_token() -> str | None:

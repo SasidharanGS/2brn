@@ -12,7 +12,7 @@ def test_load_config_returns_defaults_when_no_file(tmp_home):
     assert cfg.embed_provider.model == "TEXT_EMBEDDING_3_LARGE"
     assert cfg.embed_provider.type == "jll"
     assert cfg.capture_interval_seconds == 60
-    assert cfg.purge_months == 6
+    assert cfg.purge_months == 12
     assert cfg.paused is False
 
 

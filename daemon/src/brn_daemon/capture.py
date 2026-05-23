@@ -1,3 +1,4 @@
+import io
 import logging
 import platform
 from datetime import datetime, timezone
@@ -164,8 +165,13 @@ def capture_all_monitors() -> list[tuple[int, Image.Image]]:
     return results
 
 
-def save_screenshot(image: Image.Image) -> Path:
-    """Save screenshot as JPEG under ~/.2brn/screenshots/YYYY/MM/DD/<ts>.jpg"""
+def save_screenshot(image: Image.Image, *, key: bytes | None = None) -> Path:
+    """Save screenshot as JPEG under ``~/.2brn/screenshots/YYYY/MM/DD/<ts>.jpg``.
+
+    When ``key`` is provided, the JPEG bytes are encrypted with AES-256-GCM and the file is
+    written with a ``.jpg.enc`` suffix instead. The encryption format is defined in
+    ``brn_daemon.encryption``.
+    """
     now = datetime.now(timezone.utc)
     dir_path = (
         get_brn_home()
@@ -175,6 +181,17 @@ def save_screenshot(image: Image.Image) -> Path:
         / now.strftime("%d")
     )
     dir_path.mkdir(parents=True, exist_ok=True)
-    file_path = dir_path / f"{now.strftime('%H%M%S_%f')}.jpg"
-    image.save(file_path, "JPEG", quality=80)
+
+    if key is None:
+        file_path = dir_path / f"{now.strftime('%H%M%S_%f')}.jpg"
+        image.save(file_path, "JPEG", quality=80)
+        return file_path
+
+    # Encrypted path: render JPEG into memory, encrypt, write blob.
+    from brn_daemon.encryption import encrypt_bytes, ENCRYPTED_EXT
+    buf = io.BytesIO()
+    image.save(buf, "JPEG", quality=80)
+    blob = encrypt_bytes(buf.getvalue(), key)
+    file_path = dir_path / f"{now.strftime('%H%M%S_%f')}{ENCRYPTED_EXT}"
+    file_path.write_bytes(blob)
     return file_path

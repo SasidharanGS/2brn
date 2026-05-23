@@ -33,28 +33,18 @@ async def daily_insights(date: str = Query(...)):
             (lo, hi)
         )
         states = [{"productivity_state": r[0], "count": r[1]} for r in await cur.fetchall()]
-        cap_lo = f"{date}T00:00:00"
-        cap_hi = f"{date}T23:59:59.999999"
         cur = await conn.execute(
             """SELECT
-                 CASE
-                   WHEN window_title LIKE '%YouTube%'    THEN 'YouTube'
-                   WHEN window_title LIKE '%LinkedIn%'   THEN 'LinkedIn'
-                   WHEN window_title LIKE '%GitHub%'     THEN 'GitHub'
-                   WHEN window_title LIKE '%Gmail%'      THEN 'Gmail'
-                   WHEN window_title LIKE '%Google Meet%' THEN 'Google Meet'
-                   WHEN window_title LIKE '%Google Docs%' THEN 'Google Docs'
-                   WHEN window_title LIKE '%Google Sheets%' THEN 'Google Sheets'
-                   WHEN window_title LIKE '%Notion%'     THEN 'Notion'
-                   WHEN window_title LIKE '%ChatGPT%'    THEN 'ChatGPT'
-                   WHEN window_title LIKE '%Stack Overflow%' THEN 'Stack Overflow'
-                   ELSE app_name
-                 END AS effective_app,
-                 COUNT(*) as count
-               FROM captures
-               WHERE captured_at >= ? AND captured_at <= ? AND app_name IS NOT NULL
-               GROUP BY effective_app ORDER BY count DESC LIMIT 10""",
-            (cap_lo, cap_hi)
+                 COALESCE(a.app_name_override, c.app_name) AS effective_app,
+                 COUNT(*) AS count
+               FROM captures c
+               LEFT JOIN activities a ON a.capture_id = c.id
+               WHERE c.captured_at >= ? AND c.captured_at <= ?
+                 AND c.app_name IS NOT NULL
+               GROUP BY effective_app
+               ORDER BY count DESC
+               LIMIT 10""",
+            (lo, hi)
         )
         top_apps = [{"app_name": r[0], "count": r[1]} for r in await cur.fetchall()]
     return {"date": date, "categories": categories, "productivity_states": states, "top_apps": top_apps}

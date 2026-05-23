@@ -263,8 +263,8 @@ Add alongside the existing Joplin server:
   "mcpServers": {
     "joplin": { ... existing ... },
     "2brn": {
-      "command": "/Users/sasidharan.govindan/.nvm/versions/node/v22.22.0/bin/node",
-      "args": ["/Users/sasidharan.govindan/tools/2brn-mcp-server/build/index.js"],
+      "command": "/path/to/node",
+      "args": ["/path/to/2brn-mcp-server/build/index.js"],
       "env": {
         "BRND_URL": "http://127.0.0.1:7842",
         "BRND_TIMEOUT_MS": "3000"
@@ -328,8 +328,8 @@ Add to `~/.openclaude/CLAUDE.md`:
 ```markdown
 ## Session Startup Protocol
 At the start of every session, call `2brn__get_current_context` to understand
-what Sasidharan has been working on. Use this to:
-- Acknowledge recent work without asking him to repeat it
+what the user has been working on. Use this to:
+- Acknowledge recent work without asking them to repeat it
 - Understand current productivity state
 - Have relevant project context pre-loaded
 ```

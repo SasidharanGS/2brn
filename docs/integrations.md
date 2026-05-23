@@ -114,10 +114,10 @@ Both layers are unified in the **2brn chat UI** via RAG — a question like *"wh
 {
   "mcpServers": {
     "joplin": {
-      "command": "/Users/sasidharan.govindan/.nvm/versions/node/v22.22.0/bin/node",
-      "args": ["/Users/sasidharan.govindan/tools/joplin-mcp-server/build/index.js"],
+      "command": "/path/to/node",
+      "args": ["/path/to/joplin-mcp-server/build/index.js"],
       "env": {
-        "JOPLIN_DB_PATH": "/Users/sasidharan.govindan/.config/joplin-desktop/database.sqlite",
+        "JOPLIN_DB_PATH": "/Users/<your-username>/.config/joplin-desktop/database.sqlite",
         "JOPLIN_TOKEN": "<web-clipper-token>",
         "JOPLIN_PORT": "41184"
       }
@@ -186,7 +186,7 @@ npm run build
 | `decision` | `Decisions — YYYY-MM` | Second Brain |
 | `learning` | `Learnings` | Second Brain |
 | `project` | Specific project note (e.g. "2brn — Second Brain") | Project notebook |
-| `person` | Person note (e.g. "Sasidharan Govindan") | Second Brain |
+| `person` | Person note (e.g. "John Smith") | Second Brain |
 
 **Requires Joplin open** (uses Web Clipper write API for append/create).
 
@@ -370,7 +370,7 @@ All notes were migrated from **Microsoft OneNote** (work account) → Joplin on 
 ### Rebuilding the Joplin MCP server after changes
 ```bash
 cd ~/tools/joplin-mcp-server
-/Users/sasidharan.govindan/.nvm/versions/node/v22.22.0/bin/npm run build
+npm run build
 # Then restart openclaude for MCP to reload
 ```
 

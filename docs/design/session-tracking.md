@@ -89,7 +89,7 @@ The short task description is the first line of the LLM-generated summary, trunc
 # 2026-04-25 14:32 — 2brn
 
 **Duration:** 47 minutes  
-**Repo:** `/Users/sasidharan/…/2brn`  
+**Repo:** `/path/to/2brn`  
 **Branch:** `feat/implementation`  
 
 ## Summary
@@ -165,7 +165,7 @@ Add a `PreToolUse` or a one-time write at session start that records:
 {
   "session_id": "uuid-v4",
   "started_at": "2026-04-25T14:32:00+05:30",
-  "working_dir": "/Users/sasidharan/…/2brn",
+  "working_dir": "/path/to/2brn",
   "repo_name": "2brn",
   "git_sha_start": "670dfb6",
   "git_branch": "feat/implementation"

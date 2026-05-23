@@ -3,7 +3,7 @@
 **Version:** 1.0  
 **Date:** 2026-04-25  
 **Status:** Approved design, pending implementation  
-**Owner:** Sasidharan Govindan
+**Owner:** 2brn contributors
 
 ---
 

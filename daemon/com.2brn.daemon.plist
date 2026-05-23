@@ -7,18 +7,18 @@
 
     <key>ProgramArguments</key>
     <array>
-        <string>/Users/sasidharan.govindan/Library/CloudStorage/OneDrive-JLL/Documents/GitHub/2brn/daemon/.venv/bin/python3</string>
+        <string>/path/to/2brn/daemon/.venv/bin/python3</string>
         <string>-m</string>
         <string>brn_daemon.main</string>
     </array>
 
     <key>WorkingDirectory</key>
-    <string>/Users/sasidharan.govindan/Library/CloudStorage/OneDrive-JLL/Documents/GitHub/2brn/daemon</string>
+    <string>/path/to/2brn/daemon</string>
 
     <key>EnvironmentVariables</key>
     <dict>
         <key>PYTHONPATH</key>
-        <string>/Users/sasidharan.govindan/Library/CloudStorage/OneDrive-JLL/Documents/GitHub/2brn/daemon/src</string>
+        <string>/path/to/2brn/daemon/src</string>
         <key>PATH</key>
         <string>/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
     </dict>
@@ -30,10 +30,10 @@
     <true/>
 
     <key>StandardOutPath</key>
-    <string>/Users/sasidharan.govindan/.2brn/daemon.log</string>
+    <string>/Users/<your-username>/.2brn/daemon.log</string>
 
     <key>StandardErrorPath</key>
-    <string>/Users/sasidharan.govindan/.2brn/daemon.log</string>
+    <string>/Users/<your-username>/.2brn/daemon.log</string>
 
     <key>ThrottleInterval</key>
     <integer>10</integer>

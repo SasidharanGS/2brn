@@ -59,7 +59,7 @@ function Select(props: React.SelectHTMLAttributes<HTMLSelectElement> & { options
 // ── Provider catalogues ──────────────────────────────────────────────────────
 
 const CHAT_PROVIDER_OPTIONS = [
-  { value: 'openai_compatible', label: 'OpenAI-Compatible (JLL Gateway, LM Studio, etc.)' },
+  { value: 'openai_compatible', label: 'OpenAI-Compatible (LM Studio, local gateway, etc.)' },
   { value: 'openai',            label: 'OpenAI' },
   { value: 'anthropic',         label: 'Anthropic' },
   { value: 'azure',             label: 'Azure OpenAI' },
@@ -70,7 +70,7 @@ const CHAT_PROVIDER_OPTIONS = [
 ]
 
 const EMBED_PROVIDER_OPTIONS = [
-  { value: 'jll',    label: 'JLL Gateway (custom format)' },
+  { value: 'custom', label: 'Custom (non-standard format, e.g. enterprise gateways)' },
   { value: 'openai', label: 'OpenAI-Compatible (OpenAI, Azure, Ollama, etc.)' },
 ]
 
@@ -261,7 +261,7 @@ export default function Settings() {
         </Field>
         <Field label="Base URL">
           <Input value={chatUrl} onChange={e => setChatUrl(e.target.value)}
-                 placeholder="e.g. http://localhost:8889/v1" />
+                 placeholder="e.g. http://localhost:11434/v1 (Ollama)" />
         </Field>
         <Field label="Model">
           <Input value={chatModel} onChange={e => setChatModel(e.target.value)}
@@ -284,7 +284,7 @@ export default function Settings() {
         </Field>
         <Field label="Base URL">
           <Input value={embedUrl} onChange={e => setEmbedUrl(e.target.value)}
-                 placeholder="e.g. http://localhost:8889" />
+                 placeholder="e.g. http://localhost:11434 (Ollama)" />
         </Field>
         <Field label="Model">
           <Input value={embedModel} onChange={e => setEmbedModel(e.target.value)}

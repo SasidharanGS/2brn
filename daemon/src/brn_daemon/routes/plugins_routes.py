@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 from datetime import UTC, datetime
 
@@ -30,6 +31,23 @@ logger = logging.getLogger(__name__)
 # ---- Pydantic models ------------------------------------------------------
 
 _SAFE_ID_RE = re.compile(r'^[A-Za-z0-9_-]+$')
+
+# Plugins launch a long-running MCP server, never an interactive shell.
+# Disallowing bare shells blocks the `sh -c '<arbitrary>'` arbitrary-exec path
+# (defence-in-depth on top of the loopback API token).
+_SHELL_COMMANDS = frozenset({
+    "sh", "bash", "zsh", "fish", "dash", "csh", "ksh", "tcsh",
+    "cmd", "cmd.exe", "powershell", "powershell.exe", "pwsh", "pwsh.exe",
+})
+
+
+def _reject_shell_command(v: str) -> None:
+    base = os.path.basename(v.strip()).lower()
+    if base in _SHELL_COMMANDS:
+        raise ValueError(
+            f"Plugin command '{base}' is not allowed — point it at the MCP server "
+            "binary/script (e.g. node, python, uvx), not a shell"
+        )
 
 
 def _validate_env_keys(v: dict[str, str] | None) -> dict[str, str] | None:
@@ -79,6 +97,7 @@ class PluginCreate(BaseModel):
             raise ValueError("Plugin command must not contain null bytes")
         if ".." in v:
             raise ValueError("Plugin command must not contain '..' (path traversal)")
+        _reject_shell_command(v)
         return v
 
     @field_validator("env")
@@ -107,6 +126,7 @@ class PluginUpdate(BaseModel):
             raise ValueError("Plugin command must not contain null bytes")
         if ".." in v:
             raise ValueError("Plugin command must not contain '..' (path traversal)")
+        _reject_shell_command(v)
         return v
 
     @field_validator("env")

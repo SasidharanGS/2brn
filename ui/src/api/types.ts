@@ -50,15 +50,38 @@ export interface DailyInsights {
   top_apps: { app_name: string; count: number }[]
 }
 
+export interface ProviderConfig {
+  type: string
+  base_url: string
+  model: string
+  extra_headers?: Record<string, string>
+}
+
 export interface AppSettings {
-  gateway_url: string
-  llm_model: string
-  embed_model: string
+  chat_provider: ProviderConfig
+  embed_provider: ProviderConfig
+  has_chat_key: boolean
+  has_embed_key: boolean
   capture_interval_seconds: number
   purge_months: number
   paused: boolean
-  has_token: boolean
   blog_mirror_enabled: boolean
+}
+
+export interface ProviderConfigUpdate {
+  type?: string
+  base_url?: string
+  model?: string
+  extra_headers?: Record<string, string>
+  api_key?: string
+}
+
+export interface SettingsUpdateRequest {
+  chat_provider?: ProviderConfigUpdate
+  embed_provider?: ProviderConfigUpdate
+  capture_interval_seconds?: number
+  purge_months?: number
+  blog_mirror_enabled?: boolean
 }
 
 export interface AppExclusion {

@@ -9,7 +9,7 @@ from brn_daemon.db import get_brn_home
 logger = logging.getLogger(__name__)
 
 KEYCHAIN_SERVICE = "2brn"
-KEYCHAIN_USERNAME = "jll_gateway_token"
+KEYCHAIN_USERNAME = "gateway_token"
 KEYCHAIN_CHAT_KEY = "chat_api_key"
 KEYCHAIN_EMBED_KEY = "embed_api_key"
 KEYCHAIN_SCREENSHOT_PASSWORD = "screenshot_password"
@@ -27,13 +27,13 @@ class ProviderConfig:
 class Config:
     chat_provider: ProviderConfig = field(default_factory=lambda: ProviderConfig(
         type="openai_compatible",
-        base_url="http://localhost:8889/v1",
-        model="GPT_5_2",
+        base_url="",
+        model="",
     ))
     embed_provider: ProviderConfig = field(default_factory=lambda: ProviderConfig(
-        type="jll",
-        base_url="http://localhost:8889",
-        model="TEXT_EMBEDDING_3_LARGE",
+        type="custom",
+        base_url="",
+        model="",
     ))
     capture_interval_seconds: int = 60
     purge_months: int = 12

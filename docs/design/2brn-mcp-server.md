@@ -187,7 +187,7 @@ You have to re-explain context every single session. This is friction — and it
 {
   "notes": [
     {
-      "title": "JLL AI Gateway",
+      "title": "AI Gateway Setup",
       "notebook": "Projects",
       "excerpt": "The gateway proxies Azure OpenAI. Embeddings use a custom format...",
       "note_id": "abc123",
@@ -263,8 +263,8 @@ Add alongside the existing Joplin server:
   "mcpServers": {
     "joplin": { ... existing ... },
     "2brn": {
-      "command": "/Users/sasidharan.govindan/.nvm/versions/node/v22.22.0/bin/node",
-      "args": ["/Users/sasidharan.govindan/tools/2brn-mcp-server/build/index.js"],
+      "command": "/path/to/node",
+      "args": ["/path/to/2brn-mcp-server/build/index.js"],
       "env": {
         "BRND_URL": "http://127.0.0.1:7842",
         "BRND_TIMEOUT_MS": "3000"
@@ -328,8 +328,8 @@ Add to `~/.openclaude/CLAUDE.md`:
 ```markdown
 ## Session Startup Protocol
 At the start of every session, call `2brn__get_current_context` to understand
-what Sasidharan has been working on. Use this to:
-- Acknowledge recent work without asking him to repeat it
+what the user has been working on. Use this to:
+- Acknowledge recent work without asking them to repeat it
 - Understand current productivity state
 - Have relevant project context pre-loaded
 ```
@@ -392,7 +392,7 @@ They solve different problems. Both should be registered globally.
 
 ## 8. Privacy considerations
 
-The 2brn daemon captures everything — including sensitive apps. The MCP server exposes this to OpenClaude (which is sent to the JLL GPT Gateway).
+The 2brn daemon captures everything — including sensitive apps. The MCP server exposes this to OpenClaude (which is sent to the your AI provider).
 
 Mitigations already in place:
 - App exclusions in 2brn settings (1Password, etc.)

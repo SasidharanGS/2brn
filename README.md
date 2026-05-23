@@ -1,37 +1,33 @@
-# 2brn — Your Second Brain
+# 2brn — Second Brain
 
-A cross-platform desktop app that silently captures what you do on your computer, infers context using AI, and lets you recall anything through natural language chat.
+A local-first personal productivity companion. Captures your screen every 60 seconds, runs OCR, uses an AI provider of your choice to infer what you were doing, and gives you a chat interface to ask questions about your day.
 
 ## Features
 
-- 📸 **Passive capture** — hybrid heartbeat (60s) + change detection via perceptual hash dedup; no redundant frames
-- 🔍 **OCR + AI inference** — Tesseract extracts text; JLL GPT Gateway infers activity summary, task category (`work` / `research` / `play` / `learning` / `communication` / `creative` / `admin` / `other`) and productivity state (`productive` / `focused` / `chilling` / `procrastinating` / `distracted` / `in-meeting` / `idle`)
-- 💬 **Chat interface** — RAG pipeline: ask "what was I doing last Tuesday?" and get accurate, context-grounded answers with streaming
-- 📔 **Daily journal** — auto-generated first-person narrative of your day, editable, regeneratable
-- 📊 **Insights** — time breakdown by category, productivity distribution, top apps by time spent
-- 🔒 **Privacy-first** — raw screenshots never leave your machine; only extracted text summaries sent to the LLM gateway
-- ⚙️ **App exclusions** — block sensitive apps (banking, password managers) from ever being captured
+- 📸 **Screen capture** — periodic screenshots with active app detection
+- 🔍 **OCR + AI inference** — Tesseract extracts text; your AI provider infers activity summary, task category (`work` / `research` / `play` / `learning` / `communication` / `creative` / `admin` / `other`) and productivity state (`productive` / `focused` / `chilling` / `procrastinating` / `distracted` / `in-meeting` / `idle`)
+- 🧠 **Semantic search** — ChromaDB embeddings over all activities
+- 📓 **Joplin integration** — notes are embedded alongside screen activities; daily journal mirrored to Joplin
+- 💬 **Chat** — ask questions about your day, get answers grounded in what you actually did
+- 📊 **Insights** — daily and weekly productivity breakdowns
+- 🔐 **Screenshot encryption** — AES-256-GCM at-rest encryption for screenshots
+- 🖥️ **Cross-platform** — macOS, Windows, Linux via Electron + Python
 
-## Requirements
+## Prerequisites
 
-- **Python 3.12+** with [uv](https://docs.astral.sh/uv/)
-- **Node.js 20+** with [pnpm](https://pnpm.io/)
-- **Tesseract OCR**
-  - macOS: `brew install tesseract`
-  - Linux: `apt install tesseract-ocr`
-  - Windows: [installer](https://github.com/UB-Mannheim/tesseract/wiki)
-- **JLL GPT Gateway** running and accessible (default: `http://localhost:8888`)
+- **Python 3.12+** with [uv](https://docs.astral.sh/uv/) installed
+- **Node.js 20+** with [pnpm](https://pnpm.io/) installed
+- **Tesseract OCR** — `brew install tesseract` / `apt install tesseract-ocr`
+- **An AI provider** for chat and embeddings — any OpenAI-compatible endpoint works:
+  - [OpenAI](https://platform.openai.com/) — `base_url: https://api.openai.com/v1`
+  - [Ollama](https://ollama.com/) (local, no API key needed) — `base_url: http://localhost:11434/v1`
+  - [LM Studio](https://lmstudio.ai/) (local) — `base_url: http://localhost:1234/v1`
+  - [Groq](https://groq.com/), [Together AI](https://www.together.ai/), [Anthropic](https://anthropic.com/), or any other litellm-supported provider
+  - Any OpenAI-compatible proxy or corporate gateway
 
-## Setup
+## Quick Start
 
-### 1. Clone and install
-
-```bash
-git clone <repo-url>
-cd 2brn
-```
-
-### 2. Start the daemon
+### 1. Start the daemon
 
 ```bash
 cd daemon
@@ -39,11 +35,7 @@ uv sync
 uv run python -m brn_daemon.main
 ```
 
-The daemon starts on `http://127.0.0.1:7842`.
-
-### 3. Start the UI
-
-In a new terminal:
+### 2. Start the UI
 
 ```bash
 cd ui
@@ -51,65 +43,78 @@ pnpm install
 pnpm electron:dev
 ```
 
-### 4. Configure gateway token
+### 3. Configure your AI provider
 
-Open the app → **Settings** → enter your JLL GPT Gateway Bearer token. It is stored securely in the OS keychain (not written to disk).
-
-## Data Storage
-
-All data lives in `~/.2brn/`:
-
-| Path | Contents |
-|------|----------|
-| `2brn.db` | SQLite: captures, activities, journals, exclusions |
-| `screenshots/YYYY/MM/DD/` | JPEG captures (~40–80KB each) |
-| `chroma/` | ChromaDB vector embeddings for semantic search |
-| `config.json` | App config (token stored in keychain, not here) |
-| `daemon.log` | Rotating log file |
-
-**Auto-purge:** screenshots older than 6 months are deleted automatically. Configurable in Settings.
+Open the app → **Settings** → fill in your **Chat Provider** and **Embed Provider** details. Your API key is stored securely in the OS keychain (never written to disk).
 
 ## Architecture
 
 ```
-┌────────────────────────────────────────┐
-│  Electron + React UI (port 5173/app)   │
-│  Dashboard · Chat · Journal · Timeline │
-│  Insights · Settings                   │
-└─────────────────┬──────────────────────┘
-                  │ HTTP + SSE (localhost:7842)
-┌─────────────────▼──────────────────────┐
-│  Python 3.12 Daemon (FastAPI)          │
-│  Capture → OCR → Inference Queue      │
-│  ChromaDB · SQLite · APScheduler      │
-└──────────┬─────────────────────────────┘
-           │ OpenAI-compatible API
-┌──────────▼─────────────────────────────┐
-│  JLL GPT Gateway (localhost:8888)      │
-│  Summarization · Embeddings · Chat    │
-└────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────┐
+│  Electron UI (React + TypeScript)                       │
+│  Dashboard │ Chat │ Journal │ Timeline │ Insights        │
+└──────────────────────┬──────────────────────────────────┘
+                       │ HTTP (port 7842)
+┌──────────────────────▼──────────────────────────────────┐
+│  Python Daemon (FastAPI)                                │
+│  capture → OCR → inference → embed → journal → chat     │
+│                                                         │
+│  LOCAL STORAGE          AI Provider (your choice)       │
+│  SQLite + ChromaDB  ←→  /v1/chat/completions            │
+│  ~/.2brn/               /v1/embeddings                  │
+└─────────────────────────────────────────────────────────┘
 ```
 
-## Running Tests
+## Configuration
+
+All config lives in `~/.2brn/config.json`. The easiest way to edit it is through the Settings UI.
+
+| Setting | Description |
+|---|---|
+| Chat Provider | LLM for activity inference, journal generation, and chat |
+| Embed Provider | Embeddings for semantic search — must be OpenAI-compatible or Custom format |
+| Capture interval | Seconds between screenshots (default: 60) |
+| Purge months | Auto-delete screenshots older than N months (default: 12) |
+
+### Embed provider types
+
+- **`openai_compatible`** — standard OpenAI `/v1/embeddings` format (`{"input": [...]}` → `{"data": [{"embedding": [...]}]}`)
+- **`custom`** — non-standard format used by some gateways (`{"inputs": [...]}` → `{"data": {"embeddings": [[...]]}}`)
+
+## Joplin Integration
+
+If you use [Joplin](https://joplinapp.org/) as your notes app, 2brn will embed your notes into the same semantic index as your screen activities. See [docs/integrations.md](docs/integrations.md) for setup details.
+
+## Auto-start (macOS)
 
 ```bash
-cd daemon
-uv run --extra dev pytest tests/ -v
+cp daemon/com.2brn.daemon.plist ~/Library/LaunchAgents/
+launchctl load ~/Library/LaunchAgents/com.2brn.daemon.plist
 ```
 
 ## Tech Stack
 
-| Layer | Technology |
-|-------|-----------|
-| App shell | Electron 31 |
-| UI | React 19 + TypeScript + Tailwind CSS v4 |
-| Charts | Recharts |
-| Daemon | Python 3.12 + FastAPI + uvicorn |
-| Screenshot | mss (cross-platform) |
-| OCR | Tesseract + pytesseract |
-| Dedup | imagehash (wavelet hash) |
-| LLM client | openai SDK → JLL GPT Gateway |
-| Structured storage | SQLite via aiosqlite |
-| Vector search | ChromaDB (embedded) |
-| Scheduling | APScheduler |
-| Package management | uv (Python) + pnpm (Node) |
+| Component | Technology |
+|---|---|
+| UI | Electron 31, React 19, TypeScript, Tailwind CSS |
+| Daemon | Python 3.12, FastAPI, APScheduler |
+| OCR | Tesseract via pytesseract |
+| LLM chat | litellm (100+ providers) |
+| Embeddings | Custom EmbedClient protocol (OpenAI-compatible + custom format) |
+| Vector store | ChromaDB |
+| Database | SQLite via aiosqlite |
+| Encryption | AES-256-GCM via cryptography |
+
+## Development
+
+```bash
+# Run daemon tests
+cd daemon && uv run --extra dev pytest tests/ -v
+
+# TypeScript check
+cd ui && pnpm exec tsc --noEmit
+```
+
+## License
+
+MIT

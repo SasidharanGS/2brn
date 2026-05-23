@@ -1,13 +1,13 @@
 {
   "mcpServers": {
     "joplin": {
-      "command": "/Users/sasidharan.govindan/.nvm/versions/node/v22.22.0/bin/node",
+      "command": "/path/to/node",
       "args": [
-        "/Users/sasidharan.govindan/tools/joplin-mcp-server/build/index.js"
+        "/path/to/joplin-mcp-server/build/index.js"
       ],
       "env": {
-        "JOPLIN_DB_PATH": "/Users/sasidharan.govindan/.config/joplin-desktop/database.sqlite",
-        "JOPLIN_TOKEN": "665e8cd6f888f1a7197c0e842dbc4e280f5475298d75333e7f34d2d67dc9c6970fda2b7f53380b95b8c711b75a14faeba1dd6b6aba44fc2c48d533406dcd51e5",
+        "JOPLIN_DB_PATH": "/Users/<your-username>/.config/joplin-desktop/database.sqlite",
+        "JOPLIN_TOKEN": "<your-joplin-web-clipper-token>",
         "JOPLIN_PORT": "41184"
       }
     }

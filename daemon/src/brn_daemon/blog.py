@@ -41,8 +41,8 @@ def build_blog_prompt(
 
 
 class BlogGenerator:
-    def __init__(self, gateway):
-        self._gateway = gateway
+    def __init__(self, chat_fn):
+        self._chat_fn = chat_fn
 
     async def generate(self, target_date: date) -> str | None:
         date_str = target_date.isoformat()
@@ -77,7 +77,7 @@ class BlogGenerator:
         )
 
         prompt = build_blog_prompt(date_str, summaries, journal_content, joplin_notes)
-        content = await self._gateway.chat_complete([
+        content = await self._chat_fn([
             {"role": "system", "content": BLOG_SYSTEM_PROMPT},
             {"role": "user", "content": prompt},
         ])

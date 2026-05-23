@@ -92,9 +92,9 @@ def parse_inference_response(raw: str) -> InferenceResult:
 
 
 class InferenceQueue:
-    def __init__(self, gateway, db_path_fn, embedding_service=None):
+    def __init__(self, chat_fn, db_path_fn, embedding_service=None):
         self._queue: asyncio.Queue = asyncio.Queue(maxsize=INFERENCE_QUEUE_MAX)
-        self._gateway = gateway
+        self._chat_fn = chat_fn
         self._db_path_fn = db_path_fn
         self._embedding_service = embedding_service
 
@@ -115,7 +115,7 @@ class InferenceQueue:
             active_instructions = await _load_active_instruction_bodies(self._db_path_fn)
             system_prompt = _build_inference_system_prompt(active_instructions)
             user_prompt = build_inference_prompt(app_name, window_title, ocr_text)
-            raw = await self._gateway.chat_complete([
+            raw = await self._chat_fn([
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ])

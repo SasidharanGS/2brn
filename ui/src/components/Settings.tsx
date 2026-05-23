@@ -53,11 +53,15 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 
 export default function Settings() {
   const qc = useQueryClient()
-  const [gatewayUrl, setGatewayUrl]       = useState('')
-  const [gatewayToken, setGatewayToken]   = useState('')
-  const [llmModel, setLlmModel]           = useState('')
-  const [embedModel, setEmbedModel]       = useState('')
-  const [newApp, setNewApp]               = useState('')
+  const [chatType, setChatType]     = useState('')
+  const [chatUrl, setChatUrl]       = useState('')
+  const [chatModel, setChatModel]   = useState('')
+  const [chatKey, setChatKey]       = useState('')
+  const [embedType, setEmbedType]   = useState('')
+  const [embedUrl, setEmbedUrl]     = useState('')
+  const [embedModel, setEmbedModel] = useState('')
+  const [embedKey, setEmbedKey]     = useState('')
+  const [newApp, setNewApp]         = useState('')
   const [saveMessage, setSaveMessage]     = useState('')
   const [blogMirror, setBlogMirror] = useState(true)
 
@@ -65,24 +69,37 @@ export default function Settings() {
   const { data: exclusions = [] } = useQuery({ queryKey: queryKeys.exclusions(), queryFn: api.getExclusions })
 
   useEffect(() => {
-    if (settings && !gatewayUrl) {
-      setGatewayUrl(settings.gateway_url)
-      setLlmModel(settings.llm_model)
-      setEmbedModel(settings.embed_model)
+    if (settings && !chatUrl) {
+      setChatType(settings.chat_provider.type)
+      setChatUrl(settings.chat_provider.base_url)
+      setChatModel(settings.chat_provider.model)
+      setEmbedType(settings.embed_provider.type)
+      setEmbedUrl(settings.embed_provider.base_url)
+      setEmbedModel(settings.embed_provider.model)
       setBlogMirror(settings.blog_mirror_enabled ?? true)
     }
-  }, [settings?.gateway_url]) // eslint-disable-line
+  }, [settings?.chat_provider?.base_url]) // eslint-disable-line
 
   const flash = (msg: string) => { setSaveMessage(msg); setTimeout(() => setSaveMessage(''), 3000) }
 
-  const saveGateway = useMutation({
+  const saveProviders = useMutation({
     mutationFn: () => api.updateSettings({
-      gateway_url: gatewayUrl, llm_model: llmModel, embed_model: embedModel,
-      ...(gatewayToken ? { gateway_token: gatewayToken } : {}),
+      chat_provider: {
+        type: chatType, base_url: chatUrl, model: chatModel,
+        ...(chatKey ? { api_key: chatKey } : {}),
+      },
+      embed_provider: {
+        type: embedType, base_url: embedUrl, model: embedModel,
+        ...(embedKey ? { api_key: embedKey } : {}),
+      },
       blog_mirror_enabled: blogMirror,
     }),
-    onSuccess: () => { setGatewayToken(''); flash('Settings saved'); qc.invalidateQueries({ queryKey: queryKeys.settings() }) },
-    onError:   () => flash('Failed to save'),
+    onSuccess: () => {
+      setChatKey(''); setEmbedKey('')
+      flash('Settings saved')
+      qc.invalidateQueries({ queryKey: queryKeys.settings() })
+    },
+    onError: () => flash('Failed to save'),
   })
 
   const togglePause = useMutation({
@@ -151,32 +168,51 @@ export default function Settings() {
         </div>
       </Section>
 
-      {/* Gateway */}
-      <Section title="JLL GPT Gateway">
-        <Field label="Gateway URL">
-          <Input value={gatewayUrl} onChange={e => setGatewayUrl(e.target.value)} />
+      {/* Chat Provider */}
+      <Section title="Chat Provider">
+        <Field label="Provider Type">
+          <Input value={chatType} onChange={e => setChatType(e.target.value)}
+                 placeholder="openai_compatible / anthropic / ollama / groq" />
         </Field>
-        <Field label="Bearer Token" sublabel={settings.has_token ? '(keychain ✓)' : '(not set)'}>
-          <Input
-            type="password"
-            value={gatewayToken}
-            onChange={e => setGatewayToken(e.target.value)}
-            placeholder="Enter new token to update…"
-          />
+        <Field label="Base URL">
+          <Input value={chatUrl} onChange={e => setChatUrl(e.target.value)}
+                 placeholder="e.g. http://localhost:8889/v1" />
         </Field>
-        <Field label="LLM Model">
-          <Input value={llmModel} onChange={e => setLlmModel(e.target.value)} placeholder="e.g. GPT_5_2" />
+        <Field label="Model">
+          <Input value={chatModel} onChange={e => setChatModel(e.target.value)}
+                 placeholder="e.g. GPT_5_2 / gpt-4o / claude-sonnet-4-6" />
         </Field>
-        <Field label="Embedding Model">
-          <Input value={embedModel} onChange={e => setEmbedModel(e.target.value)} placeholder="e.g. TEXT_EMBEDDING_3_LARGE" />
+        <Field label="API Key" sublabel={settings.has_chat_key ? '(keychain ✓)' : '(not set)'}>
+          <Input type="password" value={chatKey} onChange={e => setChatKey(e.target.value)}
+                 placeholder="Enter new key to update…" />
+        </Field>
+      </Section>
+
+      {/* Embed Provider */}
+      <Section title="Embed Provider">
+        <Field label="Provider Type">
+          <Input value={embedType} onChange={e => setEmbedType(e.target.value)}
+                 placeholder="jll / openai" />
+        </Field>
+        <Field label="Base URL">
+          <Input value={embedUrl} onChange={e => setEmbedUrl(e.target.value)}
+                 placeholder="e.g. http://localhost:8889" />
+        </Field>
+        <Field label="Model">
+          <Input value={embedModel} onChange={e => setEmbedModel(e.target.value)}
+                 placeholder="e.g. TEXT_EMBEDDING_3_LARGE / text-embedding-3-large" />
+        </Field>
+        <Field label="API Key" sublabel={settings.has_embed_key ? '(keychain ✓)' : '(not set)'}>
+          <Input type="password" value={embedKey} onChange={e => setEmbedKey(e.target.value)}
+                 placeholder="Enter new key to update…" />
         </Field>
         <button
-          onClick={() => saveGateway.mutate()}
-          disabled={saveGateway.isPending}
+          onClick={() => saveProviders.mutate()}
+          disabled={saveProviders.isPending}
           className="px-5 py-2 rounded-[9px] text-[13px] font-semibold transition-all disabled:opacity-40"
           style={{ background: 'var(--accent)', color: '#fff' }}
         >
-          {saveGateway.isPending ? 'Saving…' : 'Save Gateway Settings'}
+          {saveProviders.isPending ? 'Saving…' : 'Save Provider Settings'}
         </button>
       </Section>
 

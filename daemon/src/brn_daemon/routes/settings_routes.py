@@ -1,69 +1,107 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from brn_daemon.config import load_config, save_config, get_gateway_token, set_gateway_token
+from brn_daemon.config import (
+    load_config, save_config,
+    get_chat_api_key, get_embed_api_key,
+    set_chat_api_key, set_embed_api_key,
+)
 import aiosqlite
 from brn_daemon.db import get_db_path
 
 router = APIRouter()
 
+
+class ProviderConfigOut(BaseModel):
+    type: str
+    base_url: str
+    model: str
+    extra_headers: dict = {}
+
+
 class SettingsResponse(BaseModel):
-    gateway_url: str
-    llm_model: str
-    embed_model: str
+    chat_provider: ProviderConfigOut
+    embed_provider: ProviderConfigOut
+    has_chat_key: bool
+    has_embed_key: bool
     capture_interval_seconds: int
     purge_months: int
     paused: bool
-    has_token: bool
     blog_mirror_enabled: bool
 
+
+class ProviderConfigIn(BaseModel):
+    type: str | None = None
+    base_url: str | None = None
+    model: str | None = None
+    extra_headers: dict | None = None
+    api_key: str | None = None
+
+
 class SettingsUpdateRequest(BaseModel):
-    gateway_url: str | None = None
-    gateway_token: str | None = None
-    llm_model: str | None = None
-    embed_model: str | None = None
+    chat_provider: ProviderConfigIn | None = None
+    embed_provider: ProviderConfigIn | None = None
     capture_interval_seconds: int | None = None
     purge_months: int | None = None
     blog_mirror_enabled: bool | None = None
 
+
 class ExclusionRequest(BaseModel):
     app_name: str
+
 
 @router.get("/settings", response_model=SettingsResponse)
 async def get_settings():
     cfg = load_config()
+    cp = cfg.chat_provider
+    ep = cfg.embed_provider
     return SettingsResponse(
-        gateway_url=cfg.gateway_url,
-        llm_model=cfg.llm_model,
-        embed_model=cfg.embed_model,
+        chat_provider=ProviderConfigOut(type=cp.type, base_url=cp.base_url, model=cp.model, extra_headers=cp.extra_headers),
+        embed_provider=ProviderConfigOut(type=ep.type, base_url=ep.base_url, model=ep.model, extra_headers=ep.extra_headers),
+        has_chat_key=bool(get_chat_api_key()),
+        has_embed_key=bool(get_embed_api_key()),
         capture_interval_seconds=cfg.capture_interval_seconds,
         purge_months=cfg.purge_months,
         paused=cfg.paused,
-        has_token=bool(get_gateway_token()),
         blog_mirror_enabled=cfg.blog_mirror_enabled,
     )
+
 
 @router.put("/settings")
 async def update_settings(body: SettingsUpdateRequest):
     cfg = load_config()
-    if body.gateway_url is not None:
-        cfg.gateway_url = body.gateway_url
-    if body.llm_model is not None:
-        cfg.llm_model = body.llm_model
-    if body.embed_model is not None:
-        cfg.embed_model = body.embed_model
+    if body.chat_provider:
+        p = body.chat_provider
+        if p.type is not None:
+            cfg.chat_provider.type = p.type
+        if p.base_url is not None:
+            cfg.chat_provider.base_url = p.base_url
+        if p.model is not None:
+            cfg.chat_provider.model = p.model
+        if p.extra_headers is not None:
+            cfg.chat_provider.extra_headers = p.extra_headers
+        if p.api_key:
+            set_chat_api_key(p.api_key)
+    if body.embed_provider:
+        p = body.embed_provider
+        if p.type is not None:
+            cfg.embed_provider.type = p.type
+        if p.base_url is not None:
+            cfg.embed_provider.base_url = p.base_url
+        if p.model is not None:
+            cfg.embed_provider.model = p.model
+        if p.extra_headers is not None:
+            cfg.embed_provider.extra_headers = p.extra_headers
+        if p.api_key:
+            set_embed_api_key(p.api_key)
     if body.capture_interval_seconds is not None:
         cfg.capture_interval_seconds = body.capture_interval_seconds
     if body.purge_months is not None:
         cfg.purge_months = body.purge_months
     if body.blog_mirror_enabled is not None:
         cfg.blog_mirror_enabled = body.blog_mirror_enabled
-    if body.gateway_token is not None:
-        try:
-            set_gateway_token(body.gateway_token)
-        except RuntimeError as exc:
-            raise HTTPException(500, f"Token save failed: {exc}") from exc
     save_config(cfg)
     return {"ok": True}
+
 
 @router.post("/settings/paused")
 async def set_paused(paused: bool):
@@ -74,6 +112,7 @@ async def set_paused(paused: bool):
     app_state["paused"] = paused
     return {"ok": True, "paused": paused}
 
+
 @router.get("/settings/exclusions")
 async def list_exclusions():
     async with aiosqlite.connect(get_db_path()) as conn:
@@ -81,6 +120,7 @@ async def list_exclusions():
         cur = await conn.execute("SELECT app_name, added_at FROM app_exclusions ORDER BY app_name")
         rows = await cur.fetchall()
     return [dict(r) for r in rows]
+
 
 @router.post("/settings/exclusions")
 async def add_exclusion(body: ExclusionRequest):
@@ -93,6 +133,7 @@ async def add_exclusion(body: ExclusionRequest):
             raise HTTPException(409, f"{body.app_name} is already excluded")
     app_state["exclusions_dirty"] = True
     return {"ok": True}
+
 
 @router.post("/settings/resync-chroma")
 async def resync_chroma():
@@ -140,7 +181,6 @@ async def resync_chroma():
             synced += 1
         return synced
 
-    # Run in background so the HTTP response returns immediately
     asyncio.create_task(_run_backfill())
     return {"ok": True, "message": "ChromaDB re-sync started in background"}
 
@@ -158,11 +198,9 @@ async def chroma_status():
             "SELECT COUNT(*) FROM activities WHERE chroma_id IS NOT NULL AND chroma_id != ''"
         )
         embedded = (await cur.fetchone())[0]
-    # Reuse the shared ChromaStore instance — avoids opening ChromaDB files on every request
     chroma = app_state.get("chroma_store")
     if chroma is None:
         from brn_daemon.embeddings import ChromaStore
         chroma = ChromaStore()
     chroma_count = chroma.collection.count()
     return {"total_activities": total, "embedded": embedded, "chroma_count": chroma_count}
-

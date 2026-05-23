@@ -41,6 +41,7 @@ from brn_daemon.ocr import extract_text, is_text_sparse
 from brn_daemon.plugins import EventBus, EventNames, PluginOrchestrator
 from brn_daemon.providers import make_embed_client
 from brn_daemon.purge import purge_old_captures
+from brn_daemon.timeutil import utc_now_iso
 
 
 class JsonFormatter(logging.Formatter):
@@ -318,7 +319,9 @@ async def _startup_backfill_journal(
     event_bus,
     schedule: ScheduleConfig,
 ) -> None:
-    now = datetime.now(UTC)
+    # Local clock: APScheduler fires the journal job at the local schedule hour,
+    # so the "have we already passed it today?" check must be local too.
+    now = datetime.now()
     if now.hour < schedule.hour or (now.hour == schedule.hour and now.minute < schedule.minute):
         return
     today = dt_date.today()
@@ -335,7 +338,8 @@ async def _startup_backfill_blog(
     event_bus,
     schedule: "BlogScheduleConfig",
 ) -> None:
-    now = datetime.now(UTC)
+    # Local clock — see _startup_backfill_journal.
+    now = datetime.now()
     if schedule.frequency == "monthly" and now.day != schedule.day:
         return
     if schedule.frequency == "weekly" and schedule.days_of_week:
@@ -473,7 +477,7 @@ async def _capture_loop(cfg, inference_queue: InferenceQueue):
             async with aiosqlite.connect(get_db_path()) as conn:
                 for item, ocr_text in zip(pending, ocr_results):
                     monitor_idx, img, monitor_rect, app_name, window_title, trigger, file_path, current_phash = item
-                    now_iso = datetime.now(UTC).isoformat()
+                    now_iso = utc_now_iso()
                     cur = await conn.execute(
                         "INSERT INTO captures (captured_at, app_name, window_title, file_path, "
                         "ocr_text, phash, trigger, monitor_index) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
@@ -484,7 +488,7 @@ async def _capture_loop(cfg, inference_queue: InferenceQueue):
                     capture_id: int = cur.lastrowid  # type: ignore[assignment]
 
                     if not is_text_sparse(ocr_text):
-                        await inference_queue.enqueue(capture_id, app_name, window_title, ocr_text)
+                        await inference_queue.enqueue(capture_id, app_name, window_title, ocr_text, now_iso)
                         logger.info("Capture #%d → inference queued", capture_id)
                     else:
                         logger.info("Capture #%d → saved (sparse text, skipping inference)", capture_id)

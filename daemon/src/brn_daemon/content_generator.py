@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 import aiosqlite
 
 from brn_daemon.db import get_db_path
+from brn_daemon.timeutil import local_day_bounds_utc
 
 logger = logging.getLogger(__name__)
 
@@ -27,17 +28,20 @@ async def load_active_instruction_bodies() -> list[str]:
 
 
 async def fetch_day_summaries(date_str: str) -> list[str]:
-    """Return non-empty activity summaries for the given calendar day (YYYY-MM-DD).
+    """Return non-empty activity summaries for the given LOCAL calendar day.
 
-    Uses naive UTC ISO bounds consistent with how started_at is stored.
+    ``started_at`` is stored as naive UTC, so a local day maps to a UTC window
+    offset by the user's timezone (see ``brn_daemon.timeutil``). Under UTC the
+    bounds are the plain calendar-day strings.
     """
+    lo, hi = local_day_bounds_utc(date_str)
     async with aiosqlite.connect(get_db_path()) as conn:
         cur = await conn.execute(
             "SELECT summary FROM activities "
             "WHERE started_at >= ? AND started_at <= ? "
             "AND summary IS NOT NULL AND summary != '' "
             "ORDER BY started_at",
-            (f"{date_str}T00:00:00", f"{date_str}T23:59:59.999999"),
+            (lo, hi),
         )
         rows = await cur.fetchall()
     return [r[0] for r in rows]

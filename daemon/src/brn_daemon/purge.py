@@ -8,7 +8,7 @@ from brn_daemon.db import get_db_path
 logger = logging.getLogger(__name__)
 
 
-async def purge_old_captures(months: int = 6) -> int:
+async def purge_old_captures(months: int = 12) -> int:
     cutoff = datetime.now(timezone.utc) - timedelta(days=months * 30)
     cutoff_str = cutoff.isoformat()
     deleted_count = 0

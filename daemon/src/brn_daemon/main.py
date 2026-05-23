@@ -13,7 +13,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from brn_daemon.db import init_db, get_db_path
-from brn_daemon.config import load_config
+from brn_daemon.config import load_config, get_screenshot_password
+from brn_daemon.encryption import load_encryption_state, verify_password
 from brn_daemon.llm import make_chat_fn
 from brn_daemon.providers import make_embed_client
 from brn_daemon.capture import capture_all_monitors_with_rects, get_active_app, get_app_for_monitor, get_windows_snapshot, save_screenshot
@@ -52,6 +53,7 @@ class AppState(TypedDict, total=False):
     blog_generating: set[str]
     chroma_store: ChromaStore | None
     exclusions_dirty: bool
+    screenshot_key: bytes | None
 
 
 app_state: AppState = {
@@ -66,7 +68,30 @@ app_state: AppState = {
     "blog_generating": set(),
     "chroma_store": None,
     "exclusions_dirty": True,
+    "screenshot_key": None,
 }
+
+
+def _load_screenshot_key() -> bytes | None:
+    """Derive the screenshot encryption key from the keychain password.
+
+    Returns ``None`` when encryption is disabled (no password set) or when verification fails
+    (wrong/corrupted password). A failure is logged but does not crash the daemon — captures
+    fall back to plaintext until the user re-sets the password.
+    """
+    state = load_encryption_state()
+    if state is None:
+        return None
+    password = get_screenshot_password()
+    if not password:
+        logger.warning("Screenshot encryption is initialised but no password is in keychain — captures will be plaintext")
+        return None
+    key = verify_password(password, state)
+    if key is None:
+        logger.error("Screenshot password in keychain does not match stored verifier — captures will be plaintext")
+        return None
+    logger.info("Screenshot encryption: enabled")
+    return key
 
 
 @asynccontextmanager
@@ -74,6 +99,7 @@ async def lifespan(app: FastAPI):
     await init_db()
     cfg = load_config()
     app_state["paused"] = cfg.paused
+    app_state["screenshot_key"] = _load_screenshot_key()
 
     chat_fn, stream_fn = make_chat_fn()
     embed_client = make_embed_client()
@@ -264,7 +290,7 @@ async def _capture_loop(cfg, inference_queue: InferenceQueue):
                     continue
 
                 trigger = "heartbeat" if is_heartbeat else "change"
-                file_path = save_screenshot(img)
+                file_path = save_screenshot(img, key=app_state.get("screenshot_key"))
                 prev_phashes[monitor_idx] = current_phash
                 pending.append((monitor_idx, img, monitor_rect, app_name, window_title, trigger, file_path, current_phash))
 

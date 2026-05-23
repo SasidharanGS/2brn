@@ -93,6 +93,21 @@ def test_get_app_for_monitor_skips_high_layers():
     assert app_name_26 != "SystemUIServer"
 
 
+def test_save_screenshot_encrypted_writes_enc_file(tmp_home):
+    """When a key is passed, the file is written with a .jpg.enc suffix and the bytes round-trip."""
+    from brn_daemon.capture import save_screenshot
+    from brn_daemon.encryption import ENCRYPTED_EXT, decrypt_bytes, derive_key, SALT_LENGTH
+    key = derive_key("test-password-1234", b"\x11" * SALT_LENGTH)
+    img = _make_mock_screenshot(color=(50, 100, 150))
+    path = save_screenshot(img, key=key)
+    assert path.exists()
+    assert str(path).endswith(ENCRYPTED_EXT)
+
+    # Decrypt and verify it's a valid JPEG (starts with JPEG SOI marker 0xFFD8)
+    pt = decrypt_bytes(path.read_bytes(), key)
+    assert pt[:2] == b"\xff\xd8"
+
+
 def test_capture_all_monitors_with_rects_returns_tuples():
     """Each element should be (int, PIL.Image, dict with left/top/width/height)."""
     from brn_daemon.capture import capture_all_monitors_with_rects

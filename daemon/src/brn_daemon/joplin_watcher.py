@@ -113,11 +113,11 @@ class JoplinWatcher:
 
     def __init__(
         self,
-        gateway,
+        embed_client,
         chroma_client,
         db_path: Path | None = None,
     ):
-        self._gateway = gateway
+        self._embed_client = embed_client
         self._chroma_client = chroma_client
         self._db_path = db_path or DEFAULT_JOPLIN_DB
         self._collection = None
@@ -220,8 +220,8 @@ class JoplinWatcher:
         note_id = note["id"]
         notebook = note.get("notebook") or ""
 
-        # Batch-embed all chunks for this note in a single gateway call
-        embeddings = await self._gateway.embed_batch(chunks)
+        # Batch-embed all chunks for this note in a single embed_client call
+        embeddings = await self._embed_client.embed_batch(chunks)
 
         ids = [f"joplin-{note_id}-{i}" for i in range(len(chunks))]
         metadatas = [

@@ -90,8 +90,8 @@ def _date_to_note_title(d: date) -> str:
 
 
 class JournalGenerator:
-    def __init__(self, gateway):
-        self._gateway = gateway
+    def __init__(self, chat_fn):
+        self._chat_fn = chat_fn
 
     async def generate(self, target_date: date) -> str | None:
         """Generate a full-day journal for target_date. Returns content or None if skipped."""
@@ -122,7 +122,7 @@ class JournalGenerator:
         prompt = build_journal_prompt(date_str, summaries)
         active_instructions = await _load_active_instruction_bodies()
         system_prompt = _build_journal_system_prompt(active_instructions)
-        content = await self._gateway.chat_complete([
+        content = await self._chat_fn([
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": prompt},
         ])
@@ -239,8 +239,8 @@ class ResumeUpdater:
     Falls back silently if the gateway is down or Joplin is not running.
     """
 
-    def __init__(self, gateway, token: str = "", port: int = 41184):
-        self._gateway = gateway
+    def __init__(self, chat_fn, token: str = "", port: int = 41184):
+        self._chat_fn = chat_fn
         self._token = token
         self._port = port
 
@@ -316,7 +316,7 @@ class ResumeUpdater:
         )
 
         try:
-            response = await self._gateway.chat_complete([
+            response = await self._chat_fn([
                 {"role": "system", "content": RESUME_UPDATE_SYSTEM_PROMPT},
                 {"role": "user", "content": user_prompt},
             ])

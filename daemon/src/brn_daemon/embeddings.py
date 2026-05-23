@@ -85,13 +85,13 @@ class ChromaStore:
 
 
 class EmbeddingService:
-    def __init__(self, gateway, chroma_store: ChromaStore):
-        self._gateway = gateway
+    def __init__(self, embed_client, chroma_store: ChromaStore):
+        self._embed_client = embed_client
         self._store = chroma_store
 
     async def embed_activity(self, activity_id: int, summary: str, metadata: dict) -> None:
         try:
-            embedding = await self._gateway.embed(summary)
+            embedding = await self._embed_client.embed(summary)
             doc_id = f"activity-{activity_id}"
             self._store.add(doc_id=doc_id, text=summary, metadata=metadata, embedding=embedding)
             async with aiosqlite.connect(get_db_path()) as conn:

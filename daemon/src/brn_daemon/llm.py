@@ -57,6 +57,8 @@ async def chat_complete(
     for attempt in range(_MAX_RETRIES):
         try:
             resp = await litellm.acompletion(**kwargs)
+            if resp is None or not resp.choices:
+                raise ValueError("Provider returned empty response (check base_url and model name)")
             return resp.choices[0].message.content
         except Exception as exc:
             wait = 2 ** attempt
@@ -81,6 +83,10 @@ async def chat_stream(
 
     try:
         resp = await litellm.acompletion(**kwargs)
+        if resp is None:
+            logger.error("Chat stream failed: provider returned None (check base_url and model name)")
+            yield "Error: provider returned empty response"
+            return
     except Exception as exc:
         logger.error("Chat stream failed: %s", exc)
         yield f"Error: {exc}"

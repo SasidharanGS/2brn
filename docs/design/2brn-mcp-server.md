@@ -187,7 +187,7 @@ You have to re-explain context every single session. This is friction — and it
 {
   "notes": [
     {
-      "title": "JLL AI Gateway",
+      "title": "AI Gateway Setup",
       "notebook": "Projects",
       "excerpt": "The gateway proxies Azure OpenAI. Embeddings use a custom format...",
       "note_id": "abc123",
@@ -392,7 +392,7 @@ They solve different problems. Both should be registered globally.
 
 ## 8. Privacy considerations
 
-The 2brn daemon captures everything — including sensitive apps. The MCP server exposes this to OpenClaude (which is sent to the JLL GPT Gateway).
+The 2brn daemon captures everything — including sensitive apps. The MCP server exposes this to OpenClaude (which is sent to the your AI provider).
 
 Mitigations already in place:
 - App exclusions in 2brn settings (1Password, etc.)

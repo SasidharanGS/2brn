@@ -56,6 +56,9 @@ design-previews/
 # ── One-time migration scripts (done) ─────────────────────────────────────────
 scripts/
 
+# ── Internal design docs with employer-specific context ───────────────────────
+docs/superpowers/specs/
+
 # ── OpenClaude plan working files (keep docs/design/ but not openclaude plans dir)
 .openclaude/
 

@@ -78,3 +78,26 @@ async def test_chat_complete_retries_on_failure():
             )
     assert result == "ok"
     assert call_count == 3
+
+
+async def test_chat_stream_yields_chunks():
+    async def mock_stream():
+        chunks = ["Hello", " world", "!"]
+        for c in chunks:
+            chunk = MagicMock()
+            chunk.choices = [MagicMock()]
+            chunk.choices[0].delta.content = c
+            yield chunk
+
+    with patch("brn_daemon.llm.litellm.acompletion", AsyncMock(return_value=mock_stream())):
+        results = []
+        async for chunk in chat_stream(
+            messages=[{"role": "user", "content": "hi"}],
+            provider_type="openai_compatible",
+            base_url="http://localhost:8889/v1",
+            api_key="1",
+            model="GPT_5_2",
+            extra_headers={},
+        ):
+            results.append(chunk)
+    assert results == ["Hello", " world", "!"]

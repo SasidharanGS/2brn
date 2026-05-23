@@ -12,6 +12,7 @@ dependencies = [
     "imagehash>=4.3",
     "Pillow>=10.0",
     "litellm>=1.40",
+    "openai>=1.30",
     "keyring>=25.0",
     "APScheduler>=3.10",
     "sse-starlette>=2.1",

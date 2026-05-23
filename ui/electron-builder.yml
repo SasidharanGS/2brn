@@ -1,0 +1,23 @@
+appId: com.sasidharan.2brn
+productName: 2brn
+directories:
+  output: release
+  buildResources: build
+
+mac:
+  icon: build/icon.icns
+  target:
+    - target: dmg
+      arch: [arm64, x64]
+  category: public.app-category.productivity
+
+dmg:
+  title: "2brn"
+
+extraResources:
+  - from: ../daemon/src
+    to: daemon/src
+  - from: ../daemon/.venv
+    to: daemon/.venv
+  - from: ../daemon/pyproject.toml
+    to: daemon/pyproject.toml

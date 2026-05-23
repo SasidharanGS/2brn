@@ -5,12 +5,12 @@ from brn_daemon.config import load_config, save_config, Config, ProviderConfig
 
 def test_load_config_returns_defaults_when_no_file(tmp_home):
     cfg = load_config()
-    assert cfg.chat_provider.base_url == "http://localhost:8889/v1"
-    assert cfg.chat_provider.model == "GPT_5_2"
+    assert cfg.chat_provider.base_url == ""
+    assert cfg.chat_provider.model == ""
     assert cfg.chat_provider.type == "openai_compatible"
-    assert cfg.embed_provider.base_url == "http://localhost:8889"
-    assert cfg.embed_provider.model == "TEXT_EMBEDDING_3_LARGE"
-    assert cfg.embed_provider.type == "jll"
+    assert cfg.embed_provider.base_url == ""
+    assert cfg.embed_provider.model == ""
+    assert cfg.embed_provider.type == "custom"
     assert cfg.capture_interval_seconds == 60
     assert cfg.purge_months == 12
     assert cfg.paused is False

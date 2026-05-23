@@ -1,0 +1,64 @@
+# ── Node ──────────────────────────────────────────────────────────────────────
+node_modules/
+build/
+.next/
+seeds/
+pods/service-connections/
+
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+*.egg-info/
+dist/
+*.log
+
+# ── macOS ─────────────────────────────────────────────────────────────────────
+.DS_Store
+**/.DS_Store
+
+# ── Secrets / env ─────────────────────────────────────────────────────────────
+.env
+daemon/.env
+*.env.local
+
+# ── Electron / Vite build output ──────────────────────────────────────────────
+ui/dist/
+
+# ── Images, presentations, notebooks (working artefacts) ──────────────────────
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.pptx
+*.ppt
+
+# ── Legacy Dendron vault (fully migrated to Joplin 2026-04-19) ─────────────────
+notes/
+notes_old/
+.dendron.*
+dendron.yml
+dendron.code-workspace
+
+# ── OpenClaude / tooling session artefacts ────────────────────────────────────
+.playwright-mcp/
+.superpowers/
+design-previews/
+
+# ── One-time migration scripts (done) ─────────────────────────────────────────
+scripts/
+
+# ── OpenClaude plan working files (keep docs/design/ but not openclaude plans dir)
+.openclaude/
+
+ui/release/
+
+# Git worktrees
+.worktrees/
+
+# Tool caches
+.vite/
+.sisyphus/
+.worktrees/

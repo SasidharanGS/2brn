@@ -195,7 +195,7 @@ export default function Insights() {
   const [pieActive,  setPieActive]  = useState(false)
   const [pieSegment, setPieSegment] = useState(-1)
 
-  const { data: summary, isLoading } = useQuery({
+  const { data: summary, isLoading, isError } = useQuery({
     queryKey: queryKeys.insightsSummary(selectedDate, period),
     queryFn: () => api.getInsightsSummary(selectedDate, period),
   })
@@ -215,6 +215,13 @@ export default function Insights() {
           {[...Array(4)].map((_, i) => <div key={i} className="skeleton h-64 rounded-[12px]" />)}
         </div>
 
+      ) : isError ? (
+        <div className="flex flex-col items-center justify-center py-24">
+          <div className="text-4xl mb-4 opacity-20">⚠️</div>
+          <div className="text-[14px]" style={{ color: 'var(--text-muted)' }}>
+            Couldn't load insights — the daemon may be unavailable.
+          </div>
+        </div>
       ) : !summary || summary.categories.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-24">
           <div className="text-4xl mb-4 opacity-20">◎</div>

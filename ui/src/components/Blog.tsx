@@ -67,7 +67,7 @@ export default function Blog() {
     return { label: 'Daily at', detail: time }
   })()
 
-  const { data: post } = useQuery({
+  const { data: post, isError: postError } = useQuery({
     queryKey: queryKeys.blog(selectedDate),
     queryFn:  () => api.getBlogPost(selectedDate),
     throwOnError: false,
@@ -224,7 +224,17 @@ export default function Blog() {
       )}
 
       {/* States */}
-      {!post ? (
+      {postError ? (
+        <div
+          className="rounded-[12px] border p-10 text-center"
+          style={{ background: 'var(--bg-surface)', borderColor: 'var(--border)' }}
+        >
+          <div className="text-4xl mb-4 opacity-20">⚠️</div>
+          <p className="text-[14px]" style={{ color: 'var(--text-muted)' }}>
+            Couldn't load the blog post for {selectedDate}. The daemon may be unavailable.
+          </p>
+        </div>
+      ) : !post ? (
         <div
           className="rounded-[12px] border p-10 text-center"
           style={{ background: 'var(--bg-surface)', borderColor: 'var(--border)' }}

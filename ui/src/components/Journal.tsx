@@ -42,7 +42,7 @@ export default function Journal() {
     },
   })
 
-  const { data: entry } = useQuery({
+  const { data: entry, isError: entryError } = useQuery({
     queryKey: queryKeys.journal(selectedDate),
     queryFn:  () => api.getJournal(selectedDate),
     throwOnError: false,
@@ -138,7 +138,17 @@ export default function Journal() {
       )}
 
       {/* States */}
-      {!entry ? (
+      {entryError ? (
+        <div
+          className="rounded-[12px] border p-10 text-center"
+          style={{ background: 'var(--bg-surface)', borderColor: 'var(--border)' }}
+        >
+          <div className="text-4xl mb-4 opacity-20">⚠️</div>
+          <p className="text-[14px]" style={{ color: 'var(--text-muted)' }}>
+            Couldn't load the journal for {selectedDate}. The daemon may be unavailable.
+          </p>
+        </div>
+      ) : !entry ? (
         <div
           className="rounded-[12px] border p-10 text-center"
           style={{ background: 'var(--bg-surface)', borderColor: 'var(--border)' }}

@@ -35,6 +35,17 @@ from brn_daemon.encryption import (
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
+# Hold strong references to fire-and-forget background tasks: asyncio keeps only
+# weak references, so without this the GC can cancel a long backfill/encrypt job
+# mid-run. The done-callback drops the reference (and surfaces any exception).
+_background_tasks: set[asyncio.Task] = set()
+
+
+def _spawn(coro) -> None:
+    task = asyncio.create_task(coro)
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
+
 
 class ProviderConfigOut(BaseModel):
     type: str
@@ -288,7 +299,7 @@ async def resync_chroma():
             synced += 1
         return synced
 
-    asyncio.create_task(_run_backfill())
+    _spawn(_run_backfill())
     return {"ok": True, "message": "ChromaDB re-sync started in background"}
 
 
@@ -357,7 +368,7 @@ async def set_screenshot_password_route(body: ScreenshotPasswordSet):
                 logger.info("Bulk encrypt complete: %d ok, %d failed, %d DB rows updated", ok, fail, rows)
             except Exception:
                 logger.exception("Bulk encrypt failed")
-        asyncio.create_task(_bulk_encrypt())
+        _spawn(_bulk_encrypt())
 
     return {"ok": True, "message": "Screenshot encryption enabled"}
 
@@ -406,7 +417,7 @@ async def change_screenshot_password_route(body: ScreenshotPasswordChange):
             logger.info("Bulk re-encrypt complete: %d ok, %d failed", ok, fail)
         except Exception:
             logger.exception("Bulk re-encrypt failed")
-    asyncio.create_task(_bulk_reencrypt())
+    _spawn(_bulk_reencrypt())
 
     return {"ok": True, "message": "Screenshot password changed"}
 

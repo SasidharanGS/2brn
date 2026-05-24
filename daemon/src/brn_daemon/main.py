@@ -34,7 +34,7 @@ from brn_daemon.config import (
     get_screenshot_password,
     load_config,
 )
-from brn_daemon.db import get_db_path, init_db
+from brn_daemon.db import get_conn, get_db_path, init_db
 from brn_daemon.dedup import compute_phash, is_duplicate
 from brn_daemon.embeddings import ChromaStore, EmbeddingService
 from brn_daemon.encryption import load_encryption_state, verify_password
@@ -485,7 +485,7 @@ async def _capture_loop(cfg, inference_queue: InferenceQueue):
             ocr_results = await asyncio.gather(*ocr_tasks)
 
             # ── Phase 3: DB inserts + inference enqueue ────────────────────────
-            async with aiosqlite.connect(get_db_path()) as conn:
+            async with get_conn() as conn:
                 for item, ocr_text in zip(pending, ocr_results):
                     monitor_idx, img, monitor_rect, app_name, window_title, trigger, file_path, current_phash = item
                     now_iso = utc_now_iso()

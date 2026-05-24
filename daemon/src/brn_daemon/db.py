@@ -1,4 +1,5 @@
 import os
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 import aiosqlite
@@ -12,6 +13,22 @@ def get_brn_home() -> Path:
 
 def get_db_path() -> Path:
     return get_brn_home() / "2brn.db"
+
+
+@asynccontextmanager
+async def get_conn(path: str | Path | None = None):
+    """Open an aiosqlite connection with foreign keys + a busy timeout enabled.
+
+    foreign_keys must be set per-connection for ON DELETE CASCADE to fire, and
+    busy_timeout lets concurrent writers (inference workers, the capture loop,
+    request handlers) wait briefly for the write lock instead of raising
+    'database is locked'. WAL itself is already enabled in init_db().
+    """
+    async with aiosqlite.connect(path or get_db_path()) as conn:
+        await conn.execute("PRAGMA foreign_keys = ON")
+        await conn.execute("PRAGMA busy_timeout = 5000")
+        yield conn
+
 
 async def init_db() -> None:
     home = get_brn_home()

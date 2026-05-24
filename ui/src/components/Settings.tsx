@@ -105,7 +105,8 @@ export default function Settings() {
   const [embedKey, setEmbedKey]     = useState('')
   const [newApp, setNewApp]         = useState('')
   const [saveMessage, setSaveMessage]     = useState('')
-  const [blogMirror, setBlogMirror] = useState(true)
+  const [joplinEnabled, setJoplinEnabled] = useState(false)
+  const [joplinDbPath, setJoplinDbPath]   = useState('')
 
   // Screenshot encryption form state
   const [encPwd, setEncPwd]         = useState('')
@@ -127,7 +128,8 @@ export default function Settings() {
       setEmbedType(settings.embed_provider.type)
       setEmbedUrl(settings.embed_provider.base_url)
       setEmbedModel(settings.embed_provider.model)
-      setBlogMirror(settings.blog_mirror_enabled ?? true)
+      setJoplinEnabled(settings.joplin_enabled ?? false)
+      setJoplinDbPath(settings.joplin_db_path ?? '')
     }
   }, [settings?.chat_provider?.base_url]) // eslint-disable-line
 
@@ -143,7 +145,8 @@ export default function Settings() {
         type: embedType, base_url: embedUrl, model: embedModel,
         ...(embedKey ? { api_key: embedKey } : {}),
       },
-      blog_mirror_enabled: blogMirror,
+      joplin_enabled: joplinEnabled,
+      joplin_db_path: joplinDbPath.trim(),
     }),
     onSuccess: () => {
       setChatKey(''); setEmbedKey('')
@@ -498,30 +501,49 @@ export default function Settings() {
         </p>
       </Section>
 
-      <div className="rounded-[12px] border p-5" style={{ background: 'var(--bg-surface)', borderColor: 'var(--border)' }}>
-        <h2 className="text-[14px] font-semibold mb-4" style={{ color: 'var(--text)' }}>Blog</h2>
-        <div className="space-y-4">
-          <p className="text-[12px]" style={{ color: 'var(--text-dim)' }}>
-            Dev log entries are generated nightly at 21:00.
-          </p>
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-[13px] font-medium" style={{ color: 'var(--text)' }}>Mirror to Joplin</p>
-              <p className="text-[12px]" style={{ color: 'var(--text-dim)' }}>Save blog posts to "Blog Posts" notebook</p>
-            </div>
-            <button
-              onClick={() => setBlogMirror(v => !v)}
-              className="relative inline-flex h-6 w-11 items-center rounded-full transition-colors"
-              style={{ background: blogMirror ? 'var(--accent)' : 'var(--bg-surface-2)' }}
-            >
-              <span
-                className="inline-block h-4 w-4 transform rounded-full transition-transform"
-                style={{ background: 'var(--toggle-knob)', transform: blogMirror ? 'translateX(24px)' : 'translateX(4px)' }}
-              />
-            </button>
+      <Section title="JOPLIN INTEGRATION">
+        <p className="text-[12px]" style={{ color: 'var(--text-dim)' }}>
+          Sync your Joplin notes into 2brn's semantic memory so chat can recall them alongside
+          screen activity. This reads the local Joplin SQLite DB every 60s — purely additive,
+          no network calls, no writes to Joplin. To <em>send</em> things back to Joplin (mirror
+          journals, append notes, etc.), add the Joplin MCP server in the{' '}
+          <span className="font-medium" style={{ color: 'var(--text-muted)' }}>Plugins</span> section.
+        </p>
+
+        <div className="flex items-center justify-between pt-2">
+          <div>
+            <p className="text-[13px] font-medium" style={{ color: 'var(--text)' }}>Enable note embedding</p>
+            <p className="text-[12px]" style={{ color: 'var(--text-dim)' }}>
+              Embed all Joplin notes on startup and watch for changes.
+            </p>
           </div>
+          <button
+            onClick={() => setJoplinEnabled(v => !v)}
+            className="relative inline-flex h-6 w-11 items-center rounded-full transition-colors"
+            style={{ background: joplinEnabled ? 'var(--accent)' : 'var(--bg-surface-2)' }}
+          >
+            <span
+              className="inline-block h-4 w-4 transform rounded-full transition-transform"
+              style={{ background: 'var(--toggle-knob)', transform: joplinEnabled ? 'translateX(24px)' : 'translateX(4px)' }}
+            />
+          </button>
         </div>
-      </div>
+
+        {joplinEnabled && (
+          <Field
+            label="Joplin database path"
+            sublabel="(leave blank for default ~/.config/joplin-desktop/database.sqlite)"
+          >
+            <Input
+              type="text"
+              value={joplinDbPath}
+              onChange={e => setJoplinDbPath(e.target.value)}
+              placeholder="/Users/me/.config/joplin-desktop/database.sqlite"
+              spellCheck={false}
+            />
+          </Field>
+        )}
+      </Section>
     </div>
   )
 }

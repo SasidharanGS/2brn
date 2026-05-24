@@ -17,14 +17,37 @@ export class ApiError extends Error {
   }
 }
 
+// The daemon requires a loopback bearer token (written to ~/.2brn/api_token and
+// exposed to the renderer via the Electron bridge). Fetch it once, then attach
+// it to every request.
+let _tokenPromise: Promise<string> | null = null
+function apiToken(): Promise<string> {
+  if (_tokenPromise) return _tokenPromise
+  const getter = window.electronAPI?.getApiToken
+  const p = (getter ? getter() : Promise.resolve('')).catch(() => '')
+  _tokenPromise = p
+  // Don't cache an empty token: at startup the daemon may not have written the
+  // token file yet. Forgetting it lets the next request retry instead of being
+  // wedged at 401 until a reload.
+  p.then((t) => { if (!t && _tokenPromise === p) _tokenPromise = null })
+  return p
+}
+
+async function authedFetch(path: string, init: RequestInit = {}): Promise<Response> {
+  const token = await apiToken()
+  const headers = new Headers(init.headers)
+  if (token) headers.set('Authorization', `Bearer ${token}`)
+  return fetch(`${BASE_URL}${path}`, { ...init, headers })
+}
+
 async function get<T>(path: string): Promise<T> {
-  const res = await fetch(`${BASE_URL}${path}`)
+  const res = await authedFetch(path)
   if (!res.ok) throw new ApiError(res.status, `GET ${path} failed: ${res.status}`)
   return res.json()
 }
 
 async function post<T>(path: string, body?: unknown): Promise<T> {
-  const res = await fetch(`${BASE_URL}${path}`, {
+  const res = await authedFetch(path, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: body ? JSON.stringify(body) : undefined,
@@ -34,7 +57,7 @@ async function post<T>(path: string, body?: unknown): Promise<T> {
 }
 
 async function put<T>(path: string, body: unknown): Promise<T> {
-  const res = await fetch(`${BASE_URL}${path}`, {
+  const res = await authedFetch(path, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -44,13 +67,13 @@ async function put<T>(path: string, body: unknown): Promise<T> {
 }
 
 async function del<T>(path: string): Promise<T> {
-  const res = await fetch(`${BASE_URL}${path}`, { method: 'DELETE' })
+  const res = await authedFetch(path, { method: 'DELETE' })
   if (!res.ok) throw new ApiError(res.status, `DELETE ${path} failed: ${res.status}`)
   return res.json()
 }
 
 async function patch<T>(path: string, body?: unknown): Promise<T> {
-  const res = await fetch(`${BASE_URL}${path}`, {
+  const res = await authedFetch(path, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: body ? JSON.stringify(body) : undefined,
@@ -92,7 +115,7 @@ export const api = {
   changeScreenshotPassword: (old_password: string, new_password: string) =>
     put<{ ok: boolean; message: string }>('/settings/screenshot-password', { old_password, new_password }),
   disableScreenshotPassword: (password: string, decrypt_existing = true) =>
-    fetch(`${BASE_URL}/settings/screenshot-password`, {
+    authedFetch('/settings/screenshot-password', {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ password, decrypt_existing }),
@@ -118,7 +141,7 @@ export const api = {
   updateInstruction: (id: number, patch: Partial<Pick<UserInstruction, 'title' | 'body' | 'enabled'>>) =>
     put<UserInstruction>(`/instructions/${id}`, patch),
   deleteInstruction: (id: number) =>
-    fetch(`${BASE_URL}/instructions/${id}`, { method: 'DELETE' }).then(r => {
+    authedFetch(`/instructions/${id}`, { method: 'DELETE' }).then(r => {
       if (!r.ok) throw new ApiError(r.status, `DELETE /instructions/${id} failed: ${r.status}`)
     }),
 
@@ -127,7 +150,7 @@ export const api = {
   createPlugin: (body: PluginCreate) => post<Plugin>('/plugins', body),
   updatePlugin: (id: number, body: PluginUpdate) => put<Plugin>(`/plugins/${id}`, body),
   deletePlugin: (id: number) =>
-    fetch(`${BASE_URL}/plugins/${id}`, { method: 'DELETE' }).then(r => {
+    authedFetch(`/plugins/${id}`, { method: 'DELETE' }).then(r => {
       if (!r.ok) throw new Error(`DELETE failed: ${r.status}`)
     }),
   listPluginTools: (id: number) => get<PluginTool[]>(`/plugins/${id}/tools`),
@@ -139,7 +162,7 @@ export const api = {
   createPluginRule: (body: RuleCreate) => post<PluginRule>('/plugin-rules', body),
   updatePluginRule: (id: number, body: RuleUpdate) => put<PluginRule>(`/plugin-rules/${id}`, body),
   deletePluginRule: (id: number) =>
-    fetch(`${BASE_URL}/plugin-rules/${id}`, { method: 'DELETE' }).then(r => {
+    authedFetch(`/plugin-rules/${id}`, { method: 'DELETE' }).then(r => {
       if (!r.ok) throw new Error(`DELETE failed: ${r.status}`)
     }),
   reparsePluginRule: (id: number) => post<PluginRule>(`/plugin-rules/${id}/reparse`),
@@ -149,7 +172,7 @@ export const api = {
     get<RuleExecution[]>(`/plugin-rules/${id}/executions?limit=${limit}`),
 
   chatStream: async function* (question: string, date_filter?: string, category_filter?: string, signal?: AbortSignal) {
-    const res = await fetch(`${BASE_URL}/chat`, {
+    const res = await authedFetch('/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ question, date_filter, category_filter }),

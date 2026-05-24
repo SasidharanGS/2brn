@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import os as _os
+import secrets
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from datetime import date as dt_date
@@ -13,9 +14,12 @@ from dotenv import load_dotenv
 load_dotenv(Path(__file__).resolve().parents[2] / ".env")  # daemon/.env
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from starlette.middleware.base import BaseHTTPMiddleware
 
+from brn_daemon.auth import PUBLIC_PATHS, load_or_create_token
 from brn_daemon.blog import BlogGenerator
 from brn_daemon.capture import (
     capture_all_monitors_with_rects,
@@ -101,6 +105,7 @@ class AppState(TypedDict, total=False):
     scheduler: AsyncIOScheduler | None
     inference_queue: InferenceQueue | None
     _embed_client_ref: object | None
+    api_token: str | None
 
 
 app_state: AppState = {
@@ -121,6 +126,7 @@ app_state: AppState = {
     "scheduler": None,
     "inference_queue": None,
     "_embed_client_ref": None,
+    "api_token": None,
 }
 
 
@@ -178,6 +184,11 @@ async def lifespan(app: FastAPI):
     cfg = load_config()
     app_state["paused"] = cfg.paused
     app_state["screenshot_key"] = _load_screenshot_key()
+    app_state["api_token"] = load_or_create_token()
+    if app_state["api_token"]:
+        logger.info("Local API authentication: enabled")
+    else:
+        logger.warning("Local API authentication: DISABLED (could not create token file)")
 
     chat_fn, stream_fn = make_chat_fn()
     embed_client = make_embed_client()
@@ -553,6 +564,22 @@ async def _rebuild_ai_clients() -> None:
     logger.info("AI clients rebuilt from updated config")
 
 
+async def _require_api_token(request: Request, call_next):
+    """Reject requests lacking the loopback bearer token.
+
+    Inert until a token is loaded into app_state, so the test harness (which
+    doesn't run the lifespan) is unaffected. The liveness probe and CORS
+    preflight pass through unauthenticated.
+    """
+    expected = app_state.get("api_token")
+    if expected and request.method != "OPTIONS" and request.url.path not in PUBLIC_PATHS:
+        header = request.headers.get("authorization", "")
+        token = header[7:].strip() if header[:7].lower() == "bearer " else ""
+        if not (token and secrets.compare_digest(token, expected)):
+            return JSONResponse({"detail": "Unauthorized"}, status_code=401)
+    return await call_next(request)
+
+
 def create_app() -> FastAPI:
     from brn_daemon.routes import (
         activities,
@@ -569,11 +596,17 @@ def create_app() -> FastAPI:
     )
 
     app = FastAPI(title="2brn Daemon", lifespan=lifespan)
-    # Allow requests from Vite dev server and Electron renderer
+    # Loopback bearer-token auth (inner). Added before CORS so CORS stays the
+    # outermost layer — it answers preflight and decorates the 401 so the UI can
+    # read it. Enforced only once a token is loaded into app_state (lifespan).
+    app.add_middleware(BaseHTTPMiddleware, dispatch=_require_api_token)
+    # Allow the Vite dev server and the Electron renderer only. The bearer token
+    # is the real gate; this drops the previous any-localhost-port allowance
+    # that let any local web page reach the API.
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
-        allow_origin_regex=r"file://.*|https?://(localhost|127\.0\.0\.1)(:\d+)?",
+        allow_origin_regex=r"file://.*",
         allow_methods=["*"],
         allow_headers=["*"],
     )

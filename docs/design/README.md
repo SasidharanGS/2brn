@@ -1,9 +1,20 @@
 # 2brn × OpenClaude Integration — Master Overview
 
-**Version:** 1.0  
-**Date:** 2026-04-25  
-**Status:** Approved design, pending implementation  
+**Version:** 1.0
+**Date:** 2026-04-25
+**Status:** Historical / partially superseded — see banner below
 **Owner:** 2brn contributors
+
+> **2026-05-23 update.** The hardcoded outbound integrations described in
+> Phases 1, 4, 5, 6, and 7 of this doc (journal mirror, /remember target
+> routing, nightly distillation, weekly digest, CLAUDE.md evolution) have
+> been replaced by a generic **plugin system** — local MCP servers driven by
+> natural-language rules. The right primer is now
+> [`docs/integrations.md`](../integrations.md). What survives from this doc:
+> the architectural vision of two knowledge layers (passive + deliberate),
+> the 2brn MCP server idea (Phase 2/3 — still useful, still unbuilt), and
+> the constraint section at the bottom. Treat the phase plan below as
+> historical context, not a roadmap.
 
 ---
 
@@ -60,7 +71,7 @@ Without persistent memory distillation, the system accumulates noise but never g
 ┌─────────────▼───────────────────────────────────────────────────────────────┐
 │                       Joplin  (local SQLite)                                  │
 │                                                                               │
-│  Daily Journals ──────── written by JournalMirror (2brn)                     │
+│  Daily Journals ──────── written by a plugin rule on journal_generated      │
 │  Session Notes ───────── written by session-to-joplin.sh (Stop hook)         │
 │  /remember entries ───── written by skill mid-session                        │
 │  Decisions YYYY-MM ────── written by /remember + nightly distillation        │
@@ -83,8 +94,9 @@ Without persistent memory distillation, the system accumulates noise but never g
 |-----------|--------|
 | 2brn daemon (SQLite + ChromaDB + FastAPI) | ✅ Built |
 | Screen capture + inference pipeline | ✅ Built |
-| JoplinWatcher (60s poll → embed notes) | ✅ Built |
-| Daily journals to Joplin (JournalMirror) | ✅ Built |
+| JoplinWatcher (60s poll → embed notes) | ✅ Built (opt-in via `joplin_enabled` since 2026-05-23) |
+| Daily journals mirrored to Joplin | ✅ Available via plugin rule (since 2026-05-23) |
+| Plugin system (MCP-over-stdio + NL rules) | ✅ Built (2026-05-23) |
 | Joplin MCP server (6 tools) | ✅ Built |
 | `/remember` skill | ✅ Built |
 | Monthly "Memories" markers | ✅ Built (but Stop hook not wired — see gap below) |

@@ -65,7 +65,6 @@ export interface AppSettings {
   capture_interval_seconds: number
   purge_months: number
   paused: boolean
-  blog_mirror_enabled: boolean
   screenshot_encryption_enabled: boolean
   joplin_enabled: boolean
   joplin_db_path: string
@@ -84,7 +83,6 @@ export interface SettingsUpdateRequest {
   embed_provider?: ProviderConfigUpdate
   capture_interval_seconds?: number
   purge_months?: number
-  blog_mirror_enabled?: boolean
   joplin_enabled?: boolean
   joplin_db_path?: string
 }

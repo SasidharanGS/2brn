@@ -39,12 +39,8 @@ class Config:
     purge_months: int = 12
     paused: bool = False
     excluded_apps: list[str] = field(default_factory=list)
-    blog_mirror_enabled: bool = True
-    joplin_token: str = ""
     # Optional internal Joplin note-embedding watcher (off by default for OSS users).
     # When True, JoplinWatcher polls joplin_db_path and embeds notes into note_memories.
-    # TODO(plugin-migration): once orchestrator supports `post_action: embed_into_memory`,
-    # remove this and provide an out-of-box plugin rule instead.
     joplin_enabled: bool = False
     joplin_db_path: str = ""
 
@@ -75,8 +71,6 @@ def load_config() -> Config:
             purge_months=data.get("purge_months", 12),
             paused=data.get("paused", False),
             excluded_apps=data.get("excluded_apps", []),
-            blog_mirror_enabled=data.get("blog_mirror_enabled", True),
-            joplin_token=data.get("joplin_token", ""),
             joplin_enabled=data.get("joplin_enabled", False),
             joplin_db_path=data.get("joplin_db_path", ""),
         )
@@ -101,8 +95,6 @@ def save_config(cfg: Config) -> None:
         "purge_months": cfg.purge_months,
         "paused": cfg.paused,
         "excluded_apps": cfg.excluded_apps,
-        "blog_mirror_enabled": cfg.blog_mirror_enabled,
-        "joplin_token": cfg.joplin_token,
         "joplin_enabled": cfg.joplin_enabled,
         "joplin_db_path": cfg.joplin_db_path,
     }

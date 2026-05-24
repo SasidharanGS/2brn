@@ -1,7 +1,7 @@
 # 2brn Integration Reference
 
-**Last updated:** 2026-04-19  
-**Scope:** 2brn daemon ↔ Joplin ↔ openclaude (Super Productivity excluded — no integration built yet)
+**Last updated:** 2026-05-23
+**Scope:** how 2brn extends to external services via the plugin system, plus the optional first-party Joplin note-embedding integration.
 
 ---
 
@@ -12,9 +12,9 @@
 | Layer | What | Where |
 |-------|------|-------|
 | **Passive** | Screen captures → OCR → AI inference → structured activities | SQLite + ChromaDB (`activity_memories`) |
-| **Deliberate** | Notes you write intentionally | **Joplin** (SQLite) + ChromaDB (`note_memories`) |
+| **Deliberate** | Notes you write intentionally | Any notes app you choose (e.g. Joplin) + optional embedding into ChromaDB (`note_memories`) |
 
-Both layers are unified in the **2brn chat UI** via RAG — a question like *"what did I decide about the AI gateway auth?"* searches screen activity AND your Joplin notes simultaneously.
+Outbound integrations (mirror journals to Joplin, post to Slack, log to Notion, etc.) are **not hardcoded**. They are expressed as **plugins** — local MCP servers that 2brn launches over stdio — driven by **natural-language rules** that fire on internal events.
 
 ---
 
@@ -22,385 +22,219 @@ Both layers are unified in the **2brn chat UI** via RAG — a question like *"wh
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│  SCREEN (passive capture)                                     │
-│  Screenshot every 60s → OCR → AI provider inference              │
+│  SCREEN (passive capture, always on)                          │
+│  Screenshot every 60s → OCR → LLM inference → activity        │
 │  → SQLite (activities) + ChromaDB (activity_memories)         │
-└───────────────────────┬──────────────────────────────────────┘
-                        │
-                        ▼
+│  → emits  capture_inferred  event                             │
+└──────────────────────────────────────────────────────────────┘
+
 ┌──────────────────────────────────────────────────────────────┐
-│  JOPLIN (deliberate notes)                                    │
-│  ~/.config/joplin-desktop/database.sqlite                     │
-│  18 notebooks, 131+ notes, 34+ tags                          │
-└──────┬─────────────────────────────────┬─────────────────────┘
-       │ read-only SQLite poll (60s)      │ Web Clipper API
-       ▼                                  ▼ (when Joplin open)
-┌─────────────────────┐    ┌─────────────────────────────────┐
-│ joplin_watcher.py   │    │ openclaude MCP (joplin server)  │
-│ Embeds notes into   │    │ search / read / write notes     │
-│ ChromaDB            │    │ /remember skill                 │
-│ note_memories       │    │ Stop hook → memory note         │
-└──────┬──────────────┘    └─────────────────────────────────┘
-       │
-       ▼
+│  NIGHTLY PIPELINE (21:00)                                     │
+│  JournalGenerator → SQLite (journals)                         │
+│  → emits  journal_generated  event                            │
+│  BlogGenerator → SQLite (blog_posts)                          │
+│  → emits  blog_generated  event                               │
+└──────────────────────────────────────────────────────────────┘
+
 ┌──────────────────────────────────────────────────────────────┐
-│  ChromaDB (~/.2brn/chroma/)                                  │
-│  • activity_memories — screen capture embeddings             │
-│  • note_memories     — Joplin note embeddings                │
-└───────────────────────┬──────────────────────────────────────┘
-                        │
-                        ▼
+│  PLUGIN ORCHESTRATOR                                          │
+│  EventBus  →  rule lookup  →  MCP tool call                   │
+│             (rules parsed once at save time; no runtime LLM)  │
+│                                                               │
+│  ┌────────────────┐    ┌────────────────┐                   │
+│  │ Plugin: joplin │    │ Plugin: slack  │  …                │
+│  │ MCPClient over │    │ MCPClient over │                   │
+│  │ stdio          │    │ stdio          │                   │
+│  └────────────────┘    └────────────────┘                   │
+└──────────────────────────────────────────────────────────────┘
+
 ┌──────────────────────────────────────────────────────────────┐
-│  2brn CHAT UI (port 7842)                                    │
-│  RAG: query → embed → search both collections → GPT stream  │
+│  OPTIONAL: JOPLIN NOTE EMBEDDING (off by default)             │
+│  joplin_watcher.py polls ~/.config/joplin-desktop/database.sqlite│
+│  Chunks + embeds notes into ChromaDB note_memories            │
+└──────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────┐
+│  2brn CHAT (port 7842)                                        │
+│  RAG over activity_memories  +  note_memories  +  LLM stream  │
 └──────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## Component Reference
+## The Plugin System
 
-### 1. `joplin_watcher.py` — Note Embedding
+A **plugin** is a record in the `plugins` table that points at a local MCP server: `{name, command, args, env_keys}`. 2brn launches the command as a subprocess and speaks JSON-RPC over stdio. No network surface, no shared process.
 
-**File:** `daemon/src/brn_daemon/joplin_watcher.py`  
-**Replaces:** `vault_watcher.py` (Dendron folder watcher, now unused)
+A **rule** is a natural-language sentence tied to a plugin. At save time, 2brn classifies it once via the LLM into a structured form:
 
-**What it does:**
-- On daemon startup: bulk-embeds all non-empty Joplin notes into `note_memories`
-- Every 60 seconds: polls Joplin SQLite for notes updated since last poll, re-embeds changed ones
-
-**Key design decisions:**
-- **Read-only SQLite** — safe for concurrent access; never writes to Joplin DB directly
-- **Polling not watching** — SQLite file-watching is unreliable; 60s poll is acceptable latency
-- **Props block stripping** — strips Joplin serialization metadata (`id:`, `type_:`, etc.) from note bodies before embedding (left over from the Dendron → Joplin migration)
-- **Title prepended** — each note's title is prepended to the body (`# Title\n\nbody`) so keyword searches hit the title even on non-title chunks
-- **Stable doc IDs** — `joplin-{note_id}-{chunk_index}` — ChromaDB upsert is idempotent
-
-**Joplin DB path:** `~/.config/joplin-desktop/database.sqlite`  
-**ChromaDB collection:** `note_memories`  
-**Chunk size:** 400 words, respecting heading boundaries
-
-**Wired in:** `main.py` instantiates `JoplinWatcher(gateway=..., chroma_client=...)` in lifespan; bulk-embeds on startup, starts polling task.
-
----
-
-### 2. Joplin MCP Server — openclaude ↔ Joplin
-
-**Location:** `~/tools/joplin-mcp-server/`  
-**Entry point:** `build/index.js` (compiled TypeScript)  
-**Config:** `.mcp.json` at repo root
-
-**What it does:** Gives openclaude live access to Joplin notes during sessions — search, read, create, append.
-
-**Tools exposed:**
-
-| Tool | Description | Requires Joplin open? |
-|------|-------------|----------------------|
-| `search_notes(query, limit?)` | Full-text search via SQLite FTS (falls back to LIKE) | ❌ No |
-| `get_note(id_or_title)` | Read full note body + metadata | ❌ No |
-| `list_notes(notebook?, limit?)` | List notes, optionally by notebook | ❌ No |
-| `get_notebooks()` | List all notebooks with counts | ❌ No |
-| `create_note(title, body, notebook?)` | Create new note via Web Clipper API | ✅ Yes |
-| `append_to_note(id_or_title, content)` | Append markdown to existing note | ✅ Yes |
-
-**Implementation:**
-- Read tools use `sql.js` (pure WASM, no native compile) to read Joplin SQLite directly
-- Write tools use Joplin's Web Clipper REST API (`localhost:41184`)
-- `sql.js` loads the full DB into memory per call (~5MB, acceptable)
-
-**Registration:**
-```json
-// .mcp.json
+```python
 {
-  "mcpServers": {
-    "joplin": {
-      "command": "/path/to/node",
-      "args": ["/path/to/joplin-mcp-server/build/index.js"],
-      "env": {
-        "JOPLIN_DB_PATH": "/Users/<your-username>/.config/joplin-desktop/database.sqlite",
-        "JOPLIN_TOKEN": "<web-clipper-token>",
-        "JOPLIN_PORT": "41184"
-      }
-    }
-  }
+  "trigger":       "journal_generated" | "blog_generated" | "capture_inferred"
+                   | "daily_at_HH:MM" | "every_Xs" | "manual",
+  "tool_name":     "<mcp-tool-name>",
+  "args_template": { …with {placeholders}… },
 }
 ```
 
-**Rebuild after changes:**
-```bash
-cd ~/tools/joplin-mcp-server
-npm run build
-```
+The parsed form is cached in SQLite. At runtime the orchestrator does **not** call the LLM again — it renders placeholders and dispatches the tool call directly. Each execution is logged to `plugin_rule_executions` (capped at 500 rows per rule).
 
----
+### Trigger vocabulary
 
-### 3. `JournalMirror` — Daemon Journals → Joplin
-
-**File:** `daemon/src/brn_daemon/journal.py` — class `JournalMirror`
-
-**What it does:** After each journal generation (14:00 morning, 20:30 evening), creates or appends to a Joplin daily note so journals are browsable in Joplin alongside your deliberate notes.
-
-**Note structure in Joplin:**
-- **Title:** `Daily Journal — YYYY-MM-DD`
-- **Notebook:** `Daily Journals` (auto-created if missing)
-- **Body:** Appends sections:
-  ```markdown
-  ## Morning Journal (auto — 14:00)
-  _Generated from 2brn activity_
-
-  [journal prose here]
-
-  ---
-  ## Evening Journal (auto — 20:30)
-  ...
-  ```
-
-**Fallback:** If Joplin Web Clipper is not running, mirror is skipped silently. Journal still saves to SQLite (2brn chat still works).
-
-**Wired in:** `main.py` → `_generate_and_mirror()` calls `journal_mirror.append_to_daily_note()` after each successful journal generation.
-
-**Journal schedule:**
-| Job | Time | Time window | Label |
-|-----|------|-------------|-------|
-| Morning journal | 14:00 | 06:00–14:00 | "morning" |
-| Evening journal | 20:30 | 14:00–20:30 | "evening" |
-| Full day journal | 00:00 | full day | none |
-
----
-
-### 4. `/remember` Skill — Explicit Knowledge Capture
-
-**File:** `.claude/skills/remember.md`
-
-**Invocation:** `/remember [something]` during any openclaude session.
-
-**What it does:**
-1. Classifies the input: `decision` / `learning` / `project` / `person`
-2. Finds the right Joplin note via `joplin__search_notes`
-3. Appends a dated bullet via `joplin__append_to_note`
-4. Confirms to user: `Saved to Joplin: <note title> ✓`
-
-**Target notes by classification:**
-| Classification | Target note | Notebook |
+| Trigger | Fires when | Payload (placeholders) |
 |---|---|---|
-| `decision` | `Decisions — YYYY-MM` | Second Brain |
-| `learning` | `Learnings` | Second Brain |
-| `project` | Specific project note (e.g. "2brn — Second Brain") | Project notebook |
-| `person` | Person note (e.g. "John Smith") | Second Brain |
+| `journal_generated` | Nightly pipeline finishes a journal | `{date}`, `{journal_content}` |
+| `blog_generated` | Nightly pipeline finishes a blog post | `{date}`, `{blog_content}` |
+| `capture_inferred` | Inference completes for one capture | `{summary}`, `{task_category}`, `{productivity_state}`, `{app_name}`, `{timestamp}`, `{tags}` |
+| `daily_at_HH:MM` | Cron schedule | `{date}`, `{time}` |
+| `every_Xs` | Interval schedule | `{date}`, `{time}` |
+| `manual` | "Run now" button | `{date}`, `{time}` |
 
-**Requires Joplin open** (uses Web Clipper write API for append/create).
+### Tables
+
+```sql
+plugins
+  id, name, command, args(JSON), env_keys(JSON), enabled,
+  last_health_at, last_health_ok, last_health_error, created_at
+
+plugin_rules
+  id, plugin_id(FK), title, rule_text, enabled,
+  trigger, tool_name, args_template(JSON),
+  parse_status, parse_error, parsed_at, created_at
+
+plugin_rule_executions
+  id, rule_id(FK), started_at, ended_at,
+  status('ok'|'error'|'timeout'), error, payload(JSON), result(JSON)
+```
+
+Secrets are **not** stored in SQLite. The plugin row holds only key names (e.g. `["JOPLIN_TOKEN"]`); values go to the OS keychain under `plugin.<name>.<KEY>` and fall back to env var `BRN_PLUGIN_<NAME>_<KEY>`.
+
+### Daemon-side files
+
+| File | Purpose |
+|---|---|
+| `daemon/src/brn_daemon/plugins/events.py` | `EventBus`, `EventNames` |
+| `daemon/src/brn_daemon/plugins/mcp_client.py` | Stdlib-only JSON-RPC over stdio (`MCPClient`, `MCPClientPool`) |
+| `daemon/src/brn_daemon/plugins/rule_parser.py` | NL → `ParsedRule`; `render_args()` for placeholder substitution |
+| `daemon/src/brn_daemon/plugins/orchestrator.py` | `PluginOrchestrator`: subscribes to bus, schedules cron rules, dispatches tool calls, logs executions |
+| `daemon/src/brn_daemon/routes/plugins_routes.py` | REST API |
+
+### API surface
+
+| Verb | Path | Purpose |
+|---|---|---|
+| `GET` | `/plugins` | List configured plugins + health |
+| `POST` | `/plugins` | Add plugin (`name`, `command`, `args`, `env`) |
+| `PUT` | `/plugins/{id}` | Edit / enable / disable |
+| `DELETE` | `/plugins/{id}` | Delete plugin (cascades to rules + executions) |
+| `GET` | `/plugins/{id}/tools` | Live `tools/list` against the running server |
+| `GET` | `/plugin-rules?plugin_id=…` | List rules |
+| `POST` | `/plugin-rules` | Add rule (LLM parses once at save) |
+| `PUT` | `/plugin-rules/{id}` | Edit rule (re-parses on save) |
+| `DELETE` | `/plugin-rules/{id}` | Delete rule |
+| `POST` | `/plugin-rules/{id}/reparse` | Force LLM re-parse |
+| `POST` | `/plugin-rules/{id}/run` | Manually trigger (uses `manual` payload) |
+| `GET` | `/plugin-rules/{id}/executions?limit=` | Recent execution log |
+
+### UI
+
+`ui/src/components/Plugins.tsx` — split-pane page:
+- **Left:** list of plugins with health dots
+- **Right:** plugin detail, rule cards, rule editor with trigger/placeholder hint, advanced panel (env keys, available tools, delete)
+- Each rule card has **edit / re-parse / run now / history / delete**.
 
 ---
 
-### 5. Stop Hook — Session Memory Marker
+## First-party Integration: Joplin Note Embedding (optional)
 
-**File:** `.claude/hooks/save-memory.sh`  
-**Trigger:** Automatically when every openclaude session ends (`Stop` hook in `~/.openclaude/settings.json`)
+This is the only Joplin coupling left in the core daemon. It is **off by default** and pure consumer-side — it reads from Joplin, never writes.
 
-**What it does:** Appends a one-line session marker to the current month's memory note in Joplin:
-```markdown
-## 2026-04-19 — session ended 21:35
-```
+**Toggle:** Settings → Joplin integration → "Enable note embedding".
+**Config keys:** `joplin_enabled` (bool, default `false`), `joplin_db_path` (string, default empty → `~/.config/joplin-desktop/database.sqlite`).
 
-**Target note:** `Memories — YYYY-MM` in `Second Brain` notebook (created if missing).
+**File:** `daemon/src/brn_daemon/joplin_watcher.py` (gated on `cfg.joplin_enabled` in `main.py`).
 
-**Fallback:** If Joplin Web Clipper is not running, hook exits silently (no error shown to user).
+What it does (when enabled):
+- On daemon startup: bulk-embeds every non-empty Joplin note into `note_memories`.
+- Every 60s: polls Joplin SQLite for notes with a newer `updated_time`, re-embeds them.
 
----
+Design notes:
+- **Read-only SQLite poll** — safe for concurrent access; never opens a write handle.
+- **Title prepended** to body before chunking so title-only keyword queries hit.
+- **Chunk size:** 400 words at heading boundaries.
+- **Stable doc IDs:** `joplin-{note_id}-{chunk_index}` (idempotent upsert).
 
-## Joplin Notebook Structure
-
-| Notebook | Contents | Created by |
-|----------|---------|------------|
-| `Personal` | Personal notes (career, 1:1s, reviews) | Migrated from OneNote |
-| `Quick Notes` | Reference notes, learning snippets | Migrated from OneNote |
-| `AgentHub` | AgentHub project notes | Migrated from OneNote |
-| `SDA` | Smart Document Assistant notes | Migrated from OneNote |
-| `PDS` | Project Delivery Services notes | Migrated from OneNote |
-| `Agentlib Microservices` | Agentlib project notes | Migrated from OneNote |
-| `AgentEval` | AgentEval project notes | Migrated from OneNote |
-| `AgentHub ACE` | AgentHub ACE notes | Migrated from OneNote |
-| `ANZ` | ANZ analytics project notes | Migrated from OneNote |
-| `Azara Benchmarker` | Azara benchmarker notes | Migrated from OneNote |
-| `Hackathon` | Hackathon notes | Migrated from OneNote |
-| `Azure OpenAI Course` | Azure OpenAI learning notes | Migrated from OneNote |
-| `Openclaude` | openclaude debugging + setup | Migrated from OneNote |
-| `Leeches` | Chess AI personal project | Migrated from OneNote |
-| `JTC Deduplication` | JTC dedup project | Migrated from OneNote |
-| `Polish ML Project` | Polish ML project | Migrated from OneNote |
-| `Team catchups` | Team catchup notes | Migrated from OneNote |
-| `Second Brain` | Structural notes: decisions, learnings, memories, people, projects | Created by migration script |
-| `Daily Journals` | Auto-generated daily journals from 2brn daemon | Created by `JournalMirror` |
+Everything else that used to live in 2brn-core — mirroring journals back to Joplin, the `/remember` skill, the Stop hook, session memory markers — is now expressed as plugin rules against a Joplin MCP server (or any other notes service you wire in).
 
 ---
 
-## Data Flow: What Happens When You Write a Joplin Note
+## Example: re-implementing the old "mirror journal to Joplin" with a plugin
 
-```
-You type a note in Joplin
-        │
-        ▼
-Joplin saves it to ~/.config/joplin-desktop/database.sqlite
-        │
-        ▼ (within 60 seconds)
-joplin_watcher.py polls SQLite, detects updated_time changed
-        │
-        ▼
-Note body chunked (400 words) → embedded via your AI provider
-        │
-        ▼
-ChromaDB note_memories collection updated (upsert, stable doc IDs)
-        │
-        ▼
-2brn chat UI now surfaces this note in RAG results
-        │
-        ▼ (same session, via MCP)
-openclaude can search and read the note via joplin__search_notes / get_note
-```
+Pre-plugin-system, the daemon had a hardcoded `JournalMirror` class. To get the same behaviour now:
 
----
+1. **Install a Joplin MCP server** (e.g. `~/tools/joplin-mcp-server/`).
+2. **Plugins → Add**:
+   - Name: `joplin`
+   - Command: `node`
+   - Args: `/Users/me/tools/joplin-mcp-server/build/index.js`
+   - Env: `JOPLIN_TOKEN=...`, `JOPLIN_PORT=41184`
+3. **Add a rule** (paste plain English):
 
-## Data Flow: What Happens at 14:00 (Morning Journal)
+   > When my journal is generated, create a Joplin note in the "Journal" notebook titled with today's date and use the journal content as the body.
 
-```
-APScheduler fires journal_morning job
-        │
-        ▼
-JournalGenerator.generate(time_window=("06:00","14:00"), label="morning")
-Queries SQLite activities for morning window → builds GPT prompt → streams journal
-        │
-        ├──► Saves to SQLite journals table (always)
-        │
-        └──► JournalMirror.append_to_daily_note()
-                │
-                ▼ (if Joplin open)
-             Joplin Web Clipper API
-             GET/POST "Daily Journal — YYYY-MM-DD" in Daily Journals notebook
-             Append ## Morning Journal section
-                │
-                ▼ (within 60s, via joplin_watcher.py poll)
-             New/updated daily note embedded into ChromaDB note_memories
-```
+   The parser locks this to `{trigger: "journal_generated", tool_name: "create_note", args_template: {…}}`.
 
----
+4. Optional: a second rule on `blog_generated` to mirror the dev-log.
 
-## Data Flow: What Happens at End of openclaude Session
-
-```
-openclaude Stop hook fires save-memory.sh
-        │
-        ▼ (if Joplin open)
-Joplin Web Clipper API
-Search for "Memories — YYYY-MM" in Second Brain
-        │
-        ├── Found: PUT /notes/{id} — append session marker line
-        └── Not found: POST /notes — create new monthly memory note
-```
-
----
-
-## Web Clipper Configuration
-
-| Setting | Value |
-|---------|-------|
-| Port | 41184 |
-| Token | `665e8cd6...` (see `.mcp.json`) |
-| Enable: | Joplin → Tools → Options → Web Clipper → Enable Web Clipper Service |
-
-**Token storage:** Hardcoded in `.mcp.json` (MCP env) and `.claude/hooks/save-memory.sh`.  
-**If token expires or changes:** Update both files and rebuild is not required (token is read at runtime).
+If Joplin is closed when the event fires, the MCP server itself will fail to reach the Web Clipper and the orchestrator records an `error` execution. Captures and journals keep working — no crash, no data loss.
 
 ---
 
 ## What Requires Joplin to Be Open
 
-| Feature | Requires Joplin? |
-|---------|-----------------|
+| Feature | Requires Joplin app? |
+|---|---|
 | Screen capture + OCR + inference | ❌ Always runs |
-| Embedding notes into ChromaDB | ❌ Polls SQLite directly |
-| 2brn chat RAG (both collections) | ❌ Always works |
-| Twice-daily journal to SQLite | ❌ Always runs |
-| Journal mirrored to Joplin daily note | ✅ Web Clipper |
-| openclaude `search_notes` / `get_note` | ❌ SQLite read |
-| openclaude `create_note` / `append_to_note` | ✅ Web Clipper |
-| `/remember` skill | ✅ Web Clipper |
-| Stop hook memory marker | ✅ Web Clipper |
-
----
-
-## Migration History
-
-All notes were migrated from **Microsoft OneNote** (work account) → Joplin on **2026-04-19**.
-
-**Method:** Custom Python script (`scripts/dendron_to_joplin_api.py`) using Joplin Web Clipper API.  
-**Intermediate step:** Notes were first exported from OneNote via Playwright + onenote.com to Dendron vault (`notes/`), then imported to Joplin via API.
-
-**Migration script:** `scripts/dendron_to_joplin_api.py`  
-- Creates notebooks, imports all notes with metadata
-- Resolves `[[wikilinks]]` → Joplin `[Title](:/note-id)` format
-- Applies tags
-- Re-runs safely (deletes and re-creates target notebooks)
-
-**Wikilink conversion:**
-- Dendron `[[note.slug]]` → Joplin `[Note Title](:/joplin-note-id)`
-- Unresolved links (target didn't exist) → `` `[[slug]]` `` (visible but inert)
-
----
-
-## Key Files Changed / Added
-
-| File | Change | Purpose |
-|------|--------|---------|
-| `daemon/src/brn_daemon/joplin_watcher.py` | **New** | Polls Joplin SQLite, embeds into note_memories |
-| `daemon/src/brn_daemon/journal.py` | **Modified** | `JournalMirror` now writes to Joplin API |
-| `daemon/src/brn_daemon/main.py` | **Modified** | Uses `JoplinWatcher`, removed vault path |
-| `daemon/src/brn_daemon/vault_watcher.py` | **Superseded** | Kept but no longer wired in (Dendron era) |
-| `~/tools/joplin-mcp-server/` | **New** | Node.js MCP server for Joplin |
-| `.mcp.json` | **Modified** | Registers Joplin MCP server |
-| `.claude/hooks/save-memory.sh` | **Modified** | Now posts to Joplin API |
-| `.claude/skills/remember.md` | **Modified** | Uses `joplin__*` MCP tools |
-| `scripts/dendron_to_joplin_api.py` | **New** | One-time migration script |
-| `scripts/dendron_to_joplin.py` | **New** | JEX generator (alternative approach, kept for reference) |
-| `notes/` | **New** | Dendron vault (source of migration, not actively used post-migration) |
+| Nightly journal + blog generation | ❌ Always runs |
+| Joplin note embedding into ChromaDB (when enabled) | ❌ Reads SQLite directly |
+| 2brn chat RAG | ❌ Always works |
+| A plugin rule that calls Joplin's Web Clipper API | ✅ Joplin must be open |
 
 ---
 
 ## Operational Notes
 
-### Rebuilding the Joplin MCP server after changes
+### Forcing a full re-embed of Joplin notes
+Restart the daemon — `bulk_embed_all()` runs on every startup when `joplin_enabled=true`.
+
+### Inspecting a rule's parsed form
 ```bash
-cd ~/tools/joplin-mcp-server
-npm run build
-# Then restart openclaude for MCP to reload
+curl http://localhost:7842/plugin-rules | jq '.[] | {id, trigger, tool_name, args_template, parse_status}'
 ```
 
-### Re-running the migration (if needed)
+### Forcing a re-parse after editing rule text
 ```bash
-# Ensure Joplin is open with Web Clipper enabled
-python3 scripts/dendron_to_joplin_api.py
-# Script deletes existing target notebooks first, then re-imports
+curl -X POST http://localhost:7842/plugin-rules/{id}/reparse
 ```
 
-### Checking daemon health
+### Tail of recent executions for a rule
+```bash
+curl http://localhost:7842/plugin-rules/{id}/executions?limit=20 | jq
+```
+
+### Running the test suite
 ```bash
 cd daemon
-uv run --extra dev pytest tests/ -v          # 42 tests, all should pass
-curl http://localhost:7842/status             # daemon health check
-```
-
-### Forcing a full re-embed of all Joplin notes
-```bash
-# Restart the daemon — bulk_embed_all() runs on every startup
-cd daemon && uv run python -m brn_daemon.main
+uv run --extra dev pytest tests/ -v
 ```
 
 ---
 
 ## Not Yet Implemented
 
-| Feature | Description | Notes |
-|---------|-------------|-------|
-| Super Productivity integration | Log tasks, track time from openclaude | No integration built yet — SP has no MCP server |
-| Weekly CLAUDE.md auto-update | openclaude agent reads memories → rewrites user context | Designed in `notes/2026-04-18-second-brain-full-design.md` Part 5 |
-| Memory extraction agent | Nightly openclaude agent extracts decisions/learnings from journals → writes to Memories notes | Designed in design doc Part 4 |
-| Joplin mobile sync | Notes written on phone syncing to same DB | Depends on Joplin sync config (OneDrive/Nextcloud) — not configured |
+| Feature | Notes |
+|---|---|
+| Plugin gallery / one-click install | Out of scope by design — plugins are configured manually for now |
+| Multi-tool rules ("call A then B") | One rule maps to one tool call |
+| Rule-side conditional logic | The trigger-side `app_name`/`task_category` placeholders are available; richer filtering would need a small DSL |
+| Auto-discovery of installed MCP servers | Each plugin must be added explicitly in the Plugins UI |

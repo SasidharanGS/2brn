@@ -39,8 +39,10 @@ class Config:
     purge_months: int = 12
     paused: bool = False
     excluded_apps: list[str] = field(default_factory=list)
-    blog_mirror_enabled: bool = True
-    joplin_token: str = ""
+    # Optional internal Joplin note-embedding watcher (off by default for OSS users).
+    # When True, JoplinWatcher polls joplin_db_path and embeds notes into note_memories.
+    joplin_enabled: bool = False
+    joplin_db_path: str = ""
 
 
 def _config_path() -> Path:
@@ -69,8 +71,8 @@ def load_config() -> Config:
             purge_months=data.get("purge_months", 12),
             paused=data.get("paused", False),
             excluded_apps=data.get("excluded_apps", []),
-            blog_mirror_enabled=data.get("blog_mirror_enabled", True),
-            joplin_token=data.get("joplin_token", ""),
+            joplin_enabled=data.get("joplin_enabled", False),
+            joplin_db_path=data.get("joplin_db_path", ""),
         )
     except (json.JSONDecodeError, KeyError):
         logger.warning("Corrupt config.json — using defaults")
@@ -93,8 +95,8 @@ def save_config(cfg: Config) -> None:
         "purge_months": cfg.purge_months,
         "paused": cfg.paused,
         "excluded_apps": cfg.excluded_apps,
-        "blog_mirror_enabled": cfg.blog_mirror_enabled,
-        "joplin_token": cfg.joplin_token,
+        "joplin_enabled": cfg.joplin_enabled,
+        "joplin_db_path": cfg.joplin_db_path,
     }
     _config_path().write_text(json.dumps(data, indent=2))
 
@@ -171,3 +173,45 @@ def set_gateway_token(token: str) -> None:
     except Exception as exc:
         logger.warning("Failed to save gateway token to keychain: %s", exc)
         raise RuntimeError(f"Could not save token to keychain: {exc}") from exc
+
+
+def _plugin_env_keychain_key(plugin_name: str, env_key: str) -> str:
+    """Keychain entry name for a plugin's env var value."""
+    return f"plugin.{plugin_name}.{env_key}"
+
+
+def get_plugin_env_value(plugin_name: str, env_key: str) -> str | None:
+    """Resolve a plugin env var value: keychain first, then BRN_PLUGIN_<name>_<key> env var."""
+    try:
+        import keyring
+        val = keyring.get_password(KEYCHAIN_SERVICE, _plugin_env_keychain_key(plugin_name, env_key))
+        if val:
+            return val
+    except Exception:
+        pass
+    env_fallback = f"BRN_PLUGIN_{plugin_name.upper()}_{env_key.upper()}"
+    return os.environ.get(env_fallback)
+
+
+def set_plugin_env_value(plugin_name: str, env_key: str, value: str) -> None:
+    try:
+        import keyring
+        keyring.set_password(
+            KEYCHAIN_SERVICE,
+            _plugin_env_keychain_key(plugin_name, env_key),
+            value,
+        )
+    except Exception as exc:
+        raise RuntimeError(f"Could not save plugin env value to keychain: {exc}") from exc
+
+
+def delete_plugin_env_value(plugin_name: str, env_key: str) -> None:
+    try:
+        import keyring
+        keyring.delete_password(
+            KEYCHAIN_SERVICE,
+            _plugin_env_keychain_key(plugin_name, env_key),
+        )
+    except Exception:
+        # already gone — fine
+        pass

@@ -97,11 +97,54 @@ async def init_db() -> None:
                 UNIQUE(date)
             );
 
+            CREATE TABLE IF NOT EXISTS plugins (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                command TEXT NOT NULL,
+                args TEXT NOT NULL DEFAULT '[]',
+                env_keys TEXT NOT NULL DEFAULT '[]',
+                enabled INTEGER NOT NULL DEFAULT 1,
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                last_health_at DATETIME,
+                last_health_ok INTEGER,
+                last_health_error TEXT
+            );
+
+            CREATE TABLE IF NOT EXISTS plugin_rules (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                plugin_id INTEGER NOT NULL REFERENCES plugins(id) ON DELETE CASCADE,
+                title TEXT NOT NULL,
+                rule_text TEXT NOT NULL,
+                enabled INTEGER NOT NULL DEFAULT 1,
+                trigger TEXT NOT NULL,
+                tool_name TEXT,
+                args_template TEXT,
+                parse_status TEXT NOT NULL DEFAULT 'pending',
+                parse_error TEXT,
+                parsed_at DATETIME,
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+
+            CREATE TABLE IF NOT EXISTS plugin_rule_executions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                rule_id INTEGER NOT NULL REFERENCES plugin_rules(id) ON DELETE CASCADE,
+                started_at DATETIME NOT NULL,
+                ended_at DATETIME,
+                status TEXT NOT NULL,
+                error TEXT,
+                payload TEXT,
+                result TEXT
+            );
+
             CREATE INDEX IF NOT EXISTS idx_captures_captured_at ON captures(captured_at);
             CREATE INDEX IF NOT EXISTS idx_captures_monitor ON captures(monitor_index);
             CREATE INDEX IF NOT EXISTS idx_activities_capture_id ON activities(capture_id);
             CREATE INDEX IF NOT EXISTS idx_activities_started_at ON activities(started_at);
             CREATE INDEX IF NOT EXISTS idx_journals_date ON journals(date ASC);
             CREATE INDEX IF NOT EXISTS idx_blog_posts_date ON blog_posts(date);
+            CREATE INDEX IF NOT EXISTS idx_plugin_rules_plugin_id ON plugin_rules(plugin_id);
+            CREATE INDEX IF NOT EXISTS idx_plugin_rules_trigger ON plugin_rules(trigger);
+            CREATE INDEX IF NOT EXISTS idx_plugin_rule_executions_rule_id ON plugin_rule_executions(rule_id);
+            CREATE INDEX IF NOT EXISTS idx_plugin_rule_executions_started_at ON plugin_rule_executions(started_at DESC);
         """)
         await conn.commit()

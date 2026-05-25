@@ -8,6 +8,7 @@ import Timeline    from './components/Timeline'
 import Insights    from './components/Insights'
 import Settings    from './components/Settings'
 import Instructions from './components/Instructions'
+import Plugins      from './components/Plugins'
 import DaemonStatus  from './components/shared/DaemonStatus'
 import StatsBar      from './components/shared/StatsBar'
 import DebugPanel    from './components/shared/DebugPanel'
@@ -22,6 +23,7 @@ const NAV = [
   { to: '/timeline',      label: 'Timeline',     icon: '🕐' },
   { to: '/insights',      label: 'Insights',     icon: '💡' },
   { to: '/instructions',  label: 'Instructions', icon: '📋' },
+  { to: '/plugins',       label: 'Plugins',      icon: '🔌' },
   { to: '/settings',      label: 'Settings',     icon: '⚙️' },
 ]
 
@@ -76,7 +78,10 @@ export default function App() {
   }, [applyThemeClass])
 
   // Calendar is irrelevant on Home and Settings — hide toggle and panel
-  const calendarApplies = location.pathname !== '/' && location.pathname !== '/settings'
+  const calendarApplies = location.pathname !== '/'
+    && location.pathname !== '/settings'
+    && location.pathname !== '/instructions'
+    && location.pathname !== '/plugins'
 
   return (
     <DateProvider>
@@ -175,6 +180,7 @@ export default function App() {
                   <Route path="/timeline"      element={<Timeline />} />
                   <Route path="/insights"      element={<Insights />} />
                   <Route path="/instructions"  element={<Instructions />} />
+                  <Route path="/plugins"       element={<Plugins />} />
                   <Route path="/settings"      element={<Settings />} />
                 </Routes>
               </main>

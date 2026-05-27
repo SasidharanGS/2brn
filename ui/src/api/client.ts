@@ -1,6 +1,7 @@
 import type {
   DaemonStatus, CaptureRecord, ActivityRecord, JournalEntry, BlogPost,
-  DailyInsights, AppSettings, SettingsUpdateRequest, AppExclusion, UserInstruction, LogLine, DebugStatus,
+  DailyInsights, InsightsSummary, InsightsPeriod,
+  AppSettings, SettingsUpdateRequest, AppExclusion, UserInstruction, LogLine, DebugStatus,
   Plugin, PluginRule, PluginTool, RuleExecution, PluginCreate, PluginUpdate, RuleCreate, RuleUpdate,
 } from './types'
 
@@ -85,6 +86,8 @@ export const api = {
     }),
 
   getDailyInsights: (date: string) => get<DailyInsights>(`/insights/daily?date=${date}`),
+  getInsightsSummary: (date: string, period: InsightsPeriod = 'day') =>
+    get<InsightsSummary>(`/insights/summary?date=${date}&period=${period}`),
   getLogs: (level?: string, limit?: number) => {
     const q = new URLSearchParams()
     if (level) q.set('level', level)

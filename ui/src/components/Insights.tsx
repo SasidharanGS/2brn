@@ -8,6 +8,7 @@ import { api } from '../api/client'
 import { queryKeys } from '../api/queryKeys'
 import { CATEGORY_CHIP, STATE_COLORS } from '../utils/design'
 import { useAppDate } from '../context/DateContext'
+import type { InsightsPeriod, HeatmapCell, ComparisonMetric } from '../api/types'
 
 function useTooltipStyle() {
   return useMemo(() => {
@@ -35,46 +36,188 @@ function useTooltipStyle() {
   }, [document.documentElement.classList.contains('light')])
 }
 
+// ── Helpers ────────────────────────────────────────────────────────────────
+
+function formatMinutes(m: number): string {
+  if (m <= 0) return '0m'
+  if (m < 60) return `${Math.round(m)}m`
+  const h = Math.floor(m / 60)
+  const r = Math.round(m % 60)
+  return r === 0 ? `${h}h` : `${h}h ${r}m`
+}
+
+function deltaPct(current: number, baseline: number): number | null {
+  if (baseline <= 0) return current > 0 ? null : 0
+  return Math.round(((current - baseline) / baseline) * 100)
+}
+
+function deltaColor(pct: number | null, positiveGood: boolean): string {
+  if (pct === null || pct === 0) return 'var(--text-dim)'
+  const isPositive = pct > 0
+  const isGood = positiveGood ? isPositive : !isPositive
+  return isGood ? 'var(--accent)' : 'var(--danger, #e25c5c)'
+}
+
+// ── Period toggle ──────────────────────────────────────────────────────────
+
+const PERIOD_LABELS: { value: InsightsPeriod; label: string }[] = [
+  { value: 'day',   label: 'Day' },
+  { value: 'week',  label: 'Week' },
+  { value: 'month', label: 'Month' },
+]
+
+function PeriodToggle({ value, onChange }: { value: InsightsPeriod; onChange: (v: InsightsPeriod) => void }) {
+  return (
+    <div
+      className="inline-flex rounded-[8px] p-0.5 border"
+      style={{ background: 'var(--bg-surface)', borderColor: 'var(--border)' }}
+    >
+      {PERIOD_LABELS.map(({ value: v, label }) => {
+        const active = v === value
+        return (
+          <button
+            key={v}
+            type="button"
+            onClick={() => onChange(v)}
+            className="px-3 py-1 text-[12px] font-medium rounded-[6px] transition-colors"
+            style={{
+              background: active ? 'var(--accent)' : 'transparent',
+              color: active ? 'white' : 'var(--text-muted)',
+            }}
+          >
+            {label}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+// ── Cards ───────────────────────────────────────────────────────────────────
+
+function HeatmapCard({ cells }: { cells: HeatmapCell[] }) {
+  const max = Math.max(1, ...cells.map(c => c.total_minutes))
+  return (
+    <div
+      className="rounded-[12px] border p-5 lg:col-span-2"
+      style={{ background: 'var(--bg-surface)', borderColor: 'var(--border)' }}
+    >
+      <h2 className="text-[12px] font-semibold tracking-[0.08em] uppercase mb-4" style={{ color: 'var(--text-dim)' }}>
+        Hour-of-day activity
+      </h2>
+      <div className="flex gap-[3px]">
+        {cells.map(cell => {
+          const intensity = cell.total_minutes / max  // 0–1
+          const color = cell.dominant_state
+            ? STATE_COLORS[cell.dominant_state] ?? 'var(--accent)'
+            : 'var(--bg-surface-2)'
+          // Show hour label every 3rd cell
+          const showLabel = cell.hour % 3 === 0
+          return (
+            <div key={cell.hour} className="flex-1 flex flex-col items-center gap-1 min-w-0">
+              <div
+                title={
+                  cell.total_minutes === 0
+                    ? `${String(cell.hour).padStart(2, '0')}:00 — no activity`
+                    : `${String(cell.hour).padStart(2, '0')}:00 — ${formatMinutes(cell.total_minutes)} (${cell.dominant_state ?? '—'})`
+                }
+                className="w-full rounded-[3px]"
+                style={{
+                  height: 28,
+                  background: cell.total_minutes === 0 ? 'var(--bg-surface-2)' : color,
+                  opacity: cell.total_minutes === 0 ? 0.4 : 0.25 + 0.75 * intensity,
+                }}
+              />
+              <span
+                className="text-[9px] font-mono"
+                style={{ color: 'var(--text-dim)', visibility: showLabel ? 'visible' : 'hidden' }}
+              >
+                {String(cell.hour).padStart(2, '0')}
+              </span>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function ComparisonRow({
+  label, metric, positiveGood,
+}: {
+  label: string
+  metric: ComparisonMetric
+  positiveGood: boolean
+}) {
+  const pct = deltaPct(metric.current_minutes, metric.baseline_minutes)
+  const arrow = pct === null ? '' : pct > 0 ? '▲' : pct < 0 ? '▼' : '='
+  return (
+    <div className="flex items-center justify-between py-2 border-b last:border-b-0" style={{ borderColor: 'var(--border)' }}>
+      <span className="text-[13px]" style={{ color: 'var(--text-muted)' }}>{label}</span>
+      <div className="flex items-center gap-4">
+        <span className="text-[13px] font-mono" style={{ color: 'var(--text)' }}>
+          {formatMinutes(metric.current_minutes)}
+        </span>
+        <span className="text-[11px] font-mono" style={{ color: 'var(--text-dim)' }}>
+          vs {formatMinutes(metric.baseline_minutes)}
+        </span>
+        {pct !== null && (
+          <span
+            className="text-[11px] font-mono w-14 text-right"
+            style={{ color: deltaColor(pct, positiveGood) }}
+          >
+            {arrow} {Math.abs(pct)}%
+          </span>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ── Main ───────────────────────────────────────────────────────────────────
+
 export default function Insights() {
   const { selectedDate } = useAppDate()
   const TT = useTooltipStyle()
+  const [period, setPeriod] = useState<InsightsPeriod>('day')
 
-  // Explicit tooltip-active state for each chart so we can force-clear it on
-  // mouse-leave rather than relying on Recharts' internal SVG mouseleave logic,
-  // which is unreliable in Electron's Chromium runtime.
+  // Explicit tooltip-active state for each chart (Electron Chromium quirk).
   const [barActive,  setBarActive]  = useState(false)
   const [pieActive,  setPieActive]  = useState(false)
   const [pieSegment, setPieSegment] = useState(-1)
 
-  const { data: insights, isLoading } = useQuery({
-    queryKey: queryKeys.dailyInsights(selectedDate),
-    queryFn: () => api.getDailyInsights(selectedDate),
+  const { data: summary, isLoading } = useQuery({
+    queryKey: queryKeys.insightsSummary(selectedDate, period),
+    queryFn: () => api.getInsightsSummary(selectedDate, period),
   })
 
   return (
     <div className="page-enter p-7">
 
-      <div className="flex items-center mb-6">
+      <div className="flex items-center justify-between mb-6">
         <h1 className="text-[19px] font-semibold tracking-tight" style={{ color: 'var(--text)' }}>
           Insights
         </h1>
+        <PeriodToggle value={period} onChange={setPeriod} />
       </div>
 
       {isLoading ? (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {[...Array(3)].map((_, i) => <div key={i} className="skeleton h-64 rounded-[12px]" />)}
+          {[...Array(4)].map((_, i) => <div key={i} className="skeleton h-64 rounded-[12px]" />)}
         </div>
 
-      ) : !insights || insights.categories.length === 0 ? (
+      ) : !summary || summary.categories.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-24">
           <div className="text-4xl mb-4 opacity-20">◎</div>
-          <div className="text-[14px]" style={{ color: 'var(--text-muted)' }}>No data for {selectedDate}</div>
+          <div className="text-[14px]" style={{ color: 'var(--text-muted)' }}>
+            No data for {summary?.range.span_days === 1 ? selectedDate : `the past ${summary?.range.span_days ?? ''} days`}
+          </div>
         </div>
 
       ) : (
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
 
-          {/* Bar chart */}
+          {/* Bar chart — Time by Category (now minutes) */}
           <div
             className="rounded-[12px] border p-5"
             style={{ background: 'var(--bg-surface)', borderColor: 'var(--border)' }}
@@ -84,7 +227,7 @@ export default function Insights() {
             </h2>
             <ResponsiveContainer width="100%" height={200}>
               <BarChart
-                data={insights.categories}
+                data={summary.categories}
                 barSize={14}
                 barGap={4}
                 onMouseMove={state => setBarActive(!!state?.isTooltipActive)}
@@ -98,10 +241,15 @@ export default function Insights() {
                 <YAxis
                   tick={{ fill: TT.axisTickFill, fontSize: 11 }}
                   axisLine={false} tickLine={false}
+                  tickFormatter={(v: number) => formatMinutes(v)}
                 />
-                <Tooltip {...TT} active={barActive} />
-                <Bar dataKey="count" radius={[4, 4, 0, 0]}>
-                  {insights.categories.map(entry => (
+                <Tooltip
+                  {...TT}
+                  active={barActive}
+                  formatter={(value: number) => [formatMinutes(value), 'Time']}
+                />
+                <Bar dataKey="total_minutes" radius={[4, 4, 0, 0]}>
+                  {summary.categories.map(entry => (
                     <Cell
                       key={entry.task_category}
                       fill={CATEGORY_CHIP[entry.task_category]?.dot ?? '#64748b'}
@@ -113,7 +261,7 @@ export default function Insights() {
             </ResponsiveContainer>
           </div>
 
-          {/* Donut */}
+          {/* Donut — Productivity Split (minutes) */}
           <div
             className="rounded-[12px] border p-5"
             style={{ background: 'var(--bg-surface)', borderColor: 'var(--border)' }}
@@ -122,12 +270,10 @@ export default function Insights() {
               Productivity Split
             </h2>
             <ResponsiveContainer width="100%" height={200}>
-              <PieChart
-                onMouseLeave={() => { setPieActive(false); setPieSegment(-1) }}
-              >
+              <PieChart onMouseLeave={() => { setPieActive(false); setPieSegment(-1) }}>
                 <Pie
-                  data={insights.productivity_states}
-                  dataKey="count"
+                  data={summary.productivity_states}
+                  dataKey="total_minutes"
                   nameKey="productivity_state"
                   cx="50%" cy="50%"
                   innerRadius={50} outerRadius={78}
@@ -140,7 +286,7 @@ export default function Insights() {
                   onMouseLeave={() => { setPieActive(false); setPieSegment(-1) }}
                   style={{ cursor: 'default' }}
                 >
-                  {insights.productivity_states.map(entry => (
+                  {summary.productivity_states.map(entry => (
                     <Cell
                       key={entry.productivity_state}
                       fill={STATE_COLORS[entry.productivity_state] ?? '#64748b'}
@@ -148,7 +294,11 @@ export default function Insights() {
                     />
                   ))}
                 </Pie>
-                <Tooltip {...TT} active={pieActive} />
+                <Tooltip
+                  {...TT}
+                  active={pieActive}
+                  formatter={(value: number) => [formatMinutes(value), 'Time']}
+                />
                 <Legend
                   iconSize={7}
                   iconType="circle"
@@ -158,7 +308,7 @@ export default function Insights() {
             </ResponsiveContainer>
           </div>
 
-          {/* Top apps */}
+          {/* Top apps — minutes */}
           <div
             className="rounded-[12px] border p-5 lg:col-span-2"
             style={{ background: 'var(--bg-surface)', borderColor: 'var(--border)' }}
@@ -167,9 +317,9 @@ export default function Insights() {
               Top Apps
             </h2>
             <div className="space-y-2.5">
-              {insights.top_apps.slice(0, 8).map(app => {
-                const max = insights.top_apps[0]?.count ?? 1
-                const pct = Math.round((app.count / max) * 100)
+              {summary.top_apps.slice(0, 8).map(app => {
+                const max = summary.top_apps[0]?.total_minutes ?? 1
+                const pct = max > 0 ? Math.round((app.total_minutes / max) * 100) : 0
                 return (
                   <div key={app.app_name} className="flex items-center gap-3">
                     <span className="text-[13px] w-36 truncate shrink-0" style={{ color: 'var(--text-muted)' }}>
@@ -181,8 +331,8 @@ export default function Insights() {
                         style={{ width: `${pct}%`, background: 'var(--accent)', opacity: 0.65 }}
                       />
                     </div>
-                    <span className="text-[11px] font-mono w-10 text-right shrink-0" style={{ color: 'var(--text-dim)' }}>
-                      {app.count}
+                    <span className="text-[11px] font-mono w-16 text-right shrink-0" style={{ color: 'var(--text-dim)' }}>
+                      {formatMinutes(app.total_minutes)}
                     </span>
                   </div>
                 )
@@ -190,9 +340,60 @@ export default function Insights() {
             </div>
           </div>
 
+          {/* Hour-of-day heatmap */}
+          <HeatmapCard cells={summary.hourly_heatmap} />
+
+          {/* Comparison */}
+          <div
+            className="rounded-[12px] border p-5"
+            style={{ background: 'var(--bg-surface)', borderColor: 'var(--border)' }}
+          >
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-[12px] font-semibold tracking-[0.08em] uppercase" style={{ color: 'var(--text-dim)' }}>
+                vs {summary.comparison.baseline_label}
+              </h2>
+            </div>
+            <ComparisonRow label="Active"      metric={summary.comparison.active}      positiveGood={true} />
+            <ComparisonRow label="Productive"  metric={summary.comparison.productive}  positiveGood={true} />
+            <ComparisonRow label="Distracted"  metric={summary.comparison.distracted}  positiveGood={false} />
+          </div>
+
+          {/* Recurring activities */}
+          <div
+            className="rounded-[12px] border p-5"
+            style={{ background: 'var(--bg-surface)', borderColor: 'var(--border)' }}
+          >
+            <h2 className="text-[12px] font-semibold tracking-[0.08em] uppercase mb-4" style={{ color: 'var(--text-dim)' }}>
+              Recurring activities
+            </h2>
+            {summary.recurring_activities.length === 0 ? (
+              <div className="text-[12px] py-4" style={{ color: 'var(--text-dim)' }}>
+                No recurring patterns detected.
+              </div>
+            ) : (
+              <div className="space-y-2.5">
+                {summary.recurring_activities.map((r, i) => (
+                  <div key={i} className="flex items-start gap-3">
+                    <span className="text-[11px] font-mono w-14 shrink-0 mt-0.5" style={{ color: 'var(--accent)' }}>
+                      {formatMinutes(r.total_minutes)}
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-[13px] truncate" style={{ color: 'var(--text)' }}>
+                        {r.canonical_summary}
+                      </div>
+                      <div className="text-[10px] mt-0.5" style={{ color: 'var(--text-dim)' }}>
+                        {r.session_count} session{r.session_count === 1 ? '' : 's'}
+                        {r.variant_count > 1 ? ` · ${r.variant_count} variants` : ''}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
         </div>
       )}
     </div>
   )
 }
-

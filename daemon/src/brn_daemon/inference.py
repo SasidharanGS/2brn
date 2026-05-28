@@ -34,19 +34,6 @@ INFERENCE_SYSTEM_PROMPT = """You are analyzing screen activity. Given screen con
 Return ONLY the JSON. No explanation. No markdown."""
 
 
-async def _load_active_instruction_bodies(db_path_fn) -> list[str]:
-    import aiosqlite
-    try:
-        async with aiosqlite.connect(db_path_fn()) as conn:
-            cur = await conn.execute(
-                "SELECT body FROM user_instructions WHERE enabled = 1 ORDER BY created_at ASC"
-            )
-            rows = await cur.fetchall()
-        return [r[0] for r in rows]
-    except Exception:
-        return []
-
-
 def _build_inference_system_prompt(active_instructions: list[str]) -> str:
     if not active_instructions:
         return INFERENCE_SYSTEM_PROMPT
@@ -101,7 +88,9 @@ class InferenceQueue:
         self._db_path_fn = db_path_fn
         self._embedding_service = embedding_service
         self._event_bus = event_bus  # plugins.EventBus or None
-
+        self._instructions_cache: list[str] | None = None
+        self._instructions_cache_at: float = 0.0
+        self._INSTRUCTIONS_CACHE_TTL = 30.0
     async def enqueue(self, capture_id: int, app_name: str, window_title: str, ocr_text: str) -> None:
         try:
             self._queue.put_nowait((capture_id, app_name, window_title, ocr_text))
@@ -112,11 +101,38 @@ class InferenceQueue:
                 INFERENCE_QUEUE_MAX, capture_id,
             )
 
+    async def _load_instructions(self) -> list[str]:
+        """Return active instruction bodies, using a 30-second in-memory cache."""
+        import aiosqlite
+        loop = asyncio.get_running_loop()
+        now = loop.time()
+        if (
+            self._instructions_cache is not None
+            and (now - self._instructions_cache_at) < self._INSTRUCTIONS_CACHE_TTL
+        ):
+            return self._instructions_cache
+        try:
+            async with aiosqlite.connect(self._db_path_fn()) as conn:
+                cur = await conn.execute(
+                    "SELECT body FROM user_instructions WHERE enabled = 1 ORDER BY created_at ASC"
+                )
+                rows = await cur.fetchall()
+            self._instructions_cache = [r[0] for r in rows]
+            self._instructions_cache_at = now
+        except Exception:
+            self._instructions_cache = self._instructions_cache or []
+        return self._instructions_cache  # type: ignore[return-value]
+
+    def invalidate_instructions_cache(self) -> None:
+        """Force next _load_instructions call to re-query the DB."""
+        self._instructions_cache = None
+        self._instructions_cache_at = 0.0
+
     async def _process_one(self, capture_id: int, app_name: str, window_title: str, ocr_text: str) -> None:
         """Process a single inference item: call LLM, write to SQLite, embed."""
         import aiosqlite
         try:
-            active_instructions = await _load_active_instruction_bodies(self._db_path_fn)
+            active_instructions = await self._load_instructions()
             system_prompt = _build_inference_system_prompt(active_instructions)
             user_prompt = build_inference_prompt(app_name, window_title, ocr_text)
             raw = await self._chat_fn([

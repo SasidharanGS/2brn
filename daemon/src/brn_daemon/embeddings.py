@@ -1,3 +1,4 @@
+import asyncio
 import logging
 
 import aiosqlite
@@ -27,6 +28,7 @@ class ChromaStore:
             name=NOTE_COLLECTION_NAME,
             metadata={"hnsw:space": "cosine"},
         )
+        self._count: int = 0
 
     @property
     def collection(self):
@@ -40,45 +42,56 @@ class ChromaStore:
     def chroma_client(self):
         return self._client
 
-    def add(self, doc_id: str, text: str, metadata: dict, embedding: list[float]) -> None:
-        self._collection.upsert(
-            ids=[doc_id],
-            documents=[text],
-            metadatas=[metadata],
-            embeddings=[embedding],
+    async def add(self, doc_id: str, text: str, metadata: dict, embedding: list[float]) -> None:
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(
+            None,
+            lambda: self._collection.upsert(
+                ids=[doc_id],
+                documents=[text],
+                metadatas=[metadata],
+                embeddings=[embedding],
+            ),
         )
+        self._count += 1
 
-    def query(self, embedding: list[float], n_results: int = 10,
+    async def query(self, embedding: list[float], n_results: int = 10,
               where: dict | None = None) -> dict:
+        if self._count == 0:
+            return {"documents": [[]], "metadatas": [[]], "distances": [[]]}
+        actual_n = min(n_results, self._count)
+        kwargs: dict = {
+            "query_embeddings": [embedding],
+            "n_results": actual_n,
+            "include": ["documents", "metadatas", "distances"],
+        }
+        if where:
+            kwargs["where"] = where
+        loop = asyncio.get_running_loop()
         try:
-            count = self._collection.count()
-            if count == 0:
-                return {"documents": [[]], "metadatas": [[]], "distances": [[]]}
-            actual_n = min(n_results, count)
-            kwargs = {
-                "query_embeddings": [embedding],
-                "n_results": actual_n,
-                "include": ["documents", "metadatas", "distances"],
-            }
-            if where:
-                kwargs["where"] = where
-            return self._collection.query(**kwargs)  # type: ignore[return-value]
+            return await loop.run_in_executor(  # type: ignore[return-value]
+                None, lambda: self._collection.query(**kwargs)
+            )
         except Exception as exc:
             logger.warning("Activity collection query failed: %s", exc)
             return {"documents": [[]], "metadatas": [[]], "distances": [[]]}
 
-    def query_notes(self, embedding: list[float], n_results: int = 5) -> dict:
+    async def query_notes(self, embedding: list[float], n_results: int = 5) -> dict:
         """Query the note_memories collection."""
+        loop = asyncio.get_running_loop()
         try:
-            count = self._note_collection.count()
+            count = await loop.run_in_executor(None, self._note_collection.count)
             if count == 0:
                 return {"documents": [[]], "metadatas": [[]], "distances": [[]]}
             actual_n = min(n_results, count)
-            return self._note_collection.query(
-                query_embeddings=[embedding],
-                n_results=actual_n,
-                include=["documents", "metadatas", "distances"],
-            )  # type: ignore[return-value]
+            return await loop.run_in_executor(  # type: ignore[return-value]
+                None,
+                lambda: self._note_collection.query(
+                    query_embeddings=[embedding],
+                    n_results=actual_n,
+                    include=["documents", "metadatas", "distances"],
+                ),
+            )
         except Exception as exc:
             logger.warning("Note collection query failed: %s", exc)
             return {"documents": [[]], "metadatas": [[]], "distances": [[]]}
@@ -95,7 +108,7 @@ class EmbeddingService:
                 return
             embedding = await self._embed_client.embed(summary)
             doc_id = f"activity-{activity_id}"
-            self._store.add(doc_id=doc_id, text=summary, metadata=metadata, embedding=embedding)
+            await self._store.add(doc_id=doc_id, text=summary, metadata=metadata, embedding=embedding)
             async with aiosqlite.connect(get_db_path()) as conn:
                 await conn.execute(
                     "UPDATE activities SET chroma_id = ? WHERE id = ?",

@@ -10,8 +10,8 @@ Public API:
 """
 from brn_daemon.plugins.events import EventBus, EventNames
 from brn_daemon.plugins.mcp_client import MCPClient, MCPClientPool, MCPError
-from brn_daemon.plugins.rule_parser import ParsedRule, parse_rule
 from brn_daemon.plugins.orchestrator import PluginOrchestrator
+from brn_daemon.plugins.rule_parser import ParsedRule, parse_rule
 
 __all__ = [
     "EventBus", "EventNames",

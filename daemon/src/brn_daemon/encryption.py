@@ -248,6 +248,7 @@ async def mark_captures_encrypted() -> int:
     Run after :func:`encrypt_existing_screenshots`. Returns the row count.
     """
     import aiosqlite
+
     from brn_daemon.db import get_db_path
     async with aiosqlite.connect(get_db_path()) as conn:
         cur = await conn.execute(
@@ -264,6 +265,7 @@ async def mark_captures_decrypted() -> int:
     Run after :func:`decrypt_all_screenshots`. Returns the row count.
     """
     import aiosqlite
+
     from brn_daemon.db import get_db_path
     async with aiosqlite.connect(get_db_path()) as conn:
         cur = await conn.execute(

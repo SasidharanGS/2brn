@@ -1,6 +1,6 @@
+import httpx
 from fastapi import APIRouter, Query
 from pydantic import BaseModel
-import httpx
 
 router = APIRouter()
 
@@ -27,8 +27,8 @@ async def get_logs(
 
 @router.get("/debug/status", response_model=DebugStatusResponse)
 async def get_debug_status():
-    from brn_daemon.main import app_state
     from brn_daemon.config import load_config
+    from brn_daemon.main import app_state
 
     cfg = load_config()
 

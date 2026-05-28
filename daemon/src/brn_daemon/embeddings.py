@@ -1,8 +1,8 @@
 import logging
+
 import aiosqlite
 import chromadb
 from chromadb.config import Settings
-from pathlib import Path
 
 from brn_daemon.db import get_brn_home, get_db_path
 
@@ -62,7 +62,7 @@ class ChromaStore:
             }
             if where:
                 kwargs["where"] = where
-            return self._collection.query(**kwargs)
+            return self._collection.query(**kwargs)  # type: ignore[return-value]
         except Exception as exc:
             logger.warning("Activity collection query failed: %s", exc)
             return {"documents": [[]], "metadatas": [[]], "distances": [[]]}
@@ -78,19 +78,21 @@ class ChromaStore:
                 query_embeddings=[embedding],
                 n_results=actual_n,
                 include=["documents", "metadatas", "distances"],
-            )
+            )  # type: ignore[return-value]
         except Exception as exc:
             logger.warning("Note collection query failed: %s", exc)
             return {"documents": [[]], "metadatas": [[]], "distances": [[]]}
 
 
 class EmbeddingService:
-    def __init__(self, embed_client, chroma_store: ChromaStore):
+    def __init__(self, embed_client, chroma_store: ChromaStore | None):
         self._embed_client = embed_client
         self._store = chroma_store
 
     async def embed_activity(self, activity_id: int, summary: str, metadata: dict) -> None:
         try:
+            if self._store is None:
+                return
             embedding = await self._embed_client.embed(summary)
             doc_id = f"activity-{activity_id}"
             self._store.add(doc_id=doc_id, text=summary, metadata=metadata, embedding=embedding)

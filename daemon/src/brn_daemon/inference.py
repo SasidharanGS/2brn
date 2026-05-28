@@ -3,7 +3,7 @@ import json
 import logging
 import re
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 logger = logging.getLogger(__name__)
 
@@ -124,7 +124,7 @@ class InferenceQueue:
                 {"role": "user", "content": user_prompt},
             ])
             result = parse_inference_response(raw)
-            now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")
+            now = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S.%f")
             async with aiosqlite.connect(self._db_path_fn()) as conn:
                 cur = await conn.execute(
                     """INSERT INTO activities

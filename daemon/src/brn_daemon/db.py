@@ -1,6 +1,8 @@
 import os
-import aiosqlite
 from pathlib import Path
+
+import aiosqlite
+
 
 def get_brn_home() -> Path:
     override = os.environ.get("BRN_HOME")

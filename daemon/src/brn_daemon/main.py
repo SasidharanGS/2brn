@@ -1,33 +1,45 @@
 import asyncio
-import aiosqlite
 import json
 import logging
 from contextlib import asynccontextmanager
-from datetime import date as dt_date, datetime, timezone
+from datetime import UTC, datetime
+from datetime import date as dt_date
 from pathlib import Path
 
+import aiosqlite
 from dotenv import load_dotenv
+
 load_dotenv(Path(__file__).resolve().parents[2] / ".env")  # daemon/.env
 
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
-from brn_daemon.db import init_db, get_db_path
-from brn_daemon.config import load_config, get_screenshot_password, ScheduleConfig, BlogScheduleConfig
-from brn_daemon.encryption import load_encryption_state, verify_password
-from brn_daemon.llm import make_chat_fn
-from brn_daemon.providers import make_embed_client
-from brn_daemon.capture import capture_all_monitors_with_rects, get_app_for_monitor, get_windows_snapshot, save_screenshot
-from brn_daemon.dedup import compute_phash, is_duplicate
-from brn_daemon.ocr import extract_text, is_text_sparse
-from brn_daemon.inference import InferenceQueue
-from brn_daemon.embeddings import ChromaStore, EmbeddingService
-from brn_daemon.journal import JournalGenerator
 from brn_daemon.blog import BlogGenerator
+from brn_daemon.capture import (
+    capture_all_monitors_with_rects,
+    get_app_for_monitor,
+    get_windows_snapshot,
+    save_screenshot,
+)
 from brn_daemon.chat import ChatService
-from brn_daemon.purge import purge_old_captures
+from brn_daemon.config import (
+    BlogScheduleConfig,
+    ScheduleConfig,
+    get_screenshot_password,
+    load_config,
+)
+from brn_daemon.db import get_db_path, init_db
+from brn_daemon.dedup import compute_phash, is_duplicate
+from brn_daemon.embeddings import ChromaStore, EmbeddingService
+from brn_daemon.encryption import load_encryption_state, verify_password
+from brn_daemon.inference import InferenceQueue
+from brn_daemon.journal import JournalGenerator
+from brn_daemon.llm import make_chat_fn
+from brn_daemon.ocr import extract_text, is_text_sparse
 from brn_daemon.plugins import EventBus, EventNames, PluginOrchestrator
+from brn_daemon.providers import make_embed_client
+from brn_daemon.purge import purge_old_captures
 
 logging.basicConfig(
     level=logging.INFO,
@@ -36,7 +48,9 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Wire log buffer into root logger so all modules' logs are captured
-from brn_daemon.log_buffer import log_buffer as _log_buffer, LogBufferHandler as _LogBufferHandler
+from brn_daemon.log_buffer import LogBufferHandler as _LogBufferHandler
+from brn_daemon.log_buffer import log_buffer as _log_buffer
+
 _root_logger = logging.getLogger()
 if not any(isinstance(h, _LogBufferHandler) for h in _root_logger.handlers):
     _root_logger.addHandler(_LogBufferHandler(_log_buffer))
@@ -60,6 +74,8 @@ class AppState(TypedDict, total=False):
     event_bus: EventBus | None
     plugin_orchestrator: PluginOrchestrator | None
     scheduler: AsyncIOScheduler | None
+    inference_queue: InferenceQueue | None
+    _embed_client_ref: object | None
 
 
 app_state: AppState = {
@@ -78,6 +94,8 @@ app_state: AppState = {
     "event_bus": None,
     "plugin_orchestrator": None,
     "scheduler": None,
+    "inference_queue": None,
+    "_embed_client_ref": None,
 }
 
 
@@ -138,6 +156,7 @@ async def lifespan(app: FastAPI):
 
     chat_fn, stream_fn = make_chat_fn()
     embed_client = make_embed_client()
+    app_state["_embed_client_ref"] = embed_client
     chroma = ChromaStore()
     embedding_service = EmbeddingService(embed_client=embed_client, chroma_store=chroma)
     app_state["chroma_store"] = chroma
@@ -151,6 +170,7 @@ async def lifespan(app: FastAPI):
         embedding_service=embedding_service,
         event_bus=event_bus,
     )
+    app_state["inference_queue"] = inference_queue
     journal_gen = JournalGenerator(chat_fn=chat_fn)
     blog_gen = BlogGenerator(chat_fn=chat_fn)
     app_state["blog_generator"] = blog_gen
@@ -310,7 +330,10 @@ async def _startup_backfill_blog(
 
 async def _purge_job() -> None:
     cfg = load_config()
-    await purge_old_captures(months=cfg.purge_months)
+    await purge_old_captures(
+        months=cfg.purge_months,
+        chroma_store=app_state.get("chroma_store"),
+    )
 
 
 async def _reset_capture_count_job() -> None:
@@ -359,7 +382,7 @@ async def _capture_loop(cfg, inference_queue: InferenceQueue):
             await asyncio.sleep(1)
             now = asyncio.get_running_loop().time()
 
-            if app_state["paused"]:
+            if app_state["paused"]:  # type: ignore[typeddict-item]
                 continue
 
             # Refresh exclusions from DB every 30s instead of every tick
@@ -413,7 +436,7 @@ async def _capture_loop(cfg, inference_queue: InferenceQueue):
 
             # ── Phase 2: OCR — run all monitors concurrently in thread pool ───
             ocr_tasks = [
-                loop.run_in_executor(None, extract_text, item[1])
+                loop.run_in_executor(None, extract_text, item[1])  # type: ignore[arg-type]
                 for item in pending
             ]
             ocr_results = await asyncio.gather(*ocr_tasks)
@@ -422,7 +445,7 @@ async def _capture_loop(cfg, inference_queue: InferenceQueue):
             async with aiosqlite.connect(get_db_path()) as conn:
                 for item, ocr_text in zip(pending, ocr_results):
                     monitor_idx, img, monitor_rect, app_name, window_title, trigger, file_path, current_phash = item
-                    now_iso = datetime.now(timezone.utc).isoformat()
+                    now_iso = datetime.now(UTC).isoformat()
                     cur = await conn.execute(
                         "INSERT INTO captures (captured_at, app_name, window_title, file_path, "
                         "ocr_text, phash, trigger, monitor_index) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
@@ -430,7 +453,7 @@ async def _capture_loop(cfg, inference_queue: InferenceQueue):
                          ocr_text, current_phash, trigger, monitor_idx)
                     )
                     await conn.commit()
-                    capture_id = cur.lastrowid
+                    capture_id: int = cur.lastrowid  # type: ignore[assignment]
 
                     if not is_text_sparse(ocr_text):
                         await inference_queue.enqueue(capture_id, app_name, window_title, ocr_text)
@@ -438,7 +461,7 @@ async def _capture_loop(cfg, inference_queue: InferenceQueue):
                     else:
                         logger.info("Capture #%d → saved (sparse text, skipping inference)", capture_id)
 
-            app_state["last_captured_at"] = datetime.now(timezone.utc).isoformat()
+            app_state["last_captured_at"] = datetime.now(UTC).isoformat()
             app_state["capture_count_today"] = app_state.get("capture_count_today", 0) + 1
 
             if is_heartbeat:
@@ -450,20 +473,75 @@ async def _capture_loop(cfg, inference_queue: InferenceQueue):
             logger.error("Capture loop error: %s", exc)
 
 
+async def _rebuild_ai_clients() -> None:
+    """Rebuild chat and embed clients from the current config.
+
+    Called after PUT /settings saves provider changes. Replaces in-memory
+    clients in every consumer without restarting the daemon.
+    """
+    old_embed = app_state.get("_embed_client_ref")
+    new_chat_fn, new_stream_fn = make_chat_fn()
+    new_embed_client = make_embed_client()
+
+    if old_embed is not None:
+        try:
+            await old_embed.aclose()  # type: ignore[union-attr]
+        except Exception:
+            logger.exception("Error closing old embed client during rebuild")
+
+    chroma = app_state.get("chroma_store")
+    new_embedding_service = EmbeddingService(embed_client=new_embed_client, chroma_store=chroma)
+    new_chat_service = ChatService(
+        chat_fn=new_chat_fn,
+        stream_fn=new_stream_fn,
+        embed_client=new_embed_client,
+        chroma_store=chroma,
+    )
+
+    app_state["chat_service"] = new_chat_service
+    app_state["_embed_client_ref"] = new_embed_client
+
+    iq = app_state.get("inference_queue")
+    if iq is not None:
+        iq._chat_fn = new_chat_fn
+        iq._embedding_service = new_embedding_service
+
+    jg = app_state.get("journal_generator")
+    if jg is not None:
+        jg._chat_fn = new_chat_fn
+
+    bg = app_state.get("blog_generator")
+    if bg is not None:
+        bg._chat_fn = new_chat_fn
+
+    po = app_state.get("plugin_orchestrator")
+    if po is not None:
+        po.chat_fn = new_chat_fn
+
+    logger.info("AI clients rebuilt from updated config")
+
+
 def create_app() -> FastAPI:
-    from brn_daemon.routes import status, captures, activities
-    from brn_daemon.routes import journal_routes, chat_routes, settings_routes, insights_routes
-    from brn_daemon.routes import debug_routes
-    from brn_daemon.routes import blog_routes
-    from brn_daemon.routes import instructions_routes
-    from brn_daemon.routes import plugins_routes
+    from brn_daemon.routes import (
+        activities,
+        blog_routes,
+        captures,
+        chat_routes,
+        debug_routes,
+        insights_routes,
+        instructions_routes,
+        journal_routes,
+        plugins_routes,
+        settings_routes,
+        status,
+    )
 
     app = FastAPI(title="2brn Daemon", lifespan=lifespan)
     # Allow requests from Vite dev server and Electron renderer
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
-        allow_origin_regex=r"(file://.*|.*localhost.*)",
+        allow_origin_regex=r"file://.*|https?://(localhost|127\.0\.0\.1)(:\d+)?",
         allow_methods=["*"],
         allow_headers=["*"],
     )

@@ -1,3 +1,4 @@
+import sys
 import pytest
 from PIL import Image
 import numpy as np
@@ -59,6 +60,7 @@ def _make_window(owner: str, title: str, x: int, y: int, w: int, h: int, layer: 
     }
 
 
+@pytest.mark.skipif(sys.platform != "darwin", reason="kCGWindow keys are macOS-only")
 def test_get_app_for_monitor_picks_largest_overlap():
     """Window with larger overlap area should win."""
     from brn_daemon.capture import get_app_for_monitor
@@ -80,6 +82,7 @@ def test_get_app_for_monitor_skips_negative_layers():
     assert app_name != "Finder"
 
 
+@pytest.mark.skipif(sys.platform != "darwin", reason="kCGWindow keys are macOS-only")
 def test_get_app_for_monitor_skips_high_layers():
     """Windows with layer > 25 (menu bar, overlays) must be skipped."""
     from brn_daemon.capture import get_app_for_monitor
@@ -108,6 +111,7 @@ def test_save_screenshot_encrypted_writes_enc_file(tmp_home):
     assert pt[:2] == b"\xff\xd8"
 
 
+@pytest.mark.skipif(sys.platform != "darwin", reason="mss requires a display; Linux CI is headless")
 def test_capture_all_monitors_with_rects_returns_tuples():
     """Each element should be (int, PIL.Image, dict with left/top/width/height)."""
     from brn_daemon.capture import capture_all_monitors_with_rects

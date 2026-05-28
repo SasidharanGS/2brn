@@ -60,6 +60,8 @@ class AppState(TypedDict, total=False):
     event_bus: EventBus | None
     plugin_orchestrator: PluginOrchestrator | None
     scheduler: AsyncIOScheduler | None
+    inference_queue: InferenceQueue | None
+    _embed_client_ref: object | None
 
 
 app_state: AppState = {
@@ -78,6 +80,8 @@ app_state: AppState = {
     "event_bus": None,
     "plugin_orchestrator": None,
     "scheduler": None,
+    "inference_queue": None,
+    "_embed_client_ref": None,
 }
 
 
@@ -138,6 +142,7 @@ async def lifespan(app: FastAPI):
 
     chat_fn, stream_fn = make_chat_fn()
     embed_client = make_embed_client()
+    app_state["_embed_client_ref"] = embed_client
     chroma = ChromaStore()
     embedding_service = EmbeddingService(embed_client=embed_client, chroma_store=chroma)
     app_state["chroma_store"] = chroma
@@ -151,6 +156,7 @@ async def lifespan(app: FastAPI):
         embedding_service=embedding_service,
         event_bus=event_bus,
     )
+    app_state["inference_queue"] = inference_queue
     journal_gen = JournalGenerator(chat_fn=chat_fn)
     blog_gen = BlogGenerator(chat_fn=chat_fn)
     app_state["blog_generator"] = blog_gen
@@ -451,6 +457,54 @@ async def _capture_loop(cfg, inference_queue: InferenceQueue):
             break
         except Exception as exc:
             logger.error("Capture loop error: %s", exc)
+
+
+async def _rebuild_ai_clients() -> None:
+    """Rebuild chat and embed clients from the current config.
+
+    Called after PUT /settings saves provider changes. Replaces in-memory
+    clients in every consumer without restarting the daemon.
+    """
+    old_embed = app_state.get("_embed_client_ref")
+    new_chat_fn, new_stream_fn = make_chat_fn()
+    new_embed_client = make_embed_client()
+
+    if old_embed is not None:
+        try:
+            await old_embed.aclose()
+        except Exception:
+            logger.exception("Error closing old embed client during rebuild")
+
+    chroma = app_state.get("chroma_store")
+    new_embedding_service = EmbeddingService(embed_client=new_embed_client, chroma_store=chroma)
+    new_chat_service = ChatService(
+        chat_fn=new_chat_fn,
+        stream_fn=new_stream_fn,
+        embed_client=new_embed_client,
+        chroma_store=chroma,
+    )
+
+    app_state["chat_service"] = new_chat_service
+    app_state["_embed_client_ref"] = new_embed_client
+
+    iq = app_state.get("inference_queue")
+    if iq is not None:
+        iq._chat_fn = new_chat_fn
+        iq._embedding_service = new_embedding_service
+
+    jg = app_state.get("journal_generator")
+    if jg is not None:
+        jg._chat_fn = new_chat_fn
+
+    bg = app_state.get("blog_generator")
+    if bg is not None:
+        bg._chat_fn = new_chat_fn
+
+    po = app_state.get("plugin_orchestrator")
+    if po is not None:
+        po.chat_fn = new_chat_fn
+
+    logger.info("AI clients rebuilt from updated config")
 
 
 def create_app() -> FastAPI:

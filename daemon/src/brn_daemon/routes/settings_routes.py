@@ -185,6 +185,9 @@ async def update_settings(body: SettingsUpdateRequest):
             except JobLookupError:
                 logger.warning("blog_job not found in scheduler; schedule saved but not live-applied")
     save_config(cfg)
+    if body.chat_provider is not None or body.embed_provider is not None:
+        from brn_daemon.main import _rebuild_ai_clients
+        await _rebuild_ai_clients()
     return {"ok": True}
 
 

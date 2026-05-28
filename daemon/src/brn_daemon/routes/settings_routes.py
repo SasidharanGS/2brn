@@ -4,7 +4,7 @@ import logging
 from typing import Annotated
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from brn_daemon.config import (
     load_config, save_config,
     get_chat_api_key, get_embed_api_key,
@@ -50,7 +50,7 @@ class SettingsResponse(BaseModel):
     joplin_enabled: bool
     joplin_db_path: str
     journal_schedule: ScheduleConfigIn
-    blog_schedule: ScheduleConfigIn
+    blog_schedule: dict
 
 
 class ProviderConfigIn(BaseModel):
@@ -66,6 +66,23 @@ class ScheduleConfigIn(BaseModel):
     minute: Annotated[int, Field(ge=0, le=59)]
 
 
+class BlogScheduleIn(BaseModel):
+    frequency: Annotated[str, Field(pattern=r"^(daily|monthly|weekly)$")]
+    hour: Annotated[int, Field(ge=0, le=23)] = 21
+    minute: Annotated[int, Field(ge=0, le=59)] = 0
+    day: Annotated[int, Field(ge=1, le=28)] = 1
+    days_of_week: list[str] = []
+
+    @field_validator("days_of_week")
+    @classmethod
+    def validate_days(cls, v: list[str]) -> list[str]:
+        valid = {"mon", "tue", "wed", "thu", "fri", "sat", "sun"}
+        bad = set(v) - valid
+        if bad:
+            raise ValueError(f"Invalid day(s): {bad}")
+        return v
+
+
 class SettingsUpdateRequest(BaseModel):
     chat_provider: ProviderConfigIn | None = None
     embed_provider: ProviderConfigIn | None = None
@@ -74,7 +91,7 @@ class SettingsUpdateRequest(BaseModel):
     joplin_enabled: bool | None = None
     joplin_db_path: str | None = None
     journal_schedule: ScheduleConfigIn | None = None
-    blog_schedule: ScheduleConfigIn | None = None
+    blog_schedule: BlogScheduleIn | None = None
 
 
 class ExclusionRequest(BaseModel):
@@ -98,7 +115,13 @@ async def get_settings():
         joplin_enabled=cfg.joplin_enabled,
         joplin_db_path=cfg.joplin_db_path,
         journal_schedule=ScheduleConfigIn(hour=cfg.journal_schedule.hour, minute=cfg.journal_schedule.minute),
-        blog_schedule=ScheduleConfigIn(hour=cfg.blog_schedule.hour, minute=cfg.blog_schedule.minute),
+        blog_schedule={
+            "frequency": cfg.blog_schedule.frequency,
+            "hour": cfg.blog_schedule.hour,
+            "minute": cfg.blog_schedule.minute,
+            "day": cfg.blog_schedule.day,
+            "days_of_week": cfg.blog_schedule.days_of_week,
+        },
     )
 
 
@@ -148,10 +171,17 @@ async def update_settings(body: SettingsUpdateRequest):
             except JobLookupError:
                 logger.warning("journal_job not found in scheduler; schedule saved but not live-applied")
     if body.blog_schedule is not None:
-        cfg.blog_schedule = BlogScheduleConfig(hour=body.blog_schedule.hour, minute=body.blog_schedule.minute)
+        from brn_daemon.main import _blog_cron_kwargs
+        cfg.blog_schedule = BlogScheduleConfig(
+            frequency=body.blog_schedule.frequency,
+            hour=body.blog_schedule.hour,
+            minute=body.blog_schedule.minute,
+            day=body.blog_schedule.day,
+            days_of_week=body.blog_schedule.days_of_week,
+        )
         if scheduler:
             try:
-                scheduler.reschedule_job("blog_job", trigger="cron", hour=cfg.blog_schedule.hour, minute=cfg.blog_schedule.minute)
+                scheduler.reschedule_job("blog_job", trigger="cron", **_blog_cron_kwargs(cfg.blog_schedule))
             except JobLookupError:
                 logger.warning("blog_job not found in scheduler; schedule saved but not live-applied")
     save_config(cfg)

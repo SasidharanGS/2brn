@@ -113,3 +113,78 @@ def test_blog_cron_kwargs_weekly():
 def test_blog_cron_kwargs_weekly_empty_days_falls_back_to_daily():
     s = BlogScheduleConfig(frequency="weekly", days_of_week=[], hour=9, minute=0)
     assert _blog_cron_kwargs(s) == {"hour": 9, "minute": 0}
+
+
+from httpx import AsyncClient, ASGITransport
+from brn_daemon.main import create_app
+
+
+async def test_get_settings_returns_blog_schedule_with_frequency(tmp_path, monkeypatch):
+    monkeypatch.setenv("BRN_HOME", str(tmp_path))
+    from brn_daemon.db import init_db
+    await init_db()
+    app = create_app()
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        resp = await client.get("/settings")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["blog_schedule"]["frequency"] == "daily"
+    assert data["blog_schedule"]["hour"] == 21
+    assert data["blog_schedule"]["day"] == 1
+    assert data["blog_schedule"]["days_of_week"] == []
+
+
+async def test_put_settings_monthly_blog_schedule(tmp_path, monkeypatch):
+    monkeypatch.setenv("BRN_HOME", str(tmp_path))
+    from brn_daemon.db import init_db
+    await init_db()
+    app = create_app()
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        resp = await client.put("/settings", json={
+            "blog_schedule": {"frequency": "monthly", "day": 15, "hour": 10, "minute": 0, "days_of_week": []}
+        })
+        assert resp.status_code == 200
+        resp2 = await client.get("/settings")
+    data = resp2.json()
+    assert data["blog_schedule"]["frequency"] == "monthly"
+    assert data["blog_schedule"]["day"] == 15
+
+
+async def test_put_settings_weekly_blog_schedule(tmp_path, monkeypatch):
+    monkeypatch.setenv("BRN_HOME", str(tmp_path))
+    from brn_daemon.db import init_db
+    await init_db()
+    app = create_app()
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        resp = await client.put("/settings", json={
+            "blog_schedule": {"frequency": "weekly", "days_of_week": ["mon", "fri"], "hour": 8, "minute": 0, "day": 1}
+        })
+        assert resp.status_code == 200
+        resp2 = await client.get("/settings")
+    data = resp2.json()
+    assert data["blog_schedule"]["frequency"] == "weekly"
+    assert data["blog_schedule"]["days_of_week"] == ["mon", "fri"]
+
+
+async def test_put_settings_invalid_frequency_returns_422(tmp_path, monkeypatch):
+    monkeypatch.setenv("BRN_HOME", str(tmp_path))
+    from brn_daemon.db import init_db
+    await init_db()
+    app = create_app()
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        resp = await client.put("/settings", json={
+            "blog_schedule": {"frequency": "hourly", "hour": 1, "minute": 0, "day": 1, "days_of_week": []}
+        })
+    assert resp.status_code == 422
+
+
+async def test_put_settings_monthly_day_29_returns_422(tmp_path, monkeypatch):
+    monkeypatch.setenv("BRN_HOME", str(tmp_path))
+    from brn_daemon.db import init_db
+    await init_db()
+    app = create_app()
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        resp = await client.put("/settings", json={
+            "blog_schedule": {"frequency": "monthly", "day": 29, "hour": 10, "minute": 0, "days_of_week": []}
+        })
+    assert resp.status_code == 422

@@ -136,7 +136,9 @@ async def test_get_settings_returns_schedules(tmp_path, monkeypatch):
     assert resp.status_code == 200
     data = resp.json()
     assert data["journal_schedule"] == {"hour": 21, "minute": 0}
-    assert data["blog_schedule"] == {"hour": 21, "minute": 0}
+    assert data["blog_schedule"]["hour"] == 21
+    assert data["blog_schedule"]["minute"] == 0
+    assert data["blog_schedule"]["frequency"] == "daily"
 
 
 async def test_update_settings_persists_schedules(tmp_path, monkeypatch):
@@ -148,14 +150,16 @@ async def test_update_settings_persists_schedules(tmp_path, monkeypatch):
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         resp = await client.put("/settings", json={
             "journal_schedule": {"hour": 8, "minute": 0},
-            "blog_schedule": {"hour": 22, "minute": 30},
+            "blog_schedule": {"frequency": "daily", "hour": 22, "minute": 30, "day": 1, "days_of_week": []},
         })
         assert resp.status_code == 200
 
         resp2 = await client.get("/settings")
         data = resp2.json()
     assert data["journal_schedule"] == {"hour": 8, "minute": 0}
-    assert data["blog_schedule"] == {"hour": 22, "minute": 30}
+    assert data["blog_schedule"]["hour"] == 22
+    assert data["blog_schedule"]["minute"] == 30
+    assert data["blog_schedule"]["frequency"] == "daily"
 
 
 async def test_update_settings_rejects_invalid_hour(tmp_path, monkeypatch):

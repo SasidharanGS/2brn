@@ -73,10 +73,8 @@ def _parse_provider(data: dict) -> ProviderConfig:
 
 
 def _parse_schedule(data: dict) -> ScheduleConfig:
-    return ScheduleConfig(
-        hour=data.get("hour", 21),
-        minute=data.get("minute", 0),
-    )
+    kwargs = {k: v for k, v in data.items() if k in ("hour", "minute")}
+    return ScheduleConfig(**kwargs)
 
 
 def load_config() -> Config:
@@ -97,7 +95,7 @@ def load_config() -> Config:
             journal_schedule=_parse_schedule(data.get("journal_schedule", {})),
             blog_schedule=_parse_schedule(data.get("blog_schedule", {})),
         )
-    except (json.JSONDecodeError, KeyError):
+    except (json.JSONDecodeError, KeyError, ValueError):
         logger.warning("Corrupt config.json — using defaults")
         return Config()
 

@@ -13,14 +13,15 @@ def test_identical_images_are_duplicate():
     assert is_duplicate(h, h, threshold=0.95) is True
 
 def test_very_different_images_are_not_duplicate():
-    # Solid uniform images (all-black vs all-white) both produce all-zero hashes
-    # because wavelet hashing finds no frequency content in flat signals.
-    # Use a checkerboard pattern vs a solid colour instead — these have very
-    # different frequency content and produce distinct hashes on all platforms.
+    # Solid uniform images produce near-identical hashes because whash finds
+    # no frequency content in flat signals. Use a strong horizontal gradient
+    # vs a mid-grey solid — the gradient has clear directional frequency content
+    # that survives rescaling and produces a distinct hash on all platforms.
     size = (64, 64)
-    arr_checker = np.zeros((size[1], size[0], 3), dtype=np.uint8)
-    arr_checker[::2, ::2] = 255  # alternating white squares on black background
-    img_a = Image.fromarray(arr_checker)
+    arr_grad = np.zeros((size[1], size[0], 3), dtype=np.uint8)
+    for col in range(size[0]):
+        arr_grad[:, col] = int(col * 4)  # 0 → 252 left-to-right
+    img_a = Image.fromarray(arr_grad)
     img_b = _solid_image((128, 128, 128), size=size)
     h_a = compute_phash(img_a)
     h_b = compute_phash(img_b)

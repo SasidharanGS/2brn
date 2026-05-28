@@ -390,4 +390,4 @@ app = create_app()
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="127.0.0.1", port=7842, reload=False)
+    uvicorn.run("brn_daemon.main:app", host="127.0.0.1", port=7842, reload=False)

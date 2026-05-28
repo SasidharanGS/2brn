@@ -12,9 +12,11 @@ import json
 import logging
 from datetime import datetime, timezone
 
+import re
+
 import aiosqlite
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from brn_daemon.config import (
     delete_plugin_env_value,
@@ -28,6 +30,17 @@ logger = logging.getLogger(__name__)
 
 
 # ---- Pydantic models ------------------------------------------------------
+
+_SAFE_ID_RE = re.compile(r'^[A-Za-z0-9_-]+$')
+
+
+def _validate_env_keys(v: dict[str, str] | None) -> dict[str, str] | None:
+    if v is None:
+        return v
+    for key in v:
+        if not _SAFE_ID_RE.match(key):
+            raise ValueError(f"Env key '{key}' must match ^[A-Za-z0-9_-]+$")
+    return v
 
 
 class PluginOut(BaseModel):
@@ -47,7 +60,22 @@ class PluginCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=64)
     command: str = Field(..., min_length=1)
     args: list[str] = Field(default_factory=list)
-    env: dict[str, str] = Field(default_factory=dict, description="Env var values (stored in keychain). Keys recorded on the plugin.")
+    env: dict[str, str] = Field(
+        default_factory=dict,
+        description="Env var values (stored in keychain). Keys recorded on the plugin.",
+    )
+
+    @field_validator("name")
+    @classmethod
+    def name_safe(cls, v: str) -> str:
+        if not _SAFE_ID_RE.match(v):
+            raise ValueError("Plugin name must match ^[A-Za-z0-9_-]+$")
+        return v
+
+    @field_validator("env")
+    @classmethod
+    def env_keys_safe(cls, v: dict[str, str]) -> dict[str, str]:
+        return _validate_env_keys(v)
 
 
 class PluginUpdate(BaseModel):
@@ -55,6 +83,11 @@ class PluginUpdate(BaseModel):
     args: list[str] | None = None
     env: dict[str, str] | None = None
     enabled: bool | None = None
+
+    @field_validator("env")
+    @classmethod
+    def env_keys_safe(cls, v: dict[str, str] | None) -> dict[str, str] | None:
+        return _validate_env_keys(v)
 
 
 class RuleOut(BaseModel):

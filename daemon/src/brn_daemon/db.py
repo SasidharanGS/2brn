@@ -148,3 +148,15 @@ async def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_plugin_rule_executions_started_at ON plugin_rule_executions(started_at DESC);
         """)
         await conn.commit()
+
+        # Migration: strip +00:00 suffix from timestamps stored with tz offset.
+        # Safe to run multiple times — rows without the suffix are unaffected.
+        await conn.execute(
+            "UPDATE activities SET started_at = REPLACE(started_at, '+00:00', '') "
+            "WHERE started_at LIKE '%+00:00'"
+        )
+        await conn.execute(
+            "UPDATE captures SET captured_at = REPLACE(captured_at, '+00:00', '') "
+            "WHERE captured_at LIKE '%+00:00'"
+        )
+        await conn.commit()

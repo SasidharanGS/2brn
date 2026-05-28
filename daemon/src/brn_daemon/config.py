@@ -6,9 +6,15 @@ from pathlib import Path
 
 from brn_daemon.db import get_brn_home
 
+try:
+    import keyring
+except ImportError:
+    keyring = None  # type: ignore[assignment]
+
 logger = logging.getLogger(__name__)
 
 KEYCHAIN_SERVICE = "2brn"
+KEYCHAIN_SERVICE_PLUGINS = "2brn-plugins"
 KEYCHAIN_USERNAME = "gateway_token"
 KEYCHAIN_CHAT_KEY = "chat_api_key"
 KEYCHAIN_EMBED_KEY = "embed_api_key"
@@ -244,22 +250,23 @@ def _plugin_env_keychain_key(plugin_name: str, env_key: str) -> str:
 
 def get_plugin_env_value(plugin_name: str, env_key: str) -> str | None:
     """Resolve a plugin env var value: keychain first, then BRN_PLUGIN_<name>_<key> env var."""
-    try:
-        import keyring
-        val = keyring.get_password(KEYCHAIN_SERVICE, _plugin_env_keychain_key(plugin_name, env_key))
-        if val:
-            return val
-    except Exception:
-        pass
+    if keyring is not None:
+        try:
+            val = keyring.get_password(KEYCHAIN_SERVICE_PLUGINS, _plugin_env_keychain_key(plugin_name, env_key))
+            if val:
+                return val
+        except Exception:
+            pass
     env_fallback = f"BRN_PLUGIN_{plugin_name.upper()}_{env_key.upper()}"
     return os.environ.get(env_fallback)
 
 
 def set_plugin_env_value(plugin_name: str, env_key: str, value: str) -> None:
+    if keyring is None:
+        raise RuntimeError("keyring package not available")
     try:
-        import keyring
         keyring.set_password(
-            KEYCHAIN_SERVICE,
+            KEYCHAIN_SERVICE_PLUGINS,
             _plugin_env_keychain_key(plugin_name, env_key),
             value,
         )
@@ -268,12 +275,31 @@ def set_plugin_env_value(plugin_name: str, env_key: str, value: str) -> None:
 
 
 def delete_plugin_env_value(plugin_name: str, env_key: str) -> None:
+    if keyring is None:
+        return
     try:
-        import keyring
         keyring.delete_password(
-            KEYCHAIN_SERVICE,
+            KEYCHAIN_SERVICE_PLUGINS,
             _plugin_env_keychain_key(plugin_name, env_key),
         )
     except Exception:
         # already gone — fine
         pass
+
+
+def migrate_plugin_keychain_entries(entries: list[tuple[str, str]]) -> None:
+    """One-time migration: move plugin secrets from 2brn service to 2brn-plugins.
+
+    Safe to call multiple times (idempotent).
+    """
+    if keyring is None:
+        return
+    for plugin_name, env_key in entries:
+        old_key = _plugin_env_keychain_key(plugin_name, env_key)
+        try:
+            value = keyring.get_password(KEYCHAIN_SERVICE, old_key)
+            if value:
+                keyring.set_password(KEYCHAIN_SERVICE_PLUGINS, old_key, value)
+                keyring.delete_password(KEYCHAIN_SERVICE, old_key)
+        except Exception:
+            pass

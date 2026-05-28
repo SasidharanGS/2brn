@@ -83,3 +83,39 @@ async def test_generate_skips_if_user_edited(tmp_home):
         row = await cur.fetchone()
     assert row[0] == "My edit"
     mock_chat_fn.assert_not_called()
+
+
+async def test_journal_finds_activities_with_naive_timestamps(tmp_home, db):
+    """Activities with naive UTC timestamps must be found by date-range query."""
+    import aiosqlite
+    from datetime import datetime, timezone
+
+    naive_ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")
+    date_str = naive_ts[:10]
+
+    async with aiosqlite.connect(tmp_home / "2brn.db") as conn:
+        await conn.execute(
+            "INSERT INTO captures (captured_at, app_name, window_title, file_path, ocr_text) "
+            "VALUES (?, 'App', 'Win', 'x.jpg', 'hello')",
+            (naive_ts,),
+        )
+        cap_id = (await (await conn.execute("SELECT last_insert_rowid()")).fetchone())[0]
+        await conn.execute(
+            "INSERT INTO activities (capture_id, started_at, summary, tags, task_category, "
+            "task_category_confidence, productivity_state, productivity_confidence) "
+            "VALUES (?, ?, 'did stuff', '[]', 'work', 0.9, 'productive', 0.9)",
+            (cap_id, naive_ts),
+        )
+        await conn.commit()
+
+    async with aiosqlite.connect(tmp_home / "2brn.db") as conn:
+        cur = await conn.execute(
+            "SELECT summary FROM activities "
+            "WHERE started_at >= ? AND started_at <= ? "
+            "AND summary IS NOT NULL",
+            (f"{date_str}T00:00:00", f"{date_str}T23:59:59.999999"),
+        )
+        rows = await cur.fetchall()
+
+    assert len(rows) == 1
+    assert rows[0][0] == "did stuff"

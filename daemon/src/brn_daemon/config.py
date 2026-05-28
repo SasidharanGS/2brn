@@ -244,10 +244,12 @@ def set_gateway_token(token: str) -> None:
 
 
 def _plugin_env_keychain_key(plugin_name: str, env_key: str) -> str:
+    """Keychain entry name for a plugin's env var value."""
     return f"plugin.{plugin_name}.{env_key}"
 
 
 def get_plugin_env_value(plugin_name: str, env_key: str) -> str | None:
+    """Resolve a plugin env var value: keychain first, then BRN_PLUGIN_<name>_<key> env var."""
     if keyring is not None:
         try:
             val = keyring.get_password(KEYCHAIN_SERVICE_PLUGINS, _plugin_env_keychain_key(plugin_name, env_key))
@@ -281,6 +283,7 @@ def delete_plugin_env_value(plugin_name: str, env_key: str) -> None:
             _plugin_env_keychain_key(plugin_name, env_key),
         )
     except Exception:
+        # already gone — fine
         pass
 
 
@@ -297,6 +300,6 @@ def migrate_plugin_keychain_entries(entries: list[tuple[str, str]]) -> None:
             value = keyring.get_password(KEYCHAIN_SERVICE, old_key)
             if value:
                 keyring.set_password(KEYCHAIN_SERVICE_PLUGINS, old_key, value)
-            keyring.delete_password(KEYCHAIN_SERVICE, old_key)
+                keyring.delete_password(KEYCHAIN_SERVICE, old_key)
         except Exception:
             pass

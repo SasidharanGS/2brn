@@ -1,5 +1,6 @@
 import asyncio
 import aiosqlite
+import functools as _functools
 import json
 import logging
 from contextlib import asynccontextmanager
@@ -326,6 +327,27 @@ async def _start_vault_watcher(vault_watcher, loop) -> None:
     vault_watcher.start(loop)
 
 
+async def _phase1_process_monitor(
+    loop: asyncio.AbstractEventLoop,
+    img,
+    *,
+    key: bytes | None,
+) -> tuple[str, "Path"]:
+    """Run compute_phash and save_screenshot in the thread executor.
+
+    Returns (phash_str, file_path).
+    Both are CPU/IO-bound and must not block the event loop.
+    """
+    def save_screenshot_bound():
+        return save_screenshot(img, key=key)
+    save_screenshot_bound.__name__ = "save_screenshot"
+
+    phash_fut = loop.run_in_executor(None, compute_phash, img)
+    save_fut = loop.run_in_executor(None, save_screenshot_bound)
+    phash_str, file_path = await asyncio.gather(phash_fut, save_fut)
+    return phash_str, file_path
+
+
 async def _capture_loop(cfg, inference_queue: InferenceQueue):
     prev_phashes: dict[int, str] = {}  # monitor_index → last phash
     last_heartbeat = 0.0
@@ -353,26 +375,35 @@ async def _capture_loop(cfg, inference_queue: InferenceQueue):
             is_heartbeat = (now - last_heartbeat) >= cfg.capture_interval_seconds
             monitors = capture_all_monitors_with_rects()
 
-            # ── Phase 1: dedup + screenshot save (fast, sync) ─────────────────
-            # Collect monitors that pass the dedup check so we can fan out OCR
-            # in parallel in Phase 2 instead of running it sequentially per monitor.
-            pending: list[tuple[int, object, dict, str, str, str, object]] = []
-            # pending items: (monitor_idx, img, monitor_rect, app_name, window_title, trigger, file_path)
+            loop = asyncio.get_running_loop()
+
+            # ── Phase 1: fan-out phash + screenshot save to executor (CPU/IO-bound) ──
+            phase1_candidates = []
             for monitor_idx, img, monitor_rect in monitors:
                 app_name, window_title = get_app_for_monitor(monitor_rect, windows)
-
                 if app_name in excluded_apps:
                     continue
-                current_phash = compute_phash(img)
+                phase1_candidates.append((monitor_idx, img, monitor_rect, app_name, window_title))
+
+            if not phase1_candidates:
+                if is_heartbeat:
+                    last_heartbeat = now
+                continue
+
+            phase1_results = await asyncio.gather(*[
+                _phase1_process_monitor(loop, item[1], key=app_state.get("screenshot_key"))
+                for item in phase1_candidates
+            ])
+
+            pending = []
+            for (monitor_idx, img, monitor_rect, app_name, window_title), (current_phash, file_path) in zip(
+                phase1_candidates, phase1_results
+            ):
                 prev_phash = prev_phashes.get(monitor_idx)
-
                 is_change = not is_duplicate(current_phash, prev_phash, threshold=0.95)
-
                 if not is_heartbeat and not is_change:
                     continue
-
                 trigger = "heartbeat" if is_heartbeat else "change"
-                file_path = save_screenshot(img, key=app_state.get("screenshot_key"))
                 prev_phashes[monitor_idx] = current_phash
                 pending.append((monitor_idx, img, monitor_rect, app_name, window_title, trigger, file_path, current_phash))
 
@@ -382,7 +413,6 @@ async def _capture_loop(cfg, inference_queue: InferenceQueue):
                 continue
 
             # ── Phase 2: OCR — run all monitors concurrently in thread pool ───
-            loop = asyncio.get_running_loop()
             ocr_tasks = [
                 loop.run_in_executor(None, extract_text, item[1])
                 for item in pending

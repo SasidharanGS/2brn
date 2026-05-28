@@ -124,6 +124,14 @@ export interface ScheduleConfig {
   minute: number
 }
 
+export interface BlogScheduleConfig {
+  frequency: 'daily' | 'monthly' | 'weekly'
+  hour: number
+  minute: number
+  day: number
+  days_of_week: string[]
+}
+
 export interface AppSettings {
   chat_provider: ProviderConfig
   embed_provider: ProviderConfig
@@ -135,7 +143,7 @@ export interface AppSettings {
   blog_mirror_enabled: boolean
   screenshot_encryption_enabled: boolean
   journal_schedule: ScheduleConfig
-  blog_schedule: ScheduleConfig
+  blog_schedule: BlogScheduleConfig
   joplin_enabled: boolean
   joplin_db_path: string
 }
@@ -155,7 +163,7 @@ export interface SettingsUpdateRequest {
   purge_months?: number
   blog_mirror_enabled?: boolean
   journal_schedule?: ScheduleConfig
-  blog_schedule?: ScheduleConfig
+  blog_schedule?: BlogScheduleConfig
   joplin_enabled?: boolean
   joplin_db_path?: string
 }

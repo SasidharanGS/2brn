@@ -72,8 +72,8 @@ class ChromaStore:
             return await loop.run_in_executor(  # type: ignore[return-value]
                 None, lambda: self._collection.query(**kwargs)
             )
-        except Exception as exc:
-            logger.warning("Activity collection query failed: %s", exc)
+        except Exception:
+            logger.exception("Activity collection query failed")
             return {"documents": [[]], "metadatas": [[]], "distances": [[]]}
 
     async def query_notes(self, embedding: list[float], n_results: int = 5) -> dict:
@@ -92,8 +92,8 @@ class ChromaStore:
                     include=["documents", "metadatas", "distances"],
                 ),
             )
-        except Exception as exc:
-            logger.warning("Note collection query failed: %s", exc)
+        except Exception:
+            logger.exception("Note collection query failed")
             return {"documents": [[]], "metadatas": [[]], "distances": [[]]}
 
 
@@ -115,5 +115,5 @@ class EmbeddingService:
                     (doc_id, activity_id),
                 )
                 await conn.commit()
-        except Exception as exc:
-            logger.error("Failed to embed activity %d: %s", activity_id, exc)
+        except Exception:
+            logger.exception("Failed to embed activity %d", activity_id)

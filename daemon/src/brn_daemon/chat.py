@@ -54,8 +54,8 @@ class ChatService:
         # 1. Embed the query
         try:
             query_embedding = await self._embed_client.embed(question)
-        except Exception as exc:
-            logger.error("Failed to embed query: %s", exc)
+        except Exception:
+            logger.exception("Failed to embed query")
             yield "Sorry, I couldn't process your question right now."
             return
 
@@ -73,8 +73,8 @@ class ChatService:
                 n_results=n_results,
                 where=where if where else None,
             )
-        except Exception as exc:
-            logger.error("ChromaDB activity query failed: %s", exc)
+        except Exception:
+            logger.exception("ChromaDB activity query failed")
             results = {"documents": [[]], "metadatas": [[]]}
 
         # 4. Also search note_memories
@@ -83,8 +83,8 @@ class ChatService:
                 embedding=query_embedding,
                 n_results=5,
             )
-        except Exception as exc:
-            logger.warning("ChromaDB note query failed: %s", exc)
+        except Exception:
+            logger.exception("ChromaDB note query failed")
             note_results = {"documents": [[]], "metadatas": [[]]}
 
         # 5. Build context chunks from both sources

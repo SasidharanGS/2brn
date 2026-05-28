@@ -249,7 +249,7 @@ def set_gateway_token(token: str) -> None:
         import keyring
         keyring.set_password(KEYCHAIN_SERVICE, KEYCHAIN_USERNAME, token)
     except Exception as exc:
-        logger.warning("Failed to save gateway token to keychain: %s", exc)
+        logger.exception("Failed to save gateway token to keychain")
         raise RuntimeError(f"Could not save token to keychain: {exc}") from exc
 
 

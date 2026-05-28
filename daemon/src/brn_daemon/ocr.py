@@ -30,12 +30,11 @@ def extract_text(image: Image.Image) -> str:
     try:
         text = pytesseract.image_to_string(image, timeout=10)
         return text.strip()
-    except RuntimeError as exc:
-        # pytesseract raises RuntimeError on timeout
-        logger.warning("OCR timed out — returning empty text: %s", exc)
+    except RuntimeError:
+        logger.exception("OCR timed out — returning empty text")
         return ""
-    except Exception as exc:
-        logger.warning("OCR failed: %s", exc)
+    except Exception:
+        logger.exception("OCR failed")
         return ""
 
 

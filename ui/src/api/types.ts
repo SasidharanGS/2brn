@@ -57,32 +57,32 @@ export type InsightsPeriod = 'day' | 'week' | 'month'
 export interface InsightsCategoryBucket {
   task_category: string
   count: number
-  total_minutes: number
+  pct: number
   avg_confidence: number
 }
 
 export interface InsightsStateBucket {
   productivity_state: string
   count: number
-  total_minutes: number
+  pct: number
 }
 
 export interface InsightsAppBucket {
   app_name: string
   count: number
-  total_minutes: number
+  pct: number
 }
 
 export interface HeatmapCell {
   hour: number  // 0–23
-  total_minutes: number
+  pct: number
   dominant_state: string | null
-  by_state_minutes: Record<string, number>
+  by_state_pct: Record<string, number>
 }
 
 export interface ComparisonMetric {
-  current_minutes: number
-  baseline_minutes: number
+  current_pct: number
+  baseline_pct: number
 }
 
 export interface InsightsComparison {
@@ -94,7 +94,7 @@ export interface InsightsComparison {
 
 export interface RecurringActivity {
   canonical_summary: string
-  total_minutes: number
+  pct: number
   session_count: number
   variant_count: number
 }
@@ -103,7 +103,7 @@ export interface InsightsSummary {
   period: InsightsPeriod
   date: string
   range: { start: string; end: string; span_days: number }
-  interval_seconds: number
+  total_captures: number
   categories: InsightsCategoryBucket[]
   productivity_states: InsightsStateBucket[]
   top_apps: InsightsAppBucket[]

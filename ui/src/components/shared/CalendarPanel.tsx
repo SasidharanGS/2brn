@@ -276,17 +276,6 @@ export default function CalendarPanel() {
       {/* Spacer to push content up */}
       <div className="flex-1" />
 
-      {/* Route hint */}
-      <div
-        className="px-3 pb-3 text-center"
-        style={{ color: 'var(--text-dim)' }}
-      >
-        <p className="text-[10px] leading-relaxed">
-          {isActive
-            ? 'Click a date to filter this section'
-            : ''}
-        </p>
-      </div>
     </div>
   )
 }

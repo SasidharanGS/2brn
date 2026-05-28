@@ -67,8 +67,8 @@ ui/release/
 
 # Git worktrees
 .worktrees/
+worktrees/
 
 # Tool caches
 .vite/
 .sisyphus/
-.worktrees/

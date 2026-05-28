@@ -24,13 +24,13 @@ async def init_db() -> None:
         try:
             await conn.execute("ALTER TABLE captures ADD COLUMN monitor_index INTEGER")
             await conn.commit()
-        except Exception:
+        except aiosqlite.OperationalError:
             pass  # Column already exists — safe to ignore
 
         try:
             await conn.execute("ALTER TABLE activities ADD COLUMN app_name_override TEXT")
             await conn.commit()
-        except Exception:
+        except aiosqlite.OperationalError:
             pass  # Column already exists — safe to ignore
 
         await conn.executescript("""

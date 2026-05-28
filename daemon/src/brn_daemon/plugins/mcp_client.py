@@ -106,6 +106,8 @@ class MCPClient:
         except FileNotFoundError as exc:
             raise MCPError(f"Command not found: {self.command}") from exc
         except Exception as exc:
+            # Keep broad: subprocess.Popen can fail with FileNotFoundError,
+            # PermissionError, or OSError depending on OS and PATH state.
             raise MCPError(f"Failed to start MCP server '{self.command}': {exc}") from exc
 
         self._reader_task = asyncio.create_task(self._read_loop(), name="mcp-stdout")

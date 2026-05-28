@@ -175,6 +175,10 @@ def save_config(cfg: Config) -> None:
     os.replace(tmp_path, path)
 
 
+# NOTE: All keychain operations use bare `except Exception` because the keyring
+# library's backends (macOS Keychain, Secret Service, fallback) can raise any
+# exception type depending on the OS and backend version. Narrowing the type
+# here would be brittle across platforms.
 def get_api_key(keychain_key: str, env_fallback: str) -> str | None:
     try:
         import keyring

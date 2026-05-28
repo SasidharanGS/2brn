@@ -90,3 +90,26 @@ def test_load_config_legacy_blog_schedule_no_frequency(tmp_path, monkeypatch):
     assert loaded.blog_schedule.frequency == "daily"
     assert loaded.blog_schedule.hour == 22
     assert loaded.blog_schedule.minute == 15
+
+
+from brn_daemon.main import _blog_cron_kwargs
+
+
+def test_blog_cron_kwargs_daily():
+    s = BlogScheduleConfig(frequency="daily", hour=21, minute=30)
+    assert _blog_cron_kwargs(s) == {"hour": 21, "minute": 30}
+
+
+def test_blog_cron_kwargs_monthly():
+    s = BlogScheduleConfig(frequency="monthly", day=15, hour=10, minute=0)
+    assert _blog_cron_kwargs(s) == {"day": 15, "hour": 10, "minute": 0}
+
+
+def test_blog_cron_kwargs_weekly():
+    s = BlogScheduleConfig(frequency="weekly", days_of_week=["mon", "fri"], hour=8, minute=0)
+    assert _blog_cron_kwargs(s) == {"day_of_week": "mon,fri", "hour": 8, "minute": 0}
+
+
+def test_blog_cron_kwargs_weekly_empty_days_falls_back_to_daily():
+    s = BlogScheduleConfig(frequency="weekly", days_of_week=[], hour=9, minute=0)
+    assert _blog_cron_kwargs(s) == {"hour": 9, "minute": 0}

@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -140,8 +141,6 @@ def load_config() -> Config:
 
 
 def save_config(cfg: Config) -> None:
-    get_brn_home().mkdir(parents=True, exist_ok=True)
-
     def _provider_dict(p: ProviderConfig) -> dict:
         d = {"type": p.type, "base_url": p.base_url, "model": p.model}
         if p.extra_headers:
@@ -166,7 +165,14 @@ def save_config(cfg: Config) -> None:
             "days_of_week": cfg.blog_schedule.days_of_week,
         },
     }
-    _config_path().write_text(json.dumps(data, indent=2))
+    path = _config_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(
+        mode="w", dir=path.parent, suffix=".tmp", delete=False, encoding="utf-8"
+    ) as f:
+        json.dump(data, f, indent=2)
+        tmp_path = f.name
+    os.replace(tmp_path, path)
 
 
 def get_api_key(keychain_key: str, env_fallback: str) -> str | None:

@@ -198,9 +198,12 @@ ipcMain.handle('daemon-owned', () => daemon !== null)
 ipcMain.handle('restart-daemon', () => {
   if (!daemon) return { ok: false, reason: 'not-owned' }
   daemon.removeAllListeners('exit')
+  daemon.once('exit', () => {
+    daemonRestartAttempts = 0
+    startDaemon()
+  })
   daemon.kill('SIGTERM')
-  daemonRestartAttempts = 0
-  startDaemon()
+  daemon = null
   return { ok: true }
 })
 

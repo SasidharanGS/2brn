@@ -49,3 +49,51 @@ async def test_chat_service_streams_answer(tmp_home):
 
     assert "".join(collected) == "Here is your answer."
     mock_chroma.query.assert_called_once()
+
+
+async def test_rag_distance_cutoff_filters_high_distance_docs():
+    """Documents with distance > DISTANCE_CUTOFF must be excluded from context."""
+    from brn_daemon.chat import ChatService, DISTANCE_CUTOFF
+
+    async def fake_embed(text):
+        return [0.1] * 384
+
+    async def fake_stream(messages):
+        # Capture the prompt to inspect context chunks
+        user_msg = messages[-1]["content"]
+        yield "response"
+        fake_stream.last_prompt = user_msg
+
+    fake_stream.last_prompt = ""
+
+    fake_store = MagicMock()
+    # Activity results: one close doc (distance 0.3) and one far doc (distance 0.95)
+    fake_store.query = AsyncMock(return_value={
+        "documents": [["close doc", "far doc"]],
+        "metadatas": [[
+            {"source": "activity", "timestamp": "2026-05-28T10:00:00", "app_name": "Safari", "date": "2026-05-28"},
+            {"source": "activity", "timestamp": "2026-05-28T11:00:00", "app_name": "Finder", "date": "2026-05-28"},
+        ]],
+        "distances": [[0.3, 0.95]],
+    })
+    fake_store.query_notes = AsyncMock(return_value={
+        "documents": [[]], "metadatas": [[]], "distances": [[]]
+    })
+
+    embed_client = MagicMock()
+    embed_client.embed = fake_embed
+
+    svc = ChatService(
+        chat_fn=MagicMock(),
+        stream_fn=fake_stream,
+        embed_client=embed_client,
+        chroma_store=fake_store,
+    )
+
+    chunks = []
+    async for chunk in svc.chat("what did I do?"):
+        chunks.append(chunk)
+
+    assert DISTANCE_CUTOFF < 0.95  # sanity
+    assert "far doc" not in fake_stream.last_prompt
+    assert "close doc" in fake_stream.last_prompt

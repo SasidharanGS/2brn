@@ -35,6 +35,31 @@ class ScheduleConfig:
             raise ValueError(f"minute must be 0-59, got {self.minute}")
 
 
+VALID_DAYS_OF_WEEK = {"mon", "tue", "wed", "thu", "fri", "sat", "sun"}
+
+
+@dataclass
+class BlogScheduleConfig:
+    frequency: str = "daily"
+    hour: int = 21
+    minute: int = 0
+    day: int = 1
+    days_of_week: list = field(default_factory=list)
+
+    def __post_init__(self):
+        if self.frequency not in ("daily", "monthly", "weekly"):
+            raise ValueError(f"frequency must be daily|monthly|weekly, got {self.frequency!r}")
+        if not (0 <= self.hour <= 23):
+            raise ValueError(f"hour must be 0-23, got {self.hour}")
+        if not (0 <= self.minute <= 59):
+            raise ValueError(f"minute must be 0-59, got {self.minute}")
+        if not (1 <= self.day <= 28):
+            raise ValueError(f"day must be 1-28, got {self.day}")
+        invalid = set(self.days_of_week) - VALID_DAYS_OF_WEEK
+        if invalid:
+            raise ValueError(f"days_of_week contains invalid values: {invalid}")
+
+
 @dataclass
 class Config:
     chat_provider: ProviderConfig = field(default_factory=lambda: ProviderConfig(
@@ -56,7 +81,7 @@ class Config:
     joplin_enabled: bool = False
     joplin_db_path: str = ""
     journal_schedule: ScheduleConfig = field(default_factory=lambda: ScheduleConfig(hour=21, minute=0))
-    blog_schedule: ScheduleConfig = field(default_factory=lambda: ScheduleConfig(hour=21, minute=0))
+    blog_schedule: BlogScheduleConfig = field(default_factory=BlogScheduleConfig)
 
 
 def _config_path() -> Path:
@@ -77,6 +102,14 @@ def _parse_schedule(data: dict) -> ScheduleConfig:
     return ScheduleConfig(**kwargs)
 
 
+def _parse_blog_schedule(data: dict) -> BlogScheduleConfig:
+    kwargs = {k: v for k, v in data.items()
+              if k in ("frequency", "hour", "minute", "day", "days_of_week")}
+    if "frequency" not in kwargs:
+        kwargs["frequency"] = "daily"
+    return BlogScheduleConfig(**kwargs)
+
+
 def load_config() -> Config:
     path = _config_path()
     if not path.exists():
@@ -93,7 +126,7 @@ def load_config() -> Config:
             joplin_enabled=data.get("joplin_enabled", False),
             joplin_db_path=data.get("joplin_db_path", ""),
             journal_schedule=_parse_schedule(data.get("journal_schedule", {})),
-            blog_schedule=_parse_schedule(data.get("blog_schedule", {})),
+            blog_schedule=_parse_blog_schedule(data.get("blog_schedule", {})),
         )
     except (json.JSONDecodeError, KeyError, ValueError):
         logger.warning("Corrupt config.json — using defaults")
@@ -119,7 +152,13 @@ def save_config(cfg: Config) -> None:
         "joplin_enabled": cfg.joplin_enabled,
         "joplin_db_path": cfg.joplin_db_path,
         "journal_schedule": {"hour": cfg.journal_schedule.hour, "minute": cfg.journal_schedule.minute},
-        "blog_schedule": {"hour": cfg.blog_schedule.hour, "minute": cfg.blog_schedule.minute},
+        "blog_schedule": {
+            "frequency": cfg.blog_schedule.frequency,
+            "hour": cfg.blog_schedule.hour,
+            "minute": cfg.blog_schedule.minute,
+            "day": cfg.blog_schedule.day,
+            "days_of_week": cfg.blog_schedule.days_of_week,
+        },
     }
     _config_path().write_text(json.dumps(data, indent=2))
 

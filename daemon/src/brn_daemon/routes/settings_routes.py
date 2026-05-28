@@ -10,7 +10,7 @@ from brn_daemon.config import (
     get_chat_api_key, get_embed_api_key,
     set_chat_api_key, set_embed_api_key,
     get_screenshot_password, set_screenshot_password, delete_screenshot_password,
-    ScheduleConfig,
+    ScheduleConfig, BlogScheduleConfig,
 )
 from brn_daemon.encryption import (
     decrypt_all_screenshots,
@@ -148,7 +148,7 @@ async def update_settings(body: SettingsUpdateRequest):
             except JobLookupError:
                 logger.warning("journal_job not found in scheduler; schedule saved but not live-applied")
     if body.blog_schedule is not None:
-        cfg.blog_schedule = ScheduleConfig(hour=body.blog_schedule.hour, minute=body.blog_schedule.minute)
+        cfg.blog_schedule = BlogScheduleConfig(hour=body.blog_schedule.hour, minute=body.blog_schedule.minute)
         if scheduler:
             try:
                 scheduler.reschedule_job("blog_job", trigger="cron", hour=cfg.blog_schedule.hour, minute=cfg.blog_schedule.minute)

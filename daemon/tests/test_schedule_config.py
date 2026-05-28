@@ -1,6 +1,6 @@
 import json
 import pytest
-from brn_daemon.config import Config, ScheduleConfig, load_config, save_config
+from brn_daemon.config import BlogScheduleConfig, Config, ScheduleConfig, load_config, save_config
 
 
 def test_schedule_config_defaults():
@@ -21,7 +21,7 @@ def test_load_config_roundtrip_schedules(tmp_path, monkeypatch):
     monkeypatch.setenv("BRN_HOME", str(tmp_path))
     cfg = Config()
     cfg.journal_schedule = ScheduleConfig(hour=8, minute=30)
-    cfg.blog_schedule = ScheduleConfig(hour=23, minute=15)
+    cfg.blog_schedule = BlogScheduleConfig(hour=23, minute=15)
     save_config(cfg)
 
     loaded = load_config()

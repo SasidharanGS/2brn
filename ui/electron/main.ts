@@ -193,6 +193,17 @@ ipcMain.handle('get-daemon-port', () => DAEMON_PORT)
 ipcMain.handle('get-platform', () => process.platform)
 ipcMain.handle('get-theme', () => nativeTheme.shouldUseDarkColors ? 'dark' : 'light')
 
+ipcMain.handle('daemon-owned', () => daemon !== null)
+
+ipcMain.handle('restart-daemon', () => {
+  if (!daemon) return { ok: false, reason: 'not-owned' }
+  daemon.removeAllListeners('exit')
+  daemon.kill('SIGTERM')
+  daemonRestartAttempts = 0
+  startDaemon()
+  return { ok: true }
+})
+
 nativeTheme.on('updated', () => {
   mainWindow?.webContents.send('theme-changed', nativeTheme.shouldUseDarkColors ? 'dark' : 'light')
 })

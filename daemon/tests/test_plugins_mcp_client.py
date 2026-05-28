@@ -90,3 +90,25 @@ async def test_pool_close_all_stops_clients():
     assert c.is_running
     await pool.close_all()
     assert not c.is_running
+
+
+async def test_subprocess_env_whitelist_excludes_secrets():
+    """_build_subprocess_env must not contain secrets from os.environ."""
+    import os
+    from brn_daemon.plugins.mcp_client import _build_subprocess_env
+
+    plugin_env = {"PLUGIN_TOKEN": "tok"}
+
+    old = os.environ.get("_BRN_TEST_SENTINEL")
+    os.environ["_BRN_TEST_SENTINEL"] = "should-not-leak"
+    try:
+        result = _build_subprocess_env(plugin_env)
+    finally:
+        if old is None:
+            del os.environ["_BRN_TEST_SENTINEL"]
+        else:
+            os.environ["_BRN_TEST_SENTINEL"] = old
+
+    assert result["PLUGIN_TOKEN"] == "tok"
+    assert "PATH" in result
+    assert "_BRN_TEST_SENTINEL" not in result

@@ -14,10 +14,34 @@ import asyncio
 import json
 import logging
 import os
+import platform
 from dataclasses import dataclass, field
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+_BASE_ENV_KEYS = {
+    "PATH", "HOME", "USER", "LOGNAME",
+    "LANG", "LC_ALL", "LC_CTYPE",
+    "TMPDIR", "TEMP", "TMP",
+    "TERM", "COLORTERM",
+}
+_WINDOWS_ENV_KEYS = {
+    "SYSTEMROOT", "SYSTEMDRIVE", "COMSPEC",
+    "USERPROFILE", "APPDATA", "LOCALAPPDATA",
+}
+
+
+def _build_subprocess_env(plugin_env: dict[str, str]) -> dict[str, str]:
+    """Return a minimal env for an MCP subprocess.
+
+    Whitelists only OS-level vars needed by runtimes (node, python, etc.)
+    to locate binaries and temp dirs. Merges plugin_env on top.
+    Never passes arbitrary daemon env vars (API keys, tokens, etc.).
+    """
+    allowed = _BASE_ENV_KEYS | (_WINDOWS_ENV_KEYS if platform.system() == "Windows" else set())
+    base = {k: v for k, v in os.environ.items() if k in allowed}
+    return {**base, **plugin_env}
 
 # JSON-RPC error code for "method not found" / generic invalid response.
 MCP_PROTOCOL_VERSION = "2024-11-05"
@@ -69,7 +93,7 @@ class MCPClient:
         """Spawn the subprocess and perform the MCP handshake."""
         if self.is_running:
             return
-        full_env = {**os.environ, **self.env}
+        full_env = _build_subprocess_env(self.env)
         try:
             self._proc = await asyncio.create_subprocess_exec(
                 self.command,

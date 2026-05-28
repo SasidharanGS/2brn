@@ -36,7 +36,10 @@ export default function Blog() {
   const { selectedDate } = useAppDate()
   const [editing, setEditing]         = useState(false)
   const [editContent, setEditContent] = useState('')
-  const [scheduleTime, setScheduleTime] = useState('21:00')
+  const [scheduleFreq, setScheduleFreq]   = useState<'daily' | 'monthly' | 'weekly'>('daily')
+  const [scheduleHour, setScheduleHour]   = useState('21:00')
+  const [scheduleDay, setScheduleDay]     = useState(1)
+  const [scheduleDays, setScheduleDays]   = useState<string[]>([])
   const [scheduleSaved, setScheduleSaved] = useState(false)
   const qc = useQueryClient()
 
@@ -44,11 +47,20 @@ export default function Blog() {
 
   useEffect(() => {
     if (settings?.blog_schedule) {
-      setScheduleTime(
-        `${String(settings.blog_schedule.hour).padStart(2, '0')}:${String(settings.blog_schedule.minute).padStart(2, '0')}`
-      )
+      const s = settings.blog_schedule
+      setScheduleFreq(s.frequency)
+      setScheduleHour(`${String(s.hour).padStart(2,'0')}:${String(s.minute).padStart(2,'0')}`)
+      setScheduleDay(s.day)
+      setScheduleDays(s.days_of_week)
     }
-  }, [settings?.blog_schedule?.hour, settings?.blog_schedule?.minute]) // eslint-disable-line
+  }, [
+    settings?.blog_schedule?.frequency,
+    settings?.blog_schedule?.hour,
+    settings?.blog_schedule?.minute,
+    settings?.blog_schedule?.day,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    JSON.stringify(settings?.blog_schedule?.days_of_week),
+  ])
 
   // Reset edit state whenever the date changes (calendar navigation)
   useEffect(() => {
@@ -58,9 +70,17 @@ export default function Blog() {
 
   const saveSchedule = useMutation({
     mutationFn: () => {
-      const [h, m] = scheduleTime.split(':').map(Number)
-      if (!scheduleTime || isNaN(h) || isNaN(m)) return Promise.reject(new Error('Invalid time'))
-      return api.updateSettings({ blog_schedule: { hour: h, minute: m } })
+      const [h, m] = scheduleHour.split(':').map(Number)
+      if (!scheduleHour || isNaN(h) || isNaN(m)) return Promise.reject(new Error('Invalid time'))
+      return api.updateSettings({
+        blog_schedule: {
+          frequency: scheduleFreq,
+          hour: h,
+          minute: m,
+          day: scheduleDay,
+          days_of_week: scheduleDays,
+        },
+      })
     },
     onSuccess: () => {
       setScheduleSaved(true)
@@ -107,15 +127,65 @@ export default function Blog() {
             </span>
           )}
         </div>
-        <div className="flex items-center gap-2">
-          <span className="text-[12px]" style={{ color: 'var(--text-dim)' }}>Daily at</span>
+        {/* Schedule control */}
+        <div className="flex items-center gap-2 flex-wrap justify-end">
+          <select
+            value={scheduleFreq}
+            onChange={e => setScheduleFreq(e.target.value as 'daily' | 'monthly' | 'weekly')}
+            className="rounded-[7px] border px-2 py-1 text-[13px] outline-none"
+            style={{ background: 'var(--bg-surface-2)', borderColor: 'var(--border)', color: 'var(--text)' }}
+          >
+            <option value="daily">Daily</option>
+            <option value="monthly">Monthly</option>
+            <option value="weekly">Weekly</option>
+          </select>
+
+          {scheduleFreq === 'monthly' && (
+            <select
+              value={scheduleDay}
+              onChange={e => setScheduleDay(Number(e.target.value))}
+              className="rounded-[7px] border px-2 py-1 text-[13px] outline-none"
+              style={{ background: 'var(--bg-surface-2)', borderColor: 'var(--border)', color: 'var(--text)' }}
+            >
+              {Array.from({ length: 28 }, (_, i) => i + 1).map(d => (
+                <option key={d} value={d}>
+                  {d === 1 ? '1st' : d === 2 ? '2nd' : d === 3 ? '3rd' : `${d}th`}
+                </option>
+              ))}
+            </select>
+          )}
+
+          {scheduleFreq === 'weekly' && (
+            <div className="flex gap-1">
+              {(['mon','tue','wed','thu','fri','sat','sun'] as const).map(day => {
+                const active = scheduleDays.includes(day)
+                return (
+                  <button
+                    key={day}
+                    onClick={() => setScheduleDays(prev =>
+                      active ? prev.filter(d => d !== day) : [...prev, day]
+                    )}
+                    className="w-8 h-7 rounded-[6px] text-[11px] font-medium transition-all"
+                    style={active
+                      ? { background: 'var(--accent)', color: '#fff', border: 'none' }
+                      : { background: 'var(--bg-surface-2)', color: 'var(--text-muted)', border: '1px solid var(--border)' }
+                    }
+                  >
+                    {day[0].toUpperCase()}{day[1]}
+                  </button>
+                )
+              })}
+            </div>
+          )}
+
           <input
             type="time"
-            value={scheduleTime}
-            onChange={e => setScheduleTime(e.target.value)}
+            value={scheduleHour}
+            onChange={e => setScheduleHour(e.target.value)}
             className="rounded-[7px] border px-2 py-1 text-[13px] outline-none"
             style={{ background: 'var(--bg-surface-2)', borderColor: 'var(--border)', color: 'var(--text)' }}
           />
+
           <button
             onClick={() => saveSchedule.mutate()}
             disabled={saveSchedule.isPending}

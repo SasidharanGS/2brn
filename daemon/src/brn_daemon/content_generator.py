@@ -4,7 +4,7 @@ Both JournalGenerator and BlogGenerator share identical DB access patterns.
 This module provides them as standalone async functions to eliminate duplication.
 """
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import aiosqlite
 
@@ -54,7 +54,7 @@ async def upsert_generated_content(
     column layouts: (date TEXT UNIQUE, content TEXT, generated_at TEXT,
     edited_by_user INTEGER).
     """
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")
+    now = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S.%f")
     async with aiosqlite.connect(get_db_path()) as conn:
         await conn.execute(
             f"""INSERT INTO {table} (date, content, generated_at, edited_by_user)

@@ -109,7 +109,6 @@ async def test_blog_job_does_not_emit_when_no_content(tmp_path, monkeypatch):
 async def test_startup_backfill_journal_skips_if_not_past_schedule(tmp_path, monkeypatch):
     monkeypatch.setenv("BRN_HOME", str(tmp_path))
     from brn_daemon.db import init_db
-    from brn_daemon.config import ScheduleConfig
     await init_db()
 
     journal_gen = MagicMock()

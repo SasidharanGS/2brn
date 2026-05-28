@@ -54,7 +54,7 @@ export default function App() {
     window.electronAPI.getTheme().then(osTheme =>
       applyThemeClass(osTheme === 'dark', readPersistedMode())
     )
-    window.electronAPI.onThemeChanged(osTheme => {
+    const unsubTheme = window.electronAPI.onThemeChanged(osTheme => {
       setThemeModeState(current => {
         applyThemeClass(osTheme === 'dark', current)
         return current
@@ -63,6 +63,7 @@ export default function App() {
     window.electronAPI.getPlatform().then(platform => {
       document.documentElement.classList.toggle('macos', platform === 'darwin')
     })
+    return () => unsubTheme()
   }, [applyThemeClass])
 
   const handleThemeModeChange = useCallback((mode: ThemeMode) => {

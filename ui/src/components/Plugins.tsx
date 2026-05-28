@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api/client'
 import type { Plugin, PluginRule, PluginTool, RuleExecution } from '../api/types'
+import Toggle from './shared/Toggle'
 
 const PLUGINS_QK = ['plugins']
 const RULES_QK = (id: number | null) => ['plugin-rules', id ?? 0]
@@ -829,27 +830,4 @@ function Hint({ children }: { children: React.ReactNode }) {
   )
 }
 
-function Toggle({ enabled, onToggle }: { enabled: boolean; onToggle: () => void }) {
-  return (
-    <button
-      onClick={onToggle}
-      className="relative shrink-0 rounded-full transition-all duration-200"
-      style={{
-        width: 32,
-        height: 18,
-        background: enabled ? 'var(--accent)' : 'var(--bg-surface-3)',
-        border: `1px solid ${enabled ? 'var(--accent)' : 'var(--border-2)'}`,
-      }}
-    >
-      <span
-        className="absolute top-[2px] rounded-full transition-all duration-200"
-        style={{
-          width: 12,
-          height: 12,
-          background: 'var(--toggle-knob)',
-          left: enabled ? 16 : 2,
-        }}
-      />
-    </button>
-  )
-}
+

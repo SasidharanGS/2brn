@@ -107,6 +107,8 @@ export default function Settings() {
   const [saveMessage, setSaveMessage]     = useState('')
   const [joplinEnabled, setJoplinEnabled] = useState(false)
   const [joplinDbPath, setJoplinDbPath]   = useState('')
+  const [daemonOwned, setDaemonOwned] = useState<boolean | null>(null)
+  const [restartState, setRestartState] = useState<'idle' | 'restarting'>('idle')
 
   // Screenshot encryption form state
   const [encPwd, setEncPwd]         = useState('')
@@ -119,6 +121,10 @@ export default function Settings() {
 
   const { data: settings }     = useQuery({ queryKey: queryKeys.settings(),   queryFn: api.getSettings })
   const { data: exclusions = [] } = useQuery({ queryKey: queryKeys.exclusions(), queryFn: api.getExclusions })
+
+  useEffect(() => {
+    window.electronAPI.isDaemonOwned().then(setDaemonOwned)
+  }, [])
 
   useEffect(() => {
     if (settings && !chatUrl) {
@@ -134,6 +140,27 @@ export default function Settings() {
   }, [settings?.chat_provider?.base_url]) // eslint-disable-line
 
   const flash = (msg: string) => { setSaveMessage(msg); setTimeout(() => setSaveMessage(''), 3000) }
+
+  function handleRestartDaemon() {
+    setRestartState('restarting')
+    window.electronAPI.restartDaemon()
+
+    const deadline = Date.now() + 15_000
+    const interval = setInterval(async () => {
+      try {
+        await api.getStatus()
+        clearInterval(interval)
+        setRestartState('idle')
+        flash('Daemon restarted successfully')
+      } catch {
+        if (Date.now() >= deadline) {
+          clearInterval(interval)
+          setRestartState('idle')
+          flash('Daemon did not come back up')
+        }
+      }
+    }, 2000)
+  }
 
   const saveProviders = useMutation({
     mutationFn: () => api.updateSettings({
@@ -542,6 +569,34 @@ export default function Settings() {
               spellCheck={false}
             />
           </Field>
+        )}
+      </Section>
+
+      {/* Daemon */}
+      <Section title="Daemon">
+        {daemonOwned === false ? (
+          <p className="text-[12px]" style={{ color: 'var(--text-dim)' }}>
+            Daemon was started externally — restart not available.
+          </p>
+        ) : (
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-[14px]" style={{ color: 'var(--text)' }}>
+                Restart daemon
+              </div>
+              <div className="text-[12px] mt-0.5" style={{ color: 'var(--text-dim)' }}>
+                Stops and restarts the background process
+              </div>
+            </div>
+            <button
+              onClick={handleRestartDaemon}
+              disabled={restartState === 'restarting' || daemonOwned === null}
+              className="px-4 py-2 rounded-[9px] text-[13px] font-medium transition-all disabled:opacity-40"
+              style={{ background: 'var(--amber-bg, #fef3c7)', color: 'var(--amber, #d97706)', border: '1px solid rgba(217,119,6,0.2)' }}
+            >
+              {restartState === 'restarting' ? 'Restarting…' : 'Restart Daemon'}
+            </button>
+          </div>
         )}
       </Section>
     </div>

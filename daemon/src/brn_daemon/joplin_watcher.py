@@ -89,8 +89,8 @@ def _get_notes_since(db_path: Path, since_ms: int) -> list[dict]:
         rows = [dict(r) for r in cur.fetchall()]
         conn.close()
         return rows
-    except Exception as exc:
-        logger.error("Failed to read Joplin SQLite: %s", exc)
+    except Exception:
+        logger.exception("Failed to read Joplin SQLite")
         return []
 
 
@@ -147,8 +147,8 @@ class JoplinWatcher:
             try:
                 await self._embed_note(note)
                 embedded += 1
-            except Exception as exc:
-                logger.error("Bulk embed failed for note %s: %s", note["id"], exc)
+            except Exception:
+                logger.exception("Bulk embed failed for note %s", note["id"])
 
         logger.info("Bulk embed complete: %d/%d notes embedded", embedded, len(notes))
 
@@ -179,8 +179,8 @@ class JoplinWatcher:
                 await self._poll_once()
             except asyncio.CancelledError:
                 break
-            except Exception as exc:
-                logger.error("Joplin poll error: %s", exc)
+            except Exception:
+                logger.exception("Joplin poll error")
 
     async def _poll_once(self) -> None:
         """Check for notes updated since last poll and re-embed them."""
@@ -196,8 +196,8 @@ class JoplinWatcher:
                 await self._embed_note(note)
                 # Only advance cursor past notes that were successfully embedded
                 max_embedded_ms = max(max_embedded_ms, note["updated_time"])
-            except Exception as exc:
-                logger.error("Failed to embed note %s: %s — will retry next poll", note["id"], exc)
+            except Exception:
+                logger.exception("Failed to embed note %s — will retry next poll", note["id"])
 
         self._last_poll_ms = max_embedded_ms
 

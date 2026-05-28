@@ -192,7 +192,7 @@ class PluginOrchestrator:
         except MCPError as exc:
             await self._log_execution(rule_id, started, status="error",
                                       error=str(exc), payload=payload, result=None)
-            logger.warning("Plugin rule %s failed: %s", rule_id, exc)
+            logger.exception("Plugin rule %s failed", rule_id)
         except Exception as exc:
             await self._log_execution(rule_id, started, status="error",
                                       error=repr(exc), payload=payload, result=None)

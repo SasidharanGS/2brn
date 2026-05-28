@@ -31,6 +31,6 @@ jobs:
         run: uv run pyright src/brn_daemon
         working-directory: daemon
 
-      - name: Pytest
-        run: uv run --extra dev pytest tests/ -v --timeout=30
+      - name: Test
         working-directory: daemon
+        run: uv run --extra dev pytest tests/ -q --timeout=30 --cov=brn_daemon --cov-fail-under=60 --cov-report=term-missing

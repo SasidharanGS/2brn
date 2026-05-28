@@ -60,11 +60,11 @@ async def chat_complete(
             if resp is None or not resp.choices:  # type: ignore[union-attr]
                 raise ValueError("Provider returned empty response (check base_url and model name)")
             return resp.choices[0].message.content or ""  # type: ignore[union-attr]
-        except Exception as exc:
+        except Exception:
             # Keep broad: litellm surfaces errors as its own exception hierarchy
             # which varies by provider. Narrowing here would miss valid failures.
             wait = 2 ** attempt
-            logger.warning("Chat attempt %d failed: %s — retrying in %ds", attempt + 1, exc, wait)
+            logger.exception("Chat attempt %d failed — retrying in %ds", attempt + 1, wait)
             if attempt < _MAX_RETRIES - 1:
                 await asyncio.sleep(wait)
             else:
@@ -91,7 +91,7 @@ async def chat_stream(
             yield "Error: provider returned empty response"
             return
     except Exception as exc:
-        logger.error("Chat stream failed: %s", exc)
+        logger.exception("Chat stream failed")
         yield f"Error: {exc}"
         return
     async for chunk in resp:  # type: ignore[union-attr]

@@ -234,8 +234,8 @@ async def create_plugin(body: PluginCreate):
     for k, v in body.env.items():
         try:
             set_plugin_env_value(body.name, k, v)
-        except RuntimeError as exc:
-            logger.warning("Could not save env %s for plugin %s: %s", k, body.name, exc)
+        except RuntimeError:
+            logger.exception("Could not save env %s for plugin %s", k, body.name)
 
     return _row_to_plugin(row)
 
@@ -266,8 +266,8 @@ async def update_plugin(plugin_id: int, body: PluginUpdate):
         for k, v in body.env.items():
             try:
                 set_plugin_env_value(plugin_name, k, v)
-            except RuntimeError as exc:
-                logger.warning("Could not save env %s for plugin %s: %s", k, plugin_name, exc)
+            except RuntimeError:
+                logger.exception("Could not save env %s for plugin %s", k, plugin_name)
 
     # Restart subprocess so it picks up new command/args/env, and refresh schedule.
     orch = _get_orchestrator()

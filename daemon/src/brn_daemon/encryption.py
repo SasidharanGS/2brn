@@ -83,8 +83,8 @@ def load_encryption_state() -> EncryptionState | None:
             verifier=base64.b64decode(data["verifier"]),
             version=data.get("version", 1),
         )
-    except (json.JSONDecodeError, KeyError, ValueError) as exc:
-        logger.error("Corrupt encryption.json — encryption disabled: %s", exc)
+    except (json.JSONDecodeError, KeyError, ValueError):
+        logger.exception("Corrupt encryption.json — encryption disabled")
         return None
 
 
@@ -204,8 +204,8 @@ def encrypt_existing_screenshots(key: bytes) -> tuple[int, int]:
             enc.write_bytes(blob)
             jpg.unlink()
             success += 1
-        except (OSError, ValueError) as exc:
-            logger.warning("Could not encrypt %s: %s", jpg, exc)
+        except (OSError, ValueError):
+            logger.exception("Could not encrypt %s", jpg)
             if enc.exists():
                 enc.unlink()  # don't leave a half-written file
             failed += 1
@@ -222,8 +222,8 @@ def decrypt_all_screenshots(key: bytes) -> tuple[int, int]:
             jpg.write_bytes(pt)
             enc.unlink()
             success += 1
-        except (OSError, ValueError) as exc:
-            logger.warning("Could not decrypt %s: %s", enc, exc)
+        except (OSError, ValueError):
+            logger.exception("Could not decrypt %s", enc)
             failed += 1
     return success, failed
 
@@ -236,8 +236,8 @@ def re_encrypt_all_screenshots(old_key: bytes, new_key: bytes) -> tuple[int, int
             pt = decrypt_bytes(enc.read_bytes(), old_key)
             enc.write_bytes(encrypt_bytes(pt, new_key))
             success += 1
-        except (OSError, ValueError) as exc:
-            logger.warning("Could not re-encrypt %s: %s", enc, exc)
+        except (OSError, ValueError):
+            logger.exception("Could not re-encrypt %s", enc)
             failed += 1
     return success, failed
 

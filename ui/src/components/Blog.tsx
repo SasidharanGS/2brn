@@ -34,15 +34,64 @@ function Btn({
 
 export default function Blog() {
   const { selectedDate } = useAppDate()
-  const [editing, setEditing]         = useState(false)
-  const [editContent, setEditContent] = useState('')
+  const [editing, setEditing]               = useState(false)
+  const [editContent, setEditContent]       = useState('')
+  const [scheduleEditing, setScheduleEditing] = useState(false)
+  const [scheduleFreq, setScheduleFreq]     = useState<'daily' | 'monthly' | 'weekly'>('daily')
+  const [scheduleHour, setScheduleHour]     = useState('21:00')
+  const [scheduleDay, setScheduleDay]       = useState(1)
+  const [scheduleDays, setScheduleDays]     = useState<string[]>([])
   const qc = useQueryClient()
 
-  // Reset edit state whenever the date changes (calendar navigation)
+  const { data: settings } = useQuery({ queryKey: queryKeys.settings(), queryFn: api.getSettings })
+
+  const srv = settings?.blog_schedule
+
+  // Sync form state from server whenever the server value changes
+  useEffect(() => {
+    if (srv) {
+      setScheduleFreq(srv.frequency)
+      setScheduleHour(`${String(srv.hour).padStart(2,'0')}:${String(srv.minute).padStart(2,'0')}`)
+      setScheduleDay(srv.day)
+      setScheduleDays(srv.days_of_week)
+    }
+  }, [srv?.frequency, srv?.hour, srv?.minute, srv?.day, JSON.stringify(srv?.days_of_week)]) // eslint-disable-line
+
+  // Reset edit state whenever the date changes
   useEffect(() => {
     setEditing(false)
     setEditContent('')
   }, [selectedDate])
+
+  const saveSchedule = useMutation({
+    mutationFn: () => {
+      const [h, m] = scheduleHour.split(':').map(Number)
+      if (!scheduleHour || isNaN(h) || isNaN(m)) return Promise.reject(new Error('Invalid time'))
+      return api.updateSettings({
+        blog_schedule: { frequency: scheduleFreq, hour: h, minute: m, day: scheduleDay, days_of_week: scheduleDays },
+      })
+    },
+    onSuccess: () => {
+      setScheduleEditing(false)
+      qc.invalidateQueries({ queryKey: queryKeys.settings() })
+    },
+  })
+
+  // Human-readable summary built from local state (always populated — defaults to 21:00 daily)
+  const scheduleSummary = (() => {
+    const time = scheduleHour
+    if (scheduleFreq === 'monthly') {
+      const suffix = scheduleDay === 1 ? 'st' : scheduleDay === 2 ? 'nd' : scheduleDay === 3 ? 'rd' : 'th'
+      return { label: 'Monthly', detail: `${scheduleDay}${suffix} at ${time}` }
+    }
+    if (scheduleFreq === 'weekly') {
+      const detail = scheduleDays.length
+        ? `${scheduleDays.map(d => d[0].toUpperCase() + d[1]).join(', ')} at ${time}`
+        : `no days set`
+      return { label: 'Weekly', detail }
+    }
+    return { label: 'Daily at', detail: time }
+  })()
 
   const { data: post } = useQuery({
     queryKey: queryKeys.blog(selectedDate),
@@ -68,17 +117,121 @@ export default function Blog() {
     <div className="page-enter p-7 max-w-[760px] mx-auto">
 
       {/* Header */}
-      <div className="flex items-center mb-6">
-        <h1 className="text-[19px] font-semibold tracking-tight" style={{ color: 'var(--text)' }}>
-          Blog
-        </h1>
-        {post?.edited_by_user && (
-          <span
-            className="ml-3 text-[11px] px-2 py-0.5 rounded-full font-medium"
-            style={{ background: 'var(--amber-bg)', color: 'var(--amber)' }}
-          >
-            edited
-          </span>
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center gap-3">
+          <h1 className="text-[19px] font-semibold tracking-tight" style={{ color: 'var(--text)' }}>
+            Blog
+          </h1>
+          {post?.edited_by_user && (
+            <span
+              className="text-[11px] px-2 py-0.5 rounded-full font-medium"
+              style={{ background: 'var(--amber-bg)', color: 'var(--amber)' }}
+            >
+              edited
+            </span>
+          )}
+        </div>
+
+        {/* Schedule control */}
+        {scheduleEditing ? (
+          <div className="flex items-center gap-2 flex-wrap justify-end">
+            <select
+              value={scheduleFreq}
+              onChange={e => setScheduleFreq(e.target.value as 'daily' | 'monthly' | 'weekly')}
+              className="rounded-[7px] border px-2 py-1 text-[13px] outline-none"
+              style={{ background: 'var(--bg-surface-2)', borderColor: 'var(--border)', color: 'var(--text)' }}
+            >
+              <option value="daily">Daily</option>
+              <option value="monthly">Monthly</option>
+              <option value="weekly">Weekly</option>
+            </select>
+
+            {scheduleFreq === 'monthly' && (
+              <select
+                value={scheduleDay}
+                onChange={e => setScheduleDay(Number(e.target.value))}
+                className="rounded-[7px] border px-2 py-1 text-[13px] outline-none"
+                style={{ background: 'var(--bg-surface-2)', borderColor: 'var(--border)', color: 'var(--text)' }}
+              >
+                {Array.from({ length: 28 }, (_, i) => i + 1).map(d => (
+                  <option key={d} value={d}>
+                    {d === 1 ? '1st' : d === 2 ? '2nd' : d === 3 ? '3rd' : `${d}th`}
+                  </option>
+                ))}
+              </select>
+            )}
+
+            {scheduleFreq === 'weekly' && (
+              <div className="flex gap-1">
+                {(['mon','tue','wed','thu','fri','sat','sun'] as const).map(day => {
+                  const active = scheduleDays.includes(day)
+                  return (
+                    <button
+                      key={day}
+                      onClick={() => setScheduleDays(prev =>
+                        active ? prev.filter(d => d !== day) : [...prev, day]
+                      )}
+                      className="w-8 h-7 rounded-[6px] text-[11px] font-medium transition-all"
+                      style={active
+                        ? { background: 'var(--accent)', color: '#fff', border: 'none' }
+                        : { background: 'var(--bg-surface-2)', color: 'var(--text-muted)', border: '1px solid var(--border)' }
+                      }
+                    >
+                      {day[0].toUpperCase()}{day[1]}
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+
+            <input
+              type="time"
+              value={scheduleHour}
+              onChange={e => setScheduleHour(e.target.value)}
+              className="rounded-[7px] border px-2 py-1 text-[13px] outline-none"
+              style={{ background: 'var(--bg-surface-2)', borderColor: 'var(--border)', color: 'var(--text)' }}
+            />
+
+            <button
+              onClick={() => saveSchedule.mutate()}
+              disabled={saveSchedule.isPending}
+              className="px-3 py-1 rounded-[9px] text-[12px] font-medium transition-all disabled:opacity-40"
+              style={{ background: 'var(--accent)', color: '#fff', border: 'none' }}
+            >
+              {saveSchedule.isPending ? 'Saving…' : 'Update'}
+            </button>
+            <button
+              onClick={() => {
+                setScheduleEditing(false)
+                if (srv) {
+                  setScheduleFreq(srv.frequency)
+                  setScheduleHour(`${String(srv.hour).padStart(2,'0')}:${String(srv.minute).padStart(2,'0')}`)
+                  setScheduleDay(srv.day)
+                  setScheduleDays(srv.days_of_week)
+                }
+              }}
+              className="px-3 py-1 rounded-[9px] text-[12px] font-medium transition-all"
+              style={{ background: 'var(--bg-surface-2)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}
+            >
+              Cancel
+            </button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2">
+            <span className="text-[12px]" style={{ color: 'var(--text-dim)' }}>
+              {scheduleSummary.label}{scheduleSummary.label !== 'Daily at' ? ' — ' : ' '}
+              <span className="font-medium" style={{ color: 'var(--text)' }}>
+                {scheduleSummary.detail}
+              </span>
+            </span>
+            <button
+              onClick={() => setScheduleEditing(true)}
+              className="px-3 py-1 rounded-[9px] text-[12px] font-medium transition-all"
+              style={{ background: 'var(--bg-surface-2)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}
+            >
+              Edit
+            </button>
+          </div>
         )}
       </div>
 

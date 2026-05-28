@@ -4,7 +4,6 @@ import { api } from '../api/client'
 import { queryKeys } from '../api/queryKeys'
 import MarkdownRenderer from './shared/MarkdownRenderer'
 import { useAppDate } from '../context/DateContext'
-
 type BtnVariant = 'ghost' | 'primary' | 'danger'
 const btnStyles: Record<BtnVariant, React.CSSProperties> = {
   ghost:   { background: 'var(--bg-surface-2)', color: 'var(--text-muted)', border: '1px solid var(--border)' },
@@ -34,15 +33,39 @@ function Btn({
 
 export default function Journal() {
   const { selectedDate } = useAppDate()
-  const [editing, setEditing]         = useState(false)
-  const [editContent, setEditContent] = useState('')
+  const [editing, setEditing]               = useState(false)
+  const [editContent, setEditContent]       = useState('')
+  const [scheduleEditing, setScheduleEditing] = useState(false)
+  const [scheduleTime, setScheduleTime]     = useState('21:00')
   const qc = useQueryClient()
+
+  const { data: settings } = useQuery({ queryKey: queryKeys.settings(), queryFn: api.getSettings })
+
+  const serverTime = settings?.journal_schedule
+    ? `${String(settings.journal_schedule.hour).padStart(2,'0')}:${String(settings.journal_schedule.minute).padStart(2,'0')}`
+    : '21:00'
+
+  useEffect(() => {
+    setScheduleTime(serverTime)
+  }, [serverTime]) // eslint-disable-line
 
   // Reset edit state whenever the date changes (calendar navigation)
   useEffect(() => {
     setEditing(false)
     setEditContent('')
   }, [selectedDate])
+
+  const saveSchedule = useMutation({
+    mutationFn: () => {
+      const [h, m] = scheduleTime.split(':').map(Number)
+      if (!scheduleTime || isNaN(h) || isNaN(m)) return Promise.reject(new Error('Invalid time'))
+      return api.updateSettings({ journal_schedule: { hour: h, minute: m } })
+    },
+    onSuccess: () => {
+      setScheduleEditing(false)
+      qc.invalidateQueries({ queryKey: queryKeys.settings() })
+    },
+  })
 
   const { data: entry } = useQuery({
     queryKey: queryKeys.journal(selectedDate),
@@ -68,17 +91,60 @@ export default function Journal() {
     <div className="page-enter p-7 max-w-[760px] mx-auto">
 
       {/* Header */}
-      <div className="flex items-center mb-6">
-        <h1 className="text-[19px] font-semibold tracking-tight" style={{ color: 'var(--text)' }}>
-          Journal
-        </h1>
-        {entry?.edited_by_user && (
-          <span
-            className="ml-3 text-[11px] px-2 py-0.5 rounded-full font-medium"
-            style={{ background: 'var(--amber-bg)', color: 'var(--amber)' }}
-          >
-            edited
-          </span>
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center gap-3">
+          <h1 className="text-[19px] font-semibold tracking-tight" style={{ color: 'var(--text)' }}>
+            Journal
+          </h1>
+          {entry?.edited_by_user && (
+            <span
+              className="text-[11px] px-2 py-0.5 rounded-full font-medium"
+              style={{ background: 'var(--amber-bg)', color: 'var(--amber)' }}
+            >
+              edited
+            </span>
+          )}
+        </div>
+
+        {/* Schedule control */}
+        {scheduleEditing ? (
+          <div className="flex items-center gap-2">
+            <input
+              type="time"
+              value={scheduleTime}
+              onChange={e => setScheduleTime(e.target.value)}
+              className="rounded-[7px] border px-2 py-1 text-[13px] outline-none"
+              style={{ background: 'var(--bg-surface-2)', borderColor: 'var(--border)', color: 'var(--text)' }}
+            />
+            <button
+              onClick={() => saveSchedule.mutate()}
+              disabled={saveSchedule.isPending}
+              className="px-3 py-1 rounded-[9px] text-[12px] font-medium transition-all disabled:opacity-40"
+              style={{ background: 'var(--accent)', color: '#fff', border: 'none' }}
+            >
+              {saveSchedule.isPending ? 'Saving…' : 'Update'}
+            </button>
+            <button
+              onClick={() => { setScheduleEditing(false); setScheduleTime(serverTime) }}
+              className="px-3 py-1 rounded-[9px] text-[12px] font-medium transition-all"
+              style={{ background: 'var(--bg-surface-2)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}
+            >
+              Cancel
+            </button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2">
+            <span className="text-[12px]" style={{ color: 'var(--text-dim)' }}>
+              Daily at <span className="font-medium" style={{ color: 'var(--text)' }}>{serverTime}</span>
+            </span>
+            <button
+              onClick={() => setScheduleEditing(true)}
+              className="px-3 py-1 rounded-[9px] text-[12px] font-medium transition-all"
+              style={{ background: 'var(--bg-surface-2)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}
+            >
+              Edit
+            </button>
+          </div>
         )}
       </div>
 

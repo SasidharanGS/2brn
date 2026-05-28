@@ -13,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from brn_daemon.db import init_db, get_db_path
-from brn_daemon.config import load_config, get_screenshot_password
+from brn_daemon.config import load_config, get_screenshot_password, ScheduleConfig, BlogScheduleConfig
 from brn_daemon.encryption import load_encryption_state, verify_password
 from brn_daemon.llm import make_chat_fn
 from brn_daemon.providers import make_embed_client
@@ -58,6 +58,7 @@ class AppState(TypedDict, total=False):
     screenshot_key: bytes | None
     event_bus: EventBus | None
     plugin_orchestrator: PluginOrchestrator | None
+    scheduler: AsyncIOScheduler | None
 
 
 app_state: AppState = {
@@ -75,6 +76,7 @@ app_state: AppState = {
     "screenshot_key": None,
     "event_bus": None,
     "plugin_orchestrator": None,
+    "scheduler": None,
 }
 
 
@@ -98,6 +100,15 @@ def _load_screenshot_key() -> bytes | None:
         return None
     logger.info("Screenshot encryption: enabled")
     return key
+
+
+def _blog_cron_kwargs(s: "BlogScheduleConfig") -> dict:
+    """Convert a BlogScheduleConfig to APScheduler cron trigger kwargs."""
+    if s.frequency == "monthly":
+        return {"day": s.day, "hour": s.hour, "minute": s.minute}
+    if s.frequency == "weekly" and s.days_of_week:
+        return {"day_of_week": ",".join(s.days_of_week), "hour": s.hour, "minute": s.minute}
+    return {"hour": s.hour, "minute": s.minute}
 
 
 @asynccontextmanager
@@ -134,9 +145,19 @@ async def lifespan(app: FastAPI):
         "coalesce": True,
     })
     scheduler.add_job(
-        _nightly_pipeline_job,
-        "cron", hour=21, minute=0, id="nightly_pipeline",
-        args=[journal_gen, blog_gen, event_bus],
+        _journal_job,
+        "cron",
+        hour=cfg.journal_schedule.hour,
+        minute=cfg.journal_schedule.minute,
+        id="journal_job",
+        args=[journal_gen, event_bus],
+    )
+    scheduler.add_job(
+        _blog_job,
+        "cron",
+        **_blog_cron_kwargs(cfg.blog_schedule),
+        id="blog_job",
+        args=[blog_gen, event_bus],
     )
     scheduler.add_job(
         _purge_job,
@@ -147,12 +168,14 @@ async def lifespan(app: FastAPI):
         "cron", hour=0, minute=0, id="reset_capture_count",
     )
     scheduler.start()
+    app_state["scheduler"] = scheduler
 
     orchestrator = PluginOrchestrator(event_bus=event_bus, scheduler=scheduler, chat_fn=chat_fn)
     await orchestrator.start()
     app_state["plugin_orchestrator"] = orchestrator
 
-    asyncio.create_task(_startup_backfill(journal_gen, blog_gen, event_bus))
+    asyncio.create_task(_startup_backfill_journal(journal_gen, event_bus, cfg.journal_schedule))
+    asyncio.create_task(_startup_backfill_blog(blog_gen, event_bus, cfg.blog_schedule))
 
     inference_task = asyncio.create_task(inference_queue.run())
     capture_task = asyncio.create_task(_capture_loop(cfg, inference_queue))
@@ -191,38 +214,80 @@ async def lifespan(app: FastAPI):
         await embed_client.aclose()
 
 
-async def _nightly_pipeline(
+async def _journal_job(
     journal_gen: JournalGenerator,
-    blog_gen: BlogGenerator,
-    event_bus: EventBus,
-    target_date: dt_date,
+    event_bus,
+    target_date: dt_date | None = None,
 ) -> None:
-    """Generate the day's journal + blog, firing events so plugins can react."""
+    if target_date is None:
+        target_date = dt_date.today()
     try:
         journal_content = await journal_gen.generate(target_date=target_date)
-        if journal_content:
+        if journal_content and event_bus:
             await event_bus.emit(EventNames.JOURNAL_GENERATED, {
                 "date": target_date.isoformat(),
                 "journal_content": journal_content,
             })
+    except Exception:
+        logger.exception("Journal job failed for %s", target_date)
 
+
+async def _blog_job(
+    blog_gen: BlogGenerator,
+    event_bus,
+    target_date: dt_date | None = None,
+) -> None:
+    if target_date is None:
+        target_date = dt_date.today()
+    try:
         blog_content = await blog_gen.generate(target_date=target_date)
-        if blog_content:
+        if blog_content and event_bus:
             await event_bus.emit(EventNames.BLOG_GENERATED, {
                 "date": target_date.isoformat(),
                 "blog_content": blog_content,
             })
     except Exception:
-        logger.exception("Nightly pipeline failed for %s", target_date)
-        raise
+        logger.exception("Blog job failed for %s", target_date)
 
 
-async def _nightly_pipeline_job(
+async def _startup_backfill_journal(
     journal_gen: JournalGenerator,
-    blog_gen: BlogGenerator,
-    event_bus: EventBus,
+    event_bus,
+    schedule: ScheduleConfig,
 ) -> None:
-    await _nightly_pipeline(journal_gen, blog_gen, event_bus, dt_date.today())
+    now = datetime.now()
+    if now.hour < schedule.hour or (now.hour == schedule.hour and now.minute < schedule.minute):
+        return
+    today = dt_date.today()
+    async with aiosqlite.connect(get_db_path()) as conn:
+        cur = await conn.execute("SELECT id FROM journals WHERE date = ?", (today.isoformat(),))
+        if await cur.fetchone():
+            return
+    logger.info("Startup backfill: journal missed for %s — running now", today)
+    await _journal_job(journal_gen, event_bus, target_date=today)
+
+
+async def _startup_backfill_blog(
+    blog_gen: BlogGenerator,
+    event_bus,
+    schedule: "BlogScheduleConfig",
+) -> None:
+    now = datetime.now()
+    if schedule.frequency == "monthly" and now.day != schedule.day:
+        return
+    if schedule.frequency == "weekly" and schedule.days_of_week:
+        day_names = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+        if day_names[now.weekday()] not in schedule.days_of_week:
+            return
+    if now.hour < schedule.hour or (now.hour == schedule.hour and now.minute < schedule.minute):
+        return
+    today = dt_date.today()
+    async with aiosqlite.connect(get_db_path()) as conn:
+        cur = await conn.execute("SELECT id FROM blog_posts WHERE date = ?", (today.isoformat(),))
+        if await cur.fetchone():
+            return
+    logger.info("Startup backfill: blog missed for %s — running now", today)
+    await _blog_job(blog_gen, event_bus, target_date=today)
 
 
 async def _purge_job() -> None:
@@ -232,22 +297,6 @@ async def _purge_job() -> None:
 
 async def _reset_capture_count_job() -> None:
     app_state["capture_count_today"] = 0
-
-
-async def _startup_backfill(
-    journal_gen: JournalGenerator,
-    blog_gen: BlogGenerator,
-    event_bus: EventBus,
-) -> None:
-    if datetime.now().hour < 21:
-        return
-    today = dt_date.today()
-    async with aiosqlite.connect(get_db_path()) as conn:
-        cur = await conn.execute("SELECT id FROM journals WHERE date = ?", (today.isoformat(),))
-        if await cur.fetchone():
-            return
-    logger.info("Startup backfill: nightly pipeline missed for %s — running now", today)
-    await _nightly_pipeline(journal_gen, blog_gen, event_bus, today)
 
 
 async def _start_vault_watcher(vault_watcher, loop) -> None:
@@ -390,4 +439,4 @@ app = create_app()
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="127.0.0.1", port=7842, reload=False)
+    uvicorn.run("brn_daemon.main:app", host="127.0.0.1", port=7842, reload=False)

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api/client'
 import { queryKeys } from '../api/queryKeys'
@@ -109,6 +109,7 @@ export default function Settings() {
   const [joplinDbPath, setJoplinDbPath]   = useState('')
   const [daemonOwned, setDaemonOwned] = useState<boolean | null>(null)
   const [restartState, setRestartState] = useState<'idle' | 'restarting'>('idle')
+  const restartIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   // Screenshot encryption form state
   const [encPwd, setEncPwd]         = useState('')
@@ -123,7 +124,11 @@ export default function Settings() {
   const { data: exclusions = [] } = useQuery({ queryKey: queryKeys.exclusions(), queryFn: api.getExclusions })
 
   useEffect(() => {
-    window.electronAPI.isDaemonOwned().then(setDaemonOwned)
+    window.electronAPI.isDaemonOwned().then(setDaemonOwned).catch(() => setDaemonOwned(false))
+  }, [])
+
+  useEffect(() => () => {
+    if (restartIntervalRef.current) clearInterval(restartIntervalRef.current)
   }, [])
 
   useEffect(() => {
@@ -142,19 +147,22 @@ export default function Settings() {
   const flash = (msg: string) => { setSaveMessage(msg); setTimeout(() => setSaveMessage(''), 3000) }
 
   function handleRestartDaemon() {
+    if (restartState === 'restarting') return
     setRestartState('restarting')
     window.electronAPI.restartDaemon()
 
     const deadline = Date.now() + 15_000
-    const interval = setInterval(async () => {
+    restartIntervalRef.current = setInterval(async () => {
       try {
         await api.getStatus()
-        clearInterval(interval)
+        clearInterval(restartIntervalRef.current!)
+        restartIntervalRef.current = null
         setRestartState('idle')
         flash('Daemon restarted successfully')
       } catch {
         if (Date.now() >= deadline) {
-          clearInterval(interval)
+          clearInterval(restartIntervalRef.current!)
+          restartIntervalRef.current = null
           setRestartState('idle')
           flash('Daemon did not come back up')
         }

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api/client'
 import { queryKeys } from '../api/queryKeys'
+import type { ScheduleConfig } from '../api/types'
 
 // ── Primitive design components ──────────────────────────────────────────────
 
@@ -107,6 +108,9 @@ export default function Settings() {
   const [saveMessage, setSaveMessage]     = useState('')
   const [joplinEnabled, setJoplinEnabled] = useState(false)
   const [joplinDbPath, setJoplinDbPath]   = useState('')
+  const [blogMirror, setBlogMirror]       = useState(false)
+  const [journalTime, setJournalTime]     = useState('21:00')
+  const [blogTime, setBlogTime]           = useState('21:00')
 
   // Screenshot encryption form state
   const [encPwd, setEncPwd]         = useState('')
@@ -130,10 +134,44 @@ export default function Settings() {
       setEmbedModel(settings.embed_provider.model)
       setJoplinEnabled(settings.joplin_enabled ?? false)
       setJoplinDbPath(settings.joplin_db_path ?? '')
+      setBlogMirror(settings.blog_mirror_enabled ?? false)
+      if (settings.journal_schedule) {
+        setJournalTime(
+          `${String(settings.journal_schedule.hour).padStart(2, '0')}:${String(settings.journal_schedule.minute).padStart(2, '0')}`
+        )
+      }
+      if (settings.blog_schedule) {
+        setBlogTime(
+          `${String(settings.blog_schedule.hour).padStart(2, '0')}:${String(settings.blog_schedule.minute).padStart(2, '0')}`
+        )
+      }
     }
   }, [settings?.chat_provider?.base_url]) // eslint-disable-line
 
   const flash = (msg: string) => { setSaveMessage(msg); setTimeout(() => setSaveMessage(''), 3000) }
+
+  const parseTime = (value: string): ScheduleConfig => {
+    const [h, m] = value.split(':').map(Number)
+    return { hour: h, minute: m }
+  }
+
+  const saveJournalSchedule = useMutation({
+    mutationFn: () => api.updateSettings({ journal_schedule: parseTime(journalTime) }),
+    onSuccess: () => {
+      flash('Journal schedule saved')
+      qc.invalidateQueries({ queryKey: queryKeys.settings() })
+    },
+    onError: () => flash('Failed to save journal schedule'),
+  })
+
+  const saveBlogSchedule = useMutation({
+    mutationFn: () => api.updateSettings({ blog_schedule: parseTime(blogTime), blog_mirror_enabled: blogMirror }),
+    onSuccess: () => {
+      flash('Blog settings saved')
+      qc.invalidateQueries({ queryKey: queryKeys.settings() })
+    },
+    onError: () => flash('Failed to save blog settings'),
+  })
 
   const saveProviders = useMutation({
     mutationFn: () => api.updateSettings({
@@ -481,6 +519,66 @@ export default function Settings() {
             </div>
           </>
         )}
+      </Section>
+
+      {/* Journal */}
+      <Section title="Journal">
+        <p className="text-[12px]" style={{ color: 'var(--text-dim)' }}>
+          Daily journal entries are generated automatically at the scheduled time.
+        </p>
+        <Field label="Generation time">
+          <Input
+            type="time"
+            value={journalTime}
+            onChange={e => setJournalTime(e.target.value)}
+          />
+        </Field>
+        <button
+          onClick={() => saveJournalSchedule.mutate()}
+          disabled={saveJournalSchedule.isPending}
+          className="px-5 py-2 rounded-[9px] text-[13px] font-semibold transition-all disabled:opacity-40"
+          style={{ background: 'var(--accent)', color: '#fff' }}
+        >
+          {saveJournalSchedule.isPending ? 'Saving…' : 'Save Journal Settings'}
+        </button>
+      </Section>
+
+      {/* Blog */}
+      <Section title="Blog">
+        <p className="text-[12px]" style={{ color: 'var(--text-dim)' }}>
+          Dev log entries are generated automatically at the scheduled time.
+        </p>
+        <Field label="Generation time">
+          <Input
+            type="time"
+            value={blogTime}
+            onChange={e => setBlogTime(e.target.value)}
+          />
+        </Field>
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-[13px] font-medium" style={{ color: 'var(--text)' }}>Mirror to Joplin</p>
+            <p className="text-[12px]" style={{ color: 'var(--text-dim)' }}>Save blog posts to "Blog Posts" notebook</p>
+          </div>
+          <button
+            onClick={() => setBlogMirror(v => !v)}
+            className="relative inline-flex h-6 w-11 items-center rounded-full transition-colors"
+            style={{ background: blogMirror ? 'var(--accent)' : 'var(--bg-surface-2)' }}
+          >
+            <span
+              className="inline-block h-4 w-4 transform rounded-full transition-transform"
+              style={{ background: 'var(--toggle-knob)', transform: blogMirror ? 'translateX(24px)' : 'translateX(4px)' }}
+            />
+          </button>
+        </div>
+        <button
+          onClick={() => saveBlogSchedule.mutate()}
+          disabled={saveBlogSchedule.isPending}
+          className="px-5 py-2 rounded-[9px] text-[13px] font-semibold transition-all disabled:opacity-40"
+          style={{ background: 'var(--accent)', color: '#fff' }}
+        >
+          {saveBlogSchedule.isPending ? 'Saving…' : 'Save Blog Settings'}
+        </button>
       </Section>
 
       {/* Storage */}

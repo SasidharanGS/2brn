@@ -7,9 +7,19 @@ import type {
 
 const BASE_URL = 'http://127.0.0.1:7842'
 
+export class ApiError extends Error {
+  constructor(
+    public readonly status: number,
+    message: string,
+  ) {
+    super(message)
+    this.name = 'ApiError'
+  }
+}
+
 async function get<T>(path: string): Promise<T> {
   const res = await fetch(`${BASE_URL}${path}`)
-  if (!res.ok) throw new Error(`GET ${path} failed: ${res.status}`)
+  if (!res.ok) throw new ApiError(res.status, `GET ${path} failed: ${res.status}`)
   return res.json()
 }
 
@@ -19,7 +29,7 @@ async function post<T>(path: string, body?: unknown): Promise<T> {
     headers: { 'Content-Type': 'application/json' },
     body: body ? JSON.stringify(body) : undefined,
   })
-  if (!res.ok) throw new Error(`POST ${path} failed: ${res.status}`)
+  if (!res.ok) throw new ApiError(res.status, `POST ${path} failed: ${res.status}`)
   return res.json()
 }
 
@@ -29,13 +39,13 @@ async function put<T>(path: string, body: unknown): Promise<T> {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   })
-  if (!res.ok) throw new Error(`PUT ${path} failed: ${res.status}`)
+  if (!res.ok) throw new ApiError(res.status, `PUT ${path} failed: ${res.status}`)
   return res.json()
 }
 
 async function del<T>(path: string): Promise<T> {
   const res = await fetch(`${BASE_URL}${path}`, { method: 'DELETE' })
-  if (!res.ok) throw new Error(`DELETE ${path} failed: ${res.status}`)
+  if (!res.ok) throw new ApiError(res.status, `DELETE ${path} failed: ${res.status}`)
   return res.json()
 }
 
@@ -57,8 +67,8 @@ export const api = {
   getJournal: (date: string) => get<JournalEntry>(`/journal/${date}`),
   generateJournal: (date: string) => post(`/journal/${date}/generate`),
   updateJournal: (date: string, content: string) => put(`/journal/${date}`, { content }),
-  getBlogPost: (date: string) => get<BlogPost>(`/blog/${date}`).catch((e: Error) => {
-    if (e.message.includes('404')) return null
+  getBlogPost: (date: string) => get<BlogPost>(`/blog/${date}`).catch((e: unknown) => {
+    if (e instanceof ApiError && e.status === 404) return null
     throw e
   }),
   generateBlogPost: (date: string) => post<{ ok: boolean; generated: boolean }>(`/blog/${date}/generate`),
@@ -81,7 +91,7 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ password, decrypt_existing }),
     }).then(async r => {
-      if (!r.ok) throw new Error(`DELETE failed: ${r.status}`)
+      if (!r.ok) throw new ApiError(r.status, `DELETE failed: ${r.status}`)
       return r.json() as Promise<{ ok: boolean; message: string }>
     }),
 

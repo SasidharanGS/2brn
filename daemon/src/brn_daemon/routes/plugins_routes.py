@@ -73,7 +73,10 @@ class PluginCreate(BaseModel):
     @field_validator("env")
     @classmethod
     def env_keys_safe(cls, v: dict[str, str]) -> dict[str, str]:
-        return _validate_env_keys(v)
+        for key in v:
+            if not _SAFE_ID_RE.match(key):
+                raise ValueError(f"Env key '{key}' must match ^[A-Za-z0-9_-]+$")
+        return v
 
 
 class PluginUpdate(BaseModel):

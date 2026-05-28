@@ -4,7 +4,7 @@ import { api } from '../api/client'
 import MarkdownRenderer from './shared/MarkdownRenderer'
 import { useAppDate } from '../context/DateContext'
 
-interface Message { role: 'user' | 'assistant'; content: string; streaming?: boolean }
+interface Message { id: string; role: 'user' | 'assistant'; content: string; streaming?: boolean }
 
 const CATEGORIES = ['work','research','play','learning','communication','creative','admin','other']
 
@@ -53,8 +53,8 @@ export default function Chat() {
     abortRef.current = controller
     setMessages(prev => [
       ...prev,
-      { role: 'user', content: question },
-      { role: 'assistant', content: '', streaming: true },
+      { id: crypto.randomUUID(), role: 'user', content: question },
+      { id: crypto.randomUUID(), role: 'assistant', content: '', streaming: true },
     ])
     try {
       let acc = ''
@@ -62,19 +62,19 @@ export default function Chat() {
         acc += chunk
         setMessages(prev => {
           const u = [...prev]
-          u[u.length - 1] = { role: 'assistant', content: acc, streaming: true }
+          u[u.length - 1] = { ...u[u.length - 1], content: acc, streaming: true }
           return u
         })
       }
       setMessages(prev => {
         const u = [...prev]
-        u[u.length - 1] = { role: 'assistant', content: acc, streaming: false }
+        u[u.length - 1] = { ...u[u.length - 1], content: acc, streaming: false }
         return u
       })
     } catch {
       setMessages(prev => {
         const u = [...prev]
-        u[u.length - 1] = { role: 'assistant', content: 'Something went wrong. Please try again.', streaming: false }
+        u[u.length - 1] = { ...u[u.length - 1], content: 'Something went wrong. Please try again.', streaming: false }
         return u
       })
     } finally {
@@ -120,8 +120,8 @@ export default function Chat() {
             </div>
           </div>
         )}
-        {messages.map((msg, i) => (
-          <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+        {messages.map((msg) => (
+          <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
             <div
               className="max-w-[78%] rounded-[12px] px-4 py-3 text-[14px] leading-relaxed"
               style={

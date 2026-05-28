@@ -310,7 +310,10 @@ async def _startup_backfill_blog(
 
 async def _purge_job() -> None:
     cfg = load_config()
-    await purge_old_captures(months=cfg.purge_months)
+    await purge_old_captures(
+        months=cfg.purge_months,
+        chroma_store=app_state.get("chroma_store"),
+    )
 
 
 async def _reset_capture_count_job() -> None:

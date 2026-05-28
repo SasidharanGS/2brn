@@ -52,3 +52,47 @@ async def test_purge_handles_missing_file_gracefully(tmp_home):
         await conn.commit()
     # Should not raise even though file doesn't exist
     await purge_old_captures(months=6)
+
+
+async def test_purge_handles_more_than_999_captures(tmp_home, db):
+    """Purge must not fail when capture count exceeds SQLite's 999-variable limit."""
+    from datetime import datetime, timezone, timedelta
+    import aiosqlite
+    from brn_daemon.purge import purge_old_captures
+    from brn_daemon.db import get_db_path
+
+    cutoff = datetime.now(timezone.utc) - timedelta(days=400)
+
+    async with aiosqlite.connect(get_db_path()) as conn:
+        for i in range(1001):
+            ts = (cutoff - timedelta(days=i)).strftime("%Y-%m-%dT%H:%M:%S.%f")
+            await conn.execute(
+                "INSERT INTO captures (captured_at, app_name, window_title, file_path, ocr_text) "
+                "VALUES (?, 'App', 'Win', NULL, '')",
+                (ts,),
+            )
+        await conn.commit()
+
+    purged = await purge_old_captures(months=12, chroma_store=None)
+    assert purged == 1001
+
+
+async def test_purge_returns_row_count_not_file_count(tmp_home, db):
+    """purge_old_captures must return number of DB rows deleted, not files."""
+    from datetime import datetime, timezone, timedelta
+    import aiosqlite
+    from brn_daemon.purge import purge_old_captures
+    from brn_daemon.db import get_db_path
+
+    old_ts = (datetime.now(timezone.utc) - timedelta(days=400)).strftime("%Y-%m-%dT%H:%M:%S.%f")
+
+    async with aiosqlite.connect(get_db_path()) as conn:
+        await conn.execute(
+            "INSERT INTO captures (captured_at, app_name, window_title, file_path, ocr_text) "
+            "VALUES (?, 'App', 'Win', NULL, '')",
+            (old_ts,),
+        )
+        await conn.commit()
+
+    purged = await purge_old_captures(months=12, chroma_store=None)
+    assert purged == 1

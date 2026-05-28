@@ -69,7 +69,7 @@ class ChromaStore:
             kwargs["where"] = where
         loop = asyncio.get_running_loop()
         try:
-            return await loop.run_in_executor(
+            return await loop.run_in_executor(  # type: ignore[return-value]
                 None, lambda: self._collection.query(**kwargs)
             )
         except Exception as exc:
@@ -84,7 +84,7 @@ class ChromaStore:
             if count == 0:
                 return {"documents": [[]], "metadatas": [[]], "distances": [[]]}
             actual_n = min(n_results, count)
-            return await loop.run_in_executor(
+            return await loop.run_in_executor(  # type: ignore[return-value]
                 None,
                 lambda: self._note_collection.query(
                     query_embeddings=[embedding],

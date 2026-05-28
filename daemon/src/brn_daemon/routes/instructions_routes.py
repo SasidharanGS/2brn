@@ -59,6 +59,10 @@ async def create_instruction(body: CreateInstructionRequest):
         )
         await conn.commit()
         row_id: int = cur.lastrowid  # type: ignore[assignment]
+    from brn_daemon.main import app_state
+    iq = app_state.get("inference_queue")
+    if iq is not None:
+        iq.invalidate_instructions_cache()
     return UserInstruction(id=row_id, title=body.title, body=body.body, enabled=body.enabled, created_at=now)
 
 
@@ -81,6 +85,10 @@ async def update_instruction(instruction_id: int, body: UpdateInstructionRequest
             (new_title, new_body, int(new_enabled), instruction_id),
         )
         await conn.commit()
+    from brn_daemon.main import app_state
+    iq = app_state.get("inference_queue")
+    if iq is not None:
+        iq.invalidate_instructions_cache()
     return UserInstruction(
         id=instruction_id,
         title=new_title,
@@ -99,3 +107,7 @@ async def delete_instruction(instruction_id: int):
         await conn.commit()
         if cur.rowcount == 0:
             raise HTTPException(status_code=404, detail="Instruction not found")
+    from brn_daemon.main import app_state
+    iq = app_state.get("inference_queue")
+    if iq is not None:
+        iq.invalidate_instructions_cache()

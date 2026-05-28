@@ -1,5 +1,6 @@
 import pytest
 import asyncio
+import inspect
 import aiosqlite
 from unittest.mock import AsyncMock, MagicMock
 from brn_daemon.embeddings import EmbeddingService, ChromaStore
@@ -19,8 +20,8 @@ def test_chroma_store_initialises(chroma_store):
     assert col is not None
     assert col.name == "activity_memories"
 
-def test_chroma_store_add_and_query(chroma_store):
-    chroma_store.add(
+async def test_chroma_store_add_and_query(chroma_store):
+    await chroma_store.add(
         doc_id="test-1",
         text="writing Python code in VS Code",
         metadata={"timestamp": "2026-04-12T10:00:00", "app_name": "Code",
@@ -28,7 +29,7 @@ def test_chroma_store_add_and_query(chroma_store):
                   "task_category": "work", "productivity_state": "focused"},
         embedding=[0.1] * 384,
     )
-    results = chroma_store.query(embedding=[0.1] * 384, n_results=1)
+    results = await chroma_store.query(embedding=[0.1] * 384, n_results=1)
     assert len(results["ids"][0]) == 1
     assert results["ids"][0][0] == "test-1"
 
@@ -70,3 +71,33 @@ async def test_embedding_service_writes_chroma_id_to_db(tmp_home, mock_gateway):
     assert row is not None
     assert row[0] == f"activity-{act_id}"
     assert store.collection.count() == 1
+
+
+async def test_chroma_store_add_is_awaitable(tmp_home):
+    from brn_daemon.embeddings import ChromaStore
+    store = ChromaStore()
+    assert inspect.iscoroutinefunction(store.add), "ChromaStore.add must be async"
+
+
+async def test_chroma_store_query_is_awaitable(tmp_home):
+    from brn_daemon.embeddings import ChromaStore
+    store = ChromaStore()
+    assert inspect.iscoroutinefunction(store.query), "ChromaStore.query must be async"
+
+
+async def test_chroma_store_add_updates_count_cache(tmp_home):
+    from brn_daemon.embeddings import ChromaStore
+    store = ChromaStore()
+    assert store._count == 0
+    await store.add("id-1", "text", {"date": "2026-05-28"}, [0.1] * 128)
+    assert store._count == 1
+
+
+async def test_chroma_store_query_uses_cache_not_live_count(tmp_home, monkeypatch):
+    from brn_daemon.embeddings import ChromaStore
+    store = ChromaStore()
+    store._count = 5
+    live_count_calls = []
+    monkeypatch.setattr(store._collection, "count", lambda: live_count_calls.append(1) or 5)
+    await store.query([0.0] * 128, n_results=3)
+    assert live_count_calls == [], "query() must not call live count() when cache is set"

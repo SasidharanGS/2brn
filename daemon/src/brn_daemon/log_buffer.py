@@ -17,9 +17,9 @@ class LogBuffer:
     def get(self, level: str | None = None, limit: int = 100) -> list[dict]:
         lines = list(self._buf)
         if level == "WARNING":
-            lines = [l for l in lines if l["level"] in ("WARNING", "ERROR")]
+            lines = [entry for entry in lines if entry["level"] in ("WARNING", "ERROR")]
         elif level == "ERROR":
-            lines = [l for l in lines if l["level"] == "ERROR"]
+            lines = [entry for entry in lines if entry["level"] == "ERROR"]
         return lines[-limit:]
 
     @staticmethod

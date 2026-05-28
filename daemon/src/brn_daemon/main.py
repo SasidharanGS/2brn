@@ -1,33 +1,45 @@
 import asyncio
-import aiosqlite
 import json
 import logging
 from contextlib import asynccontextmanager
-from datetime import date as dt_date, datetime, timezone
+from datetime import UTC, datetime
+from datetime import date as dt_date
 from pathlib import Path
 
+import aiosqlite
 from dotenv import load_dotenv
+
 load_dotenv(Path(__file__).resolve().parents[2] / ".env")  # daemon/.env
 
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
-from brn_daemon.db import init_db, get_db_path
-from brn_daemon.config import load_config, get_screenshot_password, ScheduleConfig, BlogScheduleConfig
-from brn_daemon.encryption import load_encryption_state, verify_password
-from brn_daemon.llm import make_chat_fn
-from brn_daemon.providers import make_embed_client
-from brn_daemon.capture import capture_all_monitors_with_rects, get_app_for_monitor, get_windows_snapshot, save_screenshot
-from brn_daemon.dedup import compute_phash, is_duplicate
-from brn_daemon.ocr import extract_text, is_text_sparse
-from brn_daemon.inference import InferenceQueue
-from brn_daemon.embeddings import ChromaStore, EmbeddingService
-from brn_daemon.journal import JournalGenerator
 from brn_daemon.blog import BlogGenerator
+from brn_daemon.capture import (
+    capture_all_monitors_with_rects,
+    get_app_for_monitor,
+    get_windows_snapshot,
+    save_screenshot,
+)
 from brn_daemon.chat import ChatService
-from brn_daemon.purge import purge_old_captures
+from brn_daemon.config import (
+    BlogScheduleConfig,
+    ScheduleConfig,
+    get_screenshot_password,
+    load_config,
+)
+from brn_daemon.db import get_db_path, init_db
+from brn_daemon.dedup import compute_phash, is_duplicate
+from brn_daemon.embeddings import ChromaStore, EmbeddingService
+from brn_daemon.encryption import load_encryption_state, verify_password
+from brn_daemon.inference import InferenceQueue
+from brn_daemon.journal import JournalGenerator
+from brn_daemon.llm import make_chat_fn
+from brn_daemon.ocr import extract_text, is_text_sparse
 from brn_daemon.plugins import EventBus, EventNames, PluginOrchestrator
+from brn_daemon.providers import make_embed_client
+from brn_daemon.purge import purge_old_captures
 
 logging.basicConfig(
     level=logging.INFO,
@@ -36,7 +48,9 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Wire log buffer into root logger so all modules' logs are captured
-from brn_daemon.log_buffer import log_buffer as _log_buffer, LogBufferHandler as _LogBufferHandler
+from brn_daemon.log_buffer import LogBufferHandler as _LogBufferHandler
+from brn_daemon.log_buffer import log_buffer as _log_buffer
+
 _root_logger = logging.getLogger()
 if not any(isinstance(h, _LogBufferHandler) for h in _root_logger.handlers):
     _root_logger.addHandler(_LogBufferHandler(_log_buffer))
@@ -368,7 +382,7 @@ async def _capture_loop(cfg, inference_queue: InferenceQueue):
             await asyncio.sleep(1)
             now = asyncio.get_running_loop().time()
 
-            if app_state["paused"]:
+            if app_state["paused"]:  # type: ignore[typeddict-item]
                 continue
 
             # Refresh exclusions from DB every 30s instead of every tick
@@ -422,7 +436,7 @@ async def _capture_loop(cfg, inference_queue: InferenceQueue):
 
             # ── Phase 2: OCR — run all monitors concurrently in thread pool ───
             ocr_tasks = [
-                loop.run_in_executor(None, extract_text, item[1])
+                loop.run_in_executor(None, extract_text, item[1])  # type: ignore[arg-type]
                 for item in pending
             ]
             ocr_results = await asyncio.gather(*ocr_tasks)
@@ -431,7 +445,7 @@ async def _capture_loop(cfg, inference_queue: InferenceQueue):
             async with aiosqlite.connect(get_db_path()) as conn:
                 for item, ocr_text in zip(pending, ocr_results):
                     monitor_idx, img, monitor_rect, app_name, window_title, trigger, file_path, current_phash = item
-                    now_iso = datetime.now(timezone.utc).isoformat()
+                    now_iso = datetime.now(UTC).isoformat()
                     cur = await conn.execute(
                         "INSERT INTO captures (captured_at, app_name, window_title, file_path, "
                         "ocr_text, phash, trigger, monitor_index) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
@@ -439,7 +453,7 @@ async def _capture_loop(cfg, inference_queue: InferenceQueue):
                          ocr_text, current_phash, trigger, monitor_idx)
                     )
                     await conn.commit()
-                    capture_id = cur.lastrowid
+                    capture_id: int = cur.lastrowid  # type: ignore[assignment]
 
                     if not is_text_sparse(ocr_text):
                         await inference_queue.enqueue(capture_id, app_name, window_title, ocr_text)
@@ -447,7 +461,7 @@ async def _capture_loop(cfg, inference_queue: InferenceQueue):
                     else:
                         logger.info("Capture #%d → saved (sparse text, skipping inference)", capture_id)
 
-            app_state["last_captured_at"] = datetime.now(timezone.utc).isoformat()
+            app_state["last_captured_at"] = datetime.now(UTC).isoformat()
             app_state["capture_count_today"] = app_state.get("capture_count_today", 0) + 1
 
             if is_heartbeat:
@@ -471,7 +485,7 @@ async def _rebuild_ai_clients() -> None:
 
     if old_embed is not None:
         try:
-            await old_embed.aclose()
+            await old_embed.aclose()  # type: ignore[union-attr]
         except Exception:
             logger.exception("Error closing old embed client during rebuild")
 
@@ -508,12 +522,19 @@ async def _rebuild_ai_clients() -> None:
 
 
 def create_app() -> FastAPI:
-    from brn_daemon.routes import status, captures, activities
-    from brn_daemon.routes import journal_routes, chat_routes, settings_routes, insights_routes
-    from brn_daemon.routes import debug_routes
-    from brn_daemon.routes import blog_routes
-    from brn_daemon.routes import instructions_routes
-    from brn_daemon.routes import plugins_routes
+    from brn_daemon.routes import (
+        activities,
+        blog_routes,
+        captures,
+        chat_routes,
+        debug_routes,
+        insights_routes,
+        instructions_routes,
+        journal_routes,
+        plugins_routes,
+        settings_routes,
+        status,
+    )
 
     app = FastAPI(title="2brn Daemon", lifespan=lifespan)
     # Allow requests from Vite dev server and Electron renderer

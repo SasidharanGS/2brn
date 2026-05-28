@@ -1,17 +1,24 @@
 import asyncio
 import logging
-
 from typing import Annotated
 
+import aiosqlite
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field, field_validator
+
 from brn_daemon.config import (
-    load_config, save_config,
-    get_chat_api_key, get_embed_api_key,
-    set_chat_api_key, set_embed_api_key,
-    get_screenshot_password, set_screenshot_password, delete_screenshot_password,
-    ScheduleConfig, BlogScheduleConfig,
+    BlogScheduleConfig,
+    ScheduleConfig,
+    delete_screenshot_password,
+    get_chat_api_key,
+    get_embed_api_key,
+    load_config,
+    save_config,
+    set_chat_api_key,
+    set_embed_api_key,
+    set_screenshot_password,
 )
+from brn_daemon.db import get_db_path
 from brn_daemon.encryption import (
     decrypt_all_screenshots,
     delete_encryption_state,
@@ -24,8 +31,6 @@ from brn_daemon.encryption import (
     re_encrypt_all_screenshots,
     verify_password,
 )
-import aiosqlite
-from brn_daemon.db import get_db_path
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -36,6 +41,19 @@ class ProviderConfigOut(BaseModel):
     base_url: str
     model: str
     extra_headers: dict = {}
+
+
+class ProviderConfigIn(BaseModel):
+    type: str | None = None
+    base_url: str | None = None
+    model: str | None = None
+    extra_headers: dict | None = None
+    api_key: str | None = None
+
+
+class ScheduleConfigIn(BaseModel):
+    hour: Annotated[int, Field(ge=0, le=23)]
+    minute: Annotated[int, Field(ge=0, le=59)]
 
 
 class SettingsResponse(BaseModel):
@@ -51,19 +69,6 @@ class SettingsResponse(BaseModel):
     joplin_db_path: str
     journal_schedule: ScheduleConfigIn
     blog_schedule: dict
-
-
-class ProviderConfigIn(BaseModel):
-    type: str | None = None
-    base_url: str | None = None
-    model: str | None = None
-    extra_headers: dict | None = None
-    api_key: str | None = None
-
-
-class ScheduleConfigIn(BaseModel):
-    hour: Annotated[int, Field(ge=0, le=23)]
-    minute: Annotated[int, Field(ge=0, le=59)]
 
 
 class BlogScheduleIn(BaseModel):
@@ -160,8 +165,9 @@ async def update_settings(body: SettingsUpdateRequest):
         cfg.joplin_enabled = body.joplin_enabled
     if body.joplin_db_path is not None:
         cfg.joplin_db_path = body.joplin_db_path
-    from brn_daemon.main import app_state
     from apscheduler.jobstores.base import JobLookupError
+
+    from brn_daemon.main import app_state
     scheduler = app_state.get("scheduler")
     if body.journal_schedule is not None:
         cfg.journal_schedule = ScheduleConfig(hour=body.journal_schedule.hour, minute=body.journal_schedule.minute)
@@ -240,8 +246,8 @@ async def remove_exclusion(app_name: str):
 @router.post("/settings/resync-chroma")
 async def resync_chroma():
     """Backfill all activities with summaries that are not yet in ChromaDB."""
-    from brn_daemon.main import app_state
     from brn_daemon.embeddings import EmbeddingService
+    from brn_daemon.main import app_state
     from brn_daemon.providers import make_embed_client
 
     async def _run_backfill() -> int:
@@ -294,11 +300,11 @@ async def chroma_status():
         cur = await conn.execute(
             "SELECT COUNT(*) FROM activities WHERE summary IS NOT NULL AND summary != ''"
         )
-        total = (await cur.fetchone())[0]
+        total = (await cur.fetchone() or (0,))[0]
         cur = await conn.execute(
             "SELECT COUNT(*) FROM activities WHERE chroma_id IS NOT NULL AND chroma_id != ''"
         )
-        embedded = (await cur.fetchone())[0]
+        embedded = (await cur.fetchone() or (0,))[0]
     chroma = app_state.get("chroma_store")
     if chroma is None:
         from brn_daemon.embeddings import ChromaStore
@@ -373,9 +379,14 @@ async def change_screenshot_password_route(body: ScreenshotPasswordChange):
 
     # Build a new state with a new salt + verifier under the new password.
     import os as _os
+
     from brn_daemon.encryption import (
-        EncryptionState, KEY_LENGTH, SALT_LENGTH,  # noqa: F401  (constants only)
-        derive_key, encrypt_bytes, save_encryption_state, VERIFIER_PLAINTEXT,
+        SALT_LENGTH,
+        VERIFIER_PLAINTEXT,
+        EncryptionState,  # noqa: F401  (constants only)
+        derive_key,
+        encrypt_bytes,
+        save_encryption_state,
     )
     new_salt = _os.urandom(SALT_LENGTH)
     new_key = derive_key(body.new_password, new_salt)

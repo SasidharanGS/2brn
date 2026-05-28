@@ -1,11 +1,12 @@
 import io
 import logging
 import platform
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
-from PIL import Image
 import mss
+from PIL import Image
 
 from brn_daemon.db import get_brn_home
 
@@ -14,10 +15,10 @@ logger = logging.getLogger(__name__)
 # Persistent mss instance — avoids CoreGraphics/D3D re-initialisation overhead on every tick.
 # mss is not thread-safe; all calls must remain on the same thread (the asyncio event loop
 # uses run_in_executor for CPU work, but capture itself stays on the main thread via the loop).
-_mss_instance: mss.base.MssBase | None = None
+_mss_instance: Any = None
 
 
-def _get_mss() -> mss.base.MssBase:
+def _get_mss() -> Any:
     """Return the shared mss instance, creating it on first call."""
     global _mss_instance
     if _mss_instance is None:
@@ -38,10 +39,10 @@ def get_active_app() -> tuple[str, str]:
             except Exception:
                 app_name = ""
             try:
-                import Quartz  # type: ignore
-                wins = Quartz.CGWindowListCopyWindowInfo(
-                    Quartz.kCGWindowListOptionOnScreenOnly | Quartz.kCGWindowListExcludeDesktopElements,
-                    Quartz.kCGNullWindowID,
+                import Quartz  # type: ignore[import-untyped]
+                wins = Quartz.CGWindowListCopyWindowInfo(  # type: ignore[attr-defined]
+                    Quartz.kCGWindowListOptionOnScreenOnly | Quartz.kCGWindowListExcludeDesktopElements,  # type: ignore[attr-defined]
+                    Quartz.kCGNullWindowID,  # type: ignore[attr-defined]
                 )
                 for w in wins:
                     if w.get("kCGWindowOwnerName") == app_name and w.get("kCGWindowName"):
@@ -90,10 +91,10 @@ def get_windows_snapshot() -> list:
     if platform.system() != "Darwin":
         return []
     try:
-        import Quartz  # type: ignore
-        return list(Quartz.CGWindowListCopyWindowInfo(
-            Quartz.kCGWindowListOptionOnScreenOnly | Quartz.kCGWindowListExcludeDesktopElements,
-            Quartz.kCGNullWindowID,
+        import Quartz  # type: ignore[import-untyped]
+        return list(Quartz.CGWindowListCopyWindowInfo(  # type: ignore[attr-defined]
+            Quartz.kCGWindowListOptionOnScreenOnly | Quartz.kCGWindowListExcludeDesktopElements,  # type: ignore[attr-defined]
+            Quartz.kCGNullWindowID,  # type: ignore[attr-defined]
         ))
     except Exception:
         return []
@@ -172,7 +173,7 @@ def save_screenshot(image: Image.Image, *, key: bytes | None = None) -> Path:
     written with a ``.jpg.enc`` suffix instead. The encryption format is defined in
     ``brn_daemon.encryption``.
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     dir_path = (
         get_brn_home()
         / "screenshots"
@@ -188,7 +189,7 @@ def save_screenshot(image: Image.Image, *, key: bytes | None = None) -> Path:
         return file_path
 
     # Encrypted path: render JPEG into memory, encrypt, write blob.
-    from brn_daemon.encryption import encrypt_bytes, ENCRYPTED_EXT
+    from brn_daemon.encryption import ENCRYPTED_EXT, encrypt_bytes
     buf = io.BytesIO()
     image.save(buf, "JPEG", quality=80)
     blob = encrypt_bytes(buf.getvalue(), key)

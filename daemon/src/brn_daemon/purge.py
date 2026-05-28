@@ -1,8 +1,9 @@
 import logging
-from datetime import datetime, timezone, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import aiosqlite
+
 from brn_daemon.db import get_db_path
 
 logger = logging.getLogger(__name__)
@@ -21,7 +22,7 @@ async def purge_old_captures(months: int = 12, chroma_store=None) -> int:
     Returns the number of capture rows deleted.
     `chroma_store` is an optional ChromaStore instance for removing stale embeddings.
     """
-    cutoff = datetime.now(timezone.utc) - timedelta(days=months * 30)
+    cutoff = datetime.now(UTC) - timedelta(days=months * 30)
     cutoff_str = cutoff.strftime("%Y-%m-%dT%H:%M:%S.%f")
     files_deleted = 0
 
@@ -30,7 +31,7 @@ async def purge_old_captures(months: int = 12, chroma_store=None) -> int:
             "SELECT id, file_path FROM captures WHERE captured_at < ?",
             (cutoff_str,),
         )
-        old_captures = await cur.fetchall()
+        old_captures = list(await cur.fetchall())
 
         if not old_captures:
             return 0

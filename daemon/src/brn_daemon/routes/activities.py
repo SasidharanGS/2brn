@@ -1,6 +1,7 @@
-from fastapi import APIRouter, Query, HTTPException
-from pydantic import BaseModel
 import aiosqlite
+from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel
+
 from brn_daemon.db import get_db_path
 
 router = APIRouter()

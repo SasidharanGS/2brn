@@ -1,6 +1,9 @@
+from datetime import UTC
+
+import aiosqlite
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-import aiosqlite
+
 from brn_daemon.db import get_db_path
 
 router = APIRouter()
@@ -50,7 +53,7 @@ async def generate_journal(date: str):
 
 @router.put("/journal/{date}")
 async def update_journal(date: str, body: JournalUpdateRequest):
-    from datetime import datetime, timezone
+    from datetime import datetime
     async with aiosqlite.connect(get_db_path()) as conn:
         await conn.execute(
             """INSERT INTO journals (date, content, generated_at, edited_by_user)
@@ -58,7 +61,7 @@ async def update_journal(date: str, body: JournalUpdateRequest):
                ON CONFLICT(date) DO UPDATE SET
                  content = excluded.content,
                  edited_by_user = 1""",
-            (date, body.content, datetime.now(timezone.utc).isoformat())
+            (date, body.content, datetime.now(UTC).isoformat())
         )
         await conn.commit()
     return {"ok": True}

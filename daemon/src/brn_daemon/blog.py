@@ -1,6 +1,7 @@
 import logging
+from datetime import UTC, date, datetime
+
 import aiosqlite
-from datetime import date, datetime, timezone
 
 from brn_daemon.db import get_db_path
 
@@ -72,7 +73,7 @@ class BlogGenerator:
             {"role": "user", "content": prompt},
         ])
 
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         async with aiosqlite.connect(get_db_path()) as conn:
             await conn.execute(
                 """INSERT INTO blog_posts (date, content, generated_at, edited_by_user)

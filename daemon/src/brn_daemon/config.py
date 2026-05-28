@@ -142,7 +142,7 @@ def load_config() -> Config:
 
 def save_config(cfg: Config) -> None:
     def _provider_dict(p: ProviderConfig) -> dict:
-        d = {"type": p.type, "base_url": p.base_url, "model": p.model}
+        d: dict = {"type": p.type, "base_url": p.base_url, "model": p.model}
         if p.extra_headers:
             d["extra_headers"] = p.extra_headers
         return d

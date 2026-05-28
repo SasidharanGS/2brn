@@ -130,7 +130,7 @@ class MCPClient:
                 self._proc.terminate()
                 try:
                     await asyncio.wait_for(self._proc.wait(), timeout=2.0)
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     self._proc.kill()
                     await self._proc.wait()
             except ProcessLookupError:
@@ -190,7 +190,7 @@ class MCPClient:
         await self._write(msg)
         try:
             return await asyncio.wait_for(fut, timeout=self.request_timeout)
-        except asyncio.TimeoutError as exc:
+        except TimeoutError as exc:
             self._pending.pop(req_id, None)
             raise MCPError(f"MCP request '{method}' timed out after {self.request_timeout}s") from exc
 

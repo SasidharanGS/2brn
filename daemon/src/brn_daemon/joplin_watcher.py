@@ -15,7 +15,6 @@ Design decisions:
 """
 
 import asyncio
-import hashlib
 import logging
 import re
 import sqlite3

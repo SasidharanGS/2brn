@@ -1,14 +1,9 @@
-from PIL import Image
-import pytesseract
 import logging
 import os
 import shutil
 
-from PIL import Image
 import pytesseract
-import logging
-import os
-import shutil
+from PIL import Image
 
 logger = logging.getLogger(__name__)
 

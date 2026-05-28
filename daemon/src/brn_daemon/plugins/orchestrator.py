@@ -14,7 +14,7 @@ time, so on event-fire we just render args_template and call the cached tool.
 import asyncio
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import aiosqlite
@@ -27,7 +27,6 @@ from brn_daemon.db import get_db_path
 from brn_daemon.plugins.events import EventBus, EventNames
 from brn_daemon.plugins.mcp_client import MCPClient, MCPClientPool, MCPError
 from brn_daemon.plugins.rule_parser import (
-    MANUAL_TRIGGER,
     ParsedRule,
     RuleParseError,
     parse_rule,
@@ -128,7 +127,7 @@ class PluginOrchestrator:
                 logger.exception("Failed to schedule plugin rule id=%s trigger=%s", rule_id, trigger)
 
     async def _run_scheduled(self, rule_id: int) -> None:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         payload = {
             "date": now.strftime("%Y-%m-%d"),
             "time": now.strftime("%H:%M:%S"),
@@ -174,7 +173,7 @@ class PluginOrchestrator:
         rule_id = rule_row["id"]
         plugin_id = rule_row["plugin_id"]
         plugin_name = rule_row["plugin_name"]
-        started = datetime.now(timezone.utc).isoformat()
+        started = datetime.now(UTC).isoformat()
         try:
             args_template = json.loads(rule_row["args_template"] or "{}")
         except json.JSONDecodeError:
@@ -219,7 +218,7 @@ class PluginOrchestrator:
         result: Any = None,
         error: str | None = None,
     ) -> None:
-        ended = datetime.now(timezone.utc).isoformat()
+        ended = datetime.now(UTC).isoformat()
         async with aiosqlite.connect(get_db_path()) as conn:
             await conn.execute(
                 """INSERT INTO plugin_rule_executions
@@ -290,7 +289,7 @@ class PluginOrchestrator:
                     (
                         parsed.trigger, parsed.tool_name,
                         json.dumps(parsed.args_template),
-                        datetime.now(timezone.utc).isoformat(),
+                        datetime.now(UTC).isoformat(),
                         rule_id,
                     ),
                 )
@@ -304,7 +303,7 @@ class PluginOrchestrator:
                        SET parse_status = 'error', parse_error = ?,
                            parsed_at = ?
                        WHERE id = ?""",
-                    (str(exc), datetime.now(timezone.utc).isoformat(), rule_id),
+                    (str(exc), datetime.now(UTC).isoformat(), rule_id),
                 )
                 await conn.commit()
             raise
@@ -364,7 +363,7 @@ class PluginOrchestrator:
         rule = await self._load_rule(rule_id)
         if rule is None:
             raise ValueError(f"Rule {rule_id} not found, not enabled, or not parsed")
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         date_str = now.strftime("%Y-%m-%d")
         time_str = now.strftime("%H:%M:%S")
         trigger = rule.get("trigger", "manual")

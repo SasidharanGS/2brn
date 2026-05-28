@@ -12,4 +12,5 @@ async def db(tmp_home):
     await init_db()
     path = get_db_path()
     async with aiosqlite.connect(path) as conn:
+        await conn.execute("PRAGMA foreign_keys = ON")
         yield conn

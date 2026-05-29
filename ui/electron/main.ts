@@ -6,6 +6,14 @@ import * as http from 'http'
 
 const DAEMON_PORT = 7842
 const DAEMON_HOST = '127.0.0.1'
+
+function log(level: 'info' | 'warn' | 'error', msg: string): void {
+  const ts = new Date().toISOString().substring(11, 23)
+  const prefix = `[${ts}] [2brn]`
+  if (level === 'error') console.error(prefix, msg)
+  else if (level === 'warn') console.warn(prefix, msg)
+  else console.log(prefix, msg)
+}
 let daemon: ChildProcess | null = null
 let mainWindow: BrowserWindow | null = null
 let daemonRestartAttempts = 0
@@ -59,19 +67,19 @@ function buildPythonPath(daemonCwd: string): string {
 }
 
 function resolvePython(daemonCwd: string): { cmd: string; args: string[]; extraEnv: Record<string, string> } {
-  console.log(`[daemon] daemonCwd = ${daemonCwd}`)
+  log('info', `daemonCwd = ${daemonCwd}`)
 
   // Prefer .venv Python — resolve symlinks since Electron cannot spawn symlinks on macOS
   const venvPython = resolveReal(path.join(daemonCwd, '.venv', 'bin', 'python3'))
     ?? resolveReal(path.join(daemonCwd, '.venv', 'bin', 'python'))
   if (venvPython) {
     const pythonPath = buildPythonPath(daemonCwd)
-    console.log(`[daemon] using venv python: ${venvPython}`)
-    console.log(`[daemon] PYTHONPATH: ${pythonPath}`)
+    log('info', `using venv python: ${venvPython}`)
+    log('info', `PYTHONPATH: ${pythonPath}`)
     return { cmd: venvPython, args: ['-m', 'uvicorn', 'brn_daemon.main:app', '--host', '127.0.0.1', '--port', String(DAEMON_PORT)], extraEnv: { PYTHONPATH: pythonPath } }
   }
 
-  console.log(`[daemon] .venv not found at ${daemonCwd}/.venv, trying uv fallback`)
+  log('info', `.venv not found at ${daemonCwd}/.venv, trying uv fallback`)
 
   // Fallback: uv (also needs symlink resolution)
   const uvCandidates = [
@@ -83,12 +91,12 @@ function resolvePython(daemonCwd: string): { cmd: string; args: string[]; extraE
   for (const uvPath of uvCandidates) {
     const real = resolveReal(uvPath)
     if (real) {
-      console.log(`[daemon] using uv: ${real}`)
+      log('info', `using uv: ${real}`)
       return { cmd: real, args: ['run', 'python', '-m', 'uvicorn', 'brn_daemon.main:app', '--host', '127.0.0.1', '--port', String(DAEMON_PORT)], extraEnv: {} }
     }
   }
 
-  console.error('[daemon] could not find python or uv — spawn will fail')
+  log('error', 'could not find python or uv — spawn will fail')
   return { cmd: 'python3', args: ['-m', 'uvicorn', 'brn_daemon.main:app', '--host', '127.0.0.1', '--port', String(DAEMON_PORT)], extraEnv: {} }
 }
 
@@ -107,7 +115,7 @@ function probeDaemon(): Promise<boolean> {
 function startDaemon(): void {
   const daemonCwd = getDaemonCwd()
   const { cmd, args: daemonArgs, extraEnv } = resolvePython(daemonCwd)
-  console.log(`[daemon] spawning: ${cmd} ${daemonArgs.join(' ')} (cwd: ${daemonCwd})`)
+  log('info', `spawning: ${cmd} ${daemonArgs.join(' ')} (cwd: ${daemonCwd})`)
 
   daemon = spawn(cmd, daemonArgs, {
     cwd: daemonCwd,
@@ -116,15 +124,15 @@ function startDaemon(): void {
   })
 
   daemon.stdout?.on('data', (data: Buffer) => {
-    console.log('[daemon]', data.toString().trim())
+    log('info', data.toString().trim())
   })
 
   daemon.stderr?.on('data', (data: Buffer) => {
-    console.error('[daemon:err]', data.toString().trim())
+    log('error', data.toString().trim())
   })
 
   daemon.on('exit', (code) => {
-    console.log(`[daemon] exited with code ${code}`)
+    log('info', `exited with code ${code}`)
     if (daemonRestartAttempts < 3) {
       daemonRestartAttempts++
       setTimeout(startDaemon, 10_000)
@@ -214,7 +222,7 @@ nativeTheme.on('updated', () => {
 app.whenReady().then(async () => {
   const alreadyRunning = await probeDaemon()
   if (alreadyRunning) {
-    console.log('[daemon] already running on port 7842 (launchd) — skipping spawn')
+    log('info', 'already running on port 7842 (launchd) — skipping spawn')
   } else {
     startDaemon()
   }

@@ -19,6 +19,8 @@ export default function Chat() {
   const bottomRef   = useRef<HTMLDivElement>(null)
   const hasAutoSent = useRef(false)
   const abortRef    = useRef<AbortController | null>(null)
+  const streamAccRef = useRef('')
+  const rafRef = useRef<number | null>(null)
 
   // Abort any in-flight stream on unmount
   useEffect(() => {
@@ -51,27 +53,47 @@ export default function Chat() {
     abortRef.current?.abort()
     const controller = new AbortController()
     abortRef.current = controller
+    streamAccRef.current = ''
+    if (rafRef.current !== null) cancelAnimationFrame(rafRef.current)
+
     setMessages(prev => [
       ...prev,
       { id: crypto.randomUUID(), role: 'user', content: question },
       { id: crypto.randomUUID(), role: 'assistant', content: '', streaming: true },
     ])
-    try {
-      let acc = ''
-      for await (const chunk of api.chatStream(question, dateFilter || undefined, categoryFilter || undefined, controller.signal)) {
-        acc += chunk
+
+    const scheduleFlush = () => {
+      if (rafRef.current !== null) return
+      rafRef.current = requestAnimationFrame(() => {
+        rafRef.current = null
+        const acc = streamAccRef.current
         setMessages(prev => {
           const u = [...prev]
           u[u.length - 1] = { ...u[u.length - 1], content: acc, streaming: true }
           return u
         })
+      })
+    }
+
+    try {
+      for await (const chunk of api.chatStream(question, dateFilter || undefined, categoryFilter || undefined, controller.signal)) {
+        streamAccRef.current += chunk
+        scheduleFlush()
+      }
+      if (rafRef.current !== null) {
+        cancelAnimationFrame(rafRef.current)
+        rafRef.current = null
       }
       setMessages(prev => {
         const u = [...prev]
-        u[u.length - 1] = { ...u[u.length - 1], content: acc, streaming: false }
+        u[u.length - 1] = { ...u[u.length - 1], content: streamAccRef.current, streaming: false }
         return u
       })
     } catch (e) {
+      if (rafRef.current !== null) {
+        cancelAnimationFrame(rafRef.current)
+        rafRef.current = null
+      }
       if (e instanceof DOMException && e.name === 'AbortError') return
       setMessages(prev => {
         const u = [...prev]

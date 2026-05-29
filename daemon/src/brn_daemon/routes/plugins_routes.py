@@ -268,14 +268,14 @@ async def create_plugin(body: PluginCreate):
 async def update_plugin(plugin_id: int, body: PluginUpdate):
     async with aiosqlite.connect(get_db_path()) as conn:
         conn.row_factory = aiosqlite.Row
-        row = await _fetch_plugin(conn, plugin_id)
-        new_command = body.command if body.command is not None else row["command"]
-        new_args = json.dumps(body.args) if body.args is not None else row["args"]
-        new_enabled = int(body.enabled) if body.enabled is not None else row["enabled"]
+        old_row = await _fetch_plugin(conn, plugin_id)
+        new_command = body.command if body.command is not None else old_row["command"]
+        new_args = json.dumps(body.args) if body.args is not None else old_row["args"]
+        new_enabled = int(body.enabled) if body.enabled is not None else old_row["enabled"]
         if body.env is not None:
             new_env_keys = json.dumps(sorted(body.env.keys()))
         else:
-            new_env_keys = row["env_keys"]
+            new_env_keys = old_row["env_keys"]
         await conn.execute(
             """UPDATE plugins
                SET command = ?, args = ?, env_keys = ?, enabled = ?
@@ -287,13 +287,16 @@ async def update_plugin(plugin_id: int, body: PluginUpdate):
         plugin_name = row["name"]
 
     if body.env is not None:
+        old_keys = set(json.loads(old_row["env_keys"] or "[]"))
+        new_keys = set(body.env.keys())
         for k, v in body.env.items():
             try:
                 set_plugin_env_value(plugin_name, k, v)
             except RuntimeError:
                 logger.exception("Could not save env %s for plugin %s", k, plugin_name)
+        for k in old_keys - new_keys:
+            delete_plugin_env_value(plugin_name, k)
 
-    # Restart subprocess so it picks up new command/args/env, and refresh schedule.
     orch = _get_orchestrator()
     await orch.pool.restart(plugin_id)
     await orch.refresh_rules()

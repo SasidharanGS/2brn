@@ -10,6 +10,7 @@ import Settings    from './components/Settings'
 import Instructions from './components/Instructions'
 import Plugins      from './components/Plugins'
 import DaemonStatus  from './components/shared/DaemonStatus'
+import ErrorBoundary  from './components/shared/ErrorBoundary'
 import StatsBar      from './components/shared/StatsBar'
 import DebugPanel    from './components/shared/DebugPanel'
 import CalendarPanel from './components/shared/CalendarPanel'
@@ -173,17 +174,19 @@ export default function App() {
             <StatsBar themeMode={themeMode} onThemeModeChange={handleThemeModeChange} />
             <div className="flex flex-1 min-h-0 overflow-hidden">
               <main className="flex-1 overflow-auto">
-                <Routes>
-                  <Route path="/"              element={<Dashboard />} />
-                  <Route path="/chat"          element={<Chat />} />
-                  <Route path="/journal"       element={<Journal />} />
-                  <Route path="/blog"          element={<Blog />} />
-                  <Route path="/timeline"      element={<Timeline />} />
-                  <Route path="/insights"      element={<Insights />} />
-                  <Route path="/instructions"  element={<Instructions />} />
-                  <Route path="/plugins"       element={<Plugins />} />
-                  <Route path="/settings"      element={<Settings />} />
-                </Routes>
+                <ErrorBoundary>
+                  <Routes>
+                    <Route path="/"              element={<Dashboard />} />
+                    <Route path="/chat"          element={<Chat />} />
+                    <Route path="/journal"       element={<Journal />} />
+                    <Route path="/blog"          element={<Blog />} />
+                    <Route path="/timeline"      element={<Timeline />} />
+                    <Route path="/insights"      element={<Insights />} />
+                    <Route path="/instructions"  element={<Instructions />} />
+                    <Route path="/plugins"       element={<Plugins />} />
+                    <Route path="/settings"      element={<Settings />} />
+                  </Routes>
+                </ErrorBoundary>
               </main>
               {calendarApplies && calendarOpen && <CalendarPanel />}
               {debugOpen    && <DebugPanel    onClose={() => setDebugOpen(false)} />}

@@ -25,7 +25,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 from brn_daemon.config import get_plugin_env_value
 from brn_daemon.db import get_db_path
 from brn_daemon.plugins.events import EventBus, EventNames
-from brn_daemon.plugins.mcp_client import MCPClient, MCPClientPool, MCPError
+from brn_daemon.plugins.mcp_client import MCPClient, MCPClientPool, MCPError, MCPTimeoutError
 from brn_daemon.plugins.rule_parser import (
     ParsedRule,
     RuleParseError,
@@ -37,6 +37,7 @@ from brn_daemon.plugins.rule_parser import (
 logger = logging.getLogger(__name__)
 
 EXECUTION_LOG_LIMIT = 500  # keep this many most-recent executions per rule
+PLUGIN_MAX_CONCURRENCY = 4  # cap concurrent tool calls so an event burst can't pile up
 
 
 class PluginOrchestrator:
@@ -52,6 +53,7 @@ class PluginOrchestrator:
         self.pool = MCPClientPool()
         self._scheduled_job_ids: list[str] = []
         self._subscribed = False
+        self._exec_sem = asyncio.Semaphore(PLUGIN_MAX_CONCURRENCY)
 
     # ---- lifecycle --------------------------------------------------------
 
@@ -183,20 +185,40 @@ class PluginOrchestrator:
             return
 
         rendered = render_args(args_template, payload)
-        try:
-            client = await self._client_for_plugin(plugin_id, rule_row)
-            result = await client.call_tool(rule_row["tool_name"], rendered)
-            await self._log_execution(rule_id, started, status="ok",
-                                      payload=payload, result=result)
-            logger.info("Plugin rule %s (%s.%s) executed", rule_id, plugin_name, rule_row["tool_name"])
-        except MCPError as exc:
-            await self._log_execution(rule_id, started, status="error",
-                                      error=str(exc), payload=payload, result=None)
-            logger.exception("Plugin rule %s failed", rule_id)
-        except Exception as exc:
-            await self._log_execution(rule_id, started, status="error",
-                                      error=repr(exc), payload=payload, result=None)
-            logger.exception("Plugin rule %s crashed", rule_id)
+        async with self._exec_sem:
+            try:
+                client = await self._client_for_plugin(plugin_id, rule_row)
+                result = await client.call_tool(rule_row["tool_name"], rendered)
+                await self._log_execution(rule_id, started, status="ok",
+                                          payload=payload, result=result)
+                logger.info("Plugin rule %s (%s.%s) executed", rule_id, plugin_name, rule_row["tool_name"])
+            except MCPTimeoutError as exc:
+                await self._log_execution(rule_id, started, status="timeout",
+                                          error=self._redact(rule_row, str(exc)),
+                                          payload=payload, result=None)
+                logger.warning("Plugin rule %s timed out", rule_id)
+            except MCPError as exc:
+                await self._log_execution(rule_id, started, status="error",
+                                          error=self._redact(rule_row, str(exc)),
+                                          payload=payload, result=None)
+                logger.exception("Plugin rule %s failed", rule_id)
+            except Exception as exc:
+                await self._log_execution(rule_id, started, status="error",
+                                          error=self._redact(rule_row, repr(exc)),
+                                          payload=payload, result=None)
+                logger.exception("Plugin rule %s crashed", rule_id)
+
+    def _redact(self, rule_row: dict[str, Any], text: str) -> str:
+        """Scrub the plugin's secret env values out of an error string before it's
+        stored in plugin_rule_executions / returned to the UI."""
+        if not text:
+            return text
+        out = text
+        for k in json.loads(rule_row.get("env_keys") or "[]"):
+            v = get_plugin_env_value(rule_row["plugin_name"], k)
+            if v:
+                out = out.replace(v, "***")
+        return out[:4000]
 
     async def _client_for_plugin(self, plugin_id: int, rule_row: dict[str, Any]) -> MCPClient:
         env_keys = json.loads(rule_row["env_keys"] or "[]")
@@ -377,7 +399,13 @@ class PluginOrchestrator:
             await self._log_execution(rule_id, started, status="ok",
                                       payload=payload, result=result)
             return {"ok": True, "result": result}
+        except MCPTimeoutError as exc:
+            msg = self._redact(rule, str(exc))
+            await self._log_execution(rule_id, started, status="timeout",
+                                      error=msg, payload=payload, result=None)
+            return {"ok": False, "error": msg}
         except Exception as exc:
+            msg = self._redact(rule, str(exc))
             await self._log_execution(rule_id, started, status="error",
-                                      error=str(exc), payload=payload, result=None)
-            return {"ok": False, "error": str(exc)}
+                                      error=msg, payload=payload, result=None)
+            return {"ok": False, "error": msg}

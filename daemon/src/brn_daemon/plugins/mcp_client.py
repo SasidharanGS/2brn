@@ -52,6 +52,11 @@ class MCPError(RuntimeError):
     pass
 
 
+class MCPTimeoutError(MCPError):
+    """Raised when an MCP request exceeds its timeout — distinct from other errors
+    so callers can record a 'timeout' status rather than a generic 'error'."""
+
+
 @dataclass
 class MCPTool:
     name: str
@@ -199,7 +204,9 @@ class MCPClient:
             return await asyncio.wait_for(fut, timeout=self.request_timeout)
         except TimeoutError as exc:
             self._pending.pop(req_id, None)
-            raise MCPError(f"MCP request '{method}' timed out after {self.request_timeout}s") from exc
+            raise MCPTimeoutError(
+                f"MCP request '{method}' timed out after {self.request_timeout}s"
+            ) from exc
 
     async def _notify(self, method: str, params: dict[str, Any]) -> None:
         msg = {"jsonrpc": "2.0", "method": method, "params": params}
@@ -275,7 +282,15 @@ class MCPClientPool:
 
     def __init__(self) -> None:
         self._clients: dict[int, MCPClient] = {}
-        self._lock = asyncio.Lock()
+        self._locks: dict[int, asyncio.Lock] = {}
+        self._guard = asyncio.Lock()  # protects the dicts only, never held across start()
+
+    def _lock_for(self, plugin_id: int) -> asyncio.Lock:
+        lock = self._locks.get(plugin_id)
+        if lock is None:
+            lock = asyncio.Lock()
+            self._locks[plugin_id] = lock
+        return lock
 
     async def get(
         self,
@@ -284,7 +299,11 @@ class MCPClientPool:
         args: list[str],
         env: dict[str, str],
     ) -> MCPClient:
-        async with self._lock:
+        # Per-plugin lock: only concurrent gets for the SAME plugin serialize, so
+        # one plugin's slow handshake doesn't block every other plugin's get().
+        async with self._guard:
+            lock = self._lock_for(plugin_id)
+        async with lock:
             existing = self._clients.get(plugin_id)
             if existing and existing.is_running:
                 return existing
@@ -297,13 +316,15 @@ class MCPClientPool:
             return client
 
     async def restart(self, plugin_id: int) -> None:
-        async with self._lock:
+        async with self._guard:
+            lock = self._lock_for(plugin_id)
+        async with lock:
             client = self._clients.pop(plugin_id, None)
             if client:
                 await client.stop()
 
     async def close_all(self) -> None:
-        async with self._lock:
+        async with self._guard:
             clients = list(self._clients.values())
             self._clients.clear()
         await asyncio.gather(*(c.stop() for c in clients), return_exceptions=True)

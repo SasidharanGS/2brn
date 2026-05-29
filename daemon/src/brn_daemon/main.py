@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import os as _os
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from datetime import date as dt_date
@@ -41,22 +42,18 @@ from brn_daemon.plugins import EventBus, EventNames, PluginOrchestrator
 from brn_daemon.providers import make_embed_client
 from brn_daemon.purge import purge_old_captures
 
-import os as _os
-
 
 class JsonFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
-        import json as _json
-        from datetime import UTC, datetime as _dt
         obj: dict = {
-            "ts": _dt.now(UTC).isoformat(),
+            "ts": datetime.now(UTC).isoformat(),
             "level": record.levelname,
             "logger": record.name,
             "msg": record.getMessage(),
         }
         if record.exc_info:
             obj["exc"] = self.formatException(record.exc_info)
-        return _json.dumps(obj)
+        return json.dumps(obj)
 
 
 def _configure_logging() -> None:

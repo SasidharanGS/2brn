@@ -72,18 +72,7 @@ export default function Dashboard() {
           <button
             key={tile.path}
             onClick={() => navigate(tile.path)}
-            className="group text-left rounded-[12px] p-4 border transition-all duration-150 hover:-translate-y-0.5 hover:shadow-glow-sm"
-            style={{ background: 'var(--bg-surface)', borderColor: 'var(--border)' }}
-            onMouseEnter={e => {
-              const el = e.currentTarget as HTMLElement
-              el.style.background = 'var(--bg-surface-2)'
-              el.style.borderColor = 'var(--border-2)'
-            }}
-            onMouseLeave={e => {
-              const el = e.currentTarget as HTMLElement
-              el.style.background = 'var(--bg-surface)'
-              el.style.borderColor = 'var(--border)'
-            }}
+            className="nav-tile group text-left rounded-[12px] p-4 border hover:-translate-y-0.5 hover:shadow-glow-sm"
           >
             <div className="flex items-center gap-2 mb-1.5">
               <span className="text-[16px]">{tile.icon}</span>

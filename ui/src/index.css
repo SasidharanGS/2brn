@@ -227,7 +227,17 @@ html.macos .top-bar::before {
     var(--bg-surface-2) 50%,
     var(--bg-surface) 75%
   );
-  background-size: 1200px 100%;
-  animation: shimmer 1.8s infinite linear;
-  border-radius: 8px;
+   background-size: 1200px 100%;
+   animation: shimmer 1.8s infinite linear;
+   border-radius: 8px;
+}
+
+.nav-tile {
+  background: var(--bg-surface);
+  border-color: var(--border);
+  transition: background 150ms, border-color 150ms, transform 150ms, box-shadow 150ms;
+}
+.nav-tile:hover {
+  background: var(--bg-surface-2);
+  border-color: var(--border-2);
 }

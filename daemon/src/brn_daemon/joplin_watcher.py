@@ -68,6 +68,7 @@ def _get_notes_since(db_path: Path, since_ms: int) -> list[dict]:
     Excludes conflicts, encrypted notes, and empty notes.
     """
     uri = f"file:{db_path}?mode=ro"
+    conn = None
     try:
         conn = sqlite3.connect(uri, uri=True, check_same_thread=False)
         conn.row_factory = sqlite3.Row
@@ -87,11 +88,13 @@ def _get_notes_since(db_path: Path, since_ms: int) -> list[dict]:
             (since_ms,),
         )
         rows = [dict(r) for r in cur.fetchall()]
-        conn.close()
         return rows
     except Exception:
-        logger.exception("Failed to read Joplin SQLite")
+        logger.exception("Error reading Joplin DB at %s", db_path)
         return []
+    finally:
+        if conn is not None:
+            conn.close()
 
 
 def _get_all_notes(db_path: Path) -> list[dict]:

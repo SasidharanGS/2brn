@@ -1,8 +1,6 @@
 import imagehash
 from PIL import Image
 
-_HASH_BITS = 64  # whash produces 64-bit hash → max distance = 64
-
 
 def compute_phash(image: Image.Image) -> str:
     """Compute a perceptual (wavelet) hash of an image, returned as a hex string."""
@@ -15,6 +13,7 @@ def is_duplicate(current_hash: str, prev_hash: str | None, threshold: float = 0.
         return False
     h1 = imagehash.hex_to_hash(current_hash)
     h2 = imagehash.hex_to_hash(prev_hash)
-    distance = h1 - h2  # Hamming distance
-    similarity = 1.0 - (distance / _HASH_BITS)
+    hash_bits = len(current_hash) * 4
+    distance = h1 - h2
+    similarity = 1.0 - (distance / hash_bits)
     return bool(similarity >= threshold)

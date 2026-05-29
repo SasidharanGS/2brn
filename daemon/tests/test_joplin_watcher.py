@@ -258,3 +258,18 @@ async def test_bulk_embed_continues_after_single_note_failure(tmp_path):
     # Should not raise; should still process note2
     await watcher.bulk_embed_all()
     assert embed_client.embed_batch.call_count == 2
+
+
+def test_get_notes_since_closes_connection_on_query_error(tmp_path):
+    """Connection must be closed even when the query raises."""
+    db_path = tmp_path / "joplin.db"
+    mock_conn = MagicMock()
+    mock_conn.execute.side_effect = Exception("query failed")
+
+    with patch("brn_daemon.joplin_watcher.sqlite3") as mock_sqlite3:
+        mock_sqlite3.connect.return_value = mock_conn
+        mock_sqlite3.Row = None
+        result = _get_notes_since(db_path, 0)
+
+    assert result == []
+    mock_conn.close.assert_called_once()

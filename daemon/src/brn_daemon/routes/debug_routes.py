@@ -86,7 +86,7 @@ async def get_debug_status():
         chroma=chroma_section,
         last_error=last_error,
         failed_capture_ids=(
-            app_state["inference_queue"].failed_capture_ids
+            app_state.get("inference_queue").failed_capture_ids  # type: ignore[union-attr]
             if app_state.get("inference_queue") is not None
             else []
         ),

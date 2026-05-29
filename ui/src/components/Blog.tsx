@@ -29,7 +29,7 @@ export default function Blog() {
       setScheduleDay(srv.day)
       setScheduleDays(srv.days_of_week)
     }
-  }, [srv?.frequency, srv?.hour, srv?.minute, srv?.day, JSON.stringify(srv?.days_of_week)]) // eslint-disable-line
+  }, [srv?.frequency, srv?.hour, srv?.minute, srv?.day, srv?.days_of_week?.join(',')])
 
   // Reset edit state whenever the date changes
   useEffect(() => {

@@ -70,6 +70,17 @@ class PluginCreate(BaseModel):
             raise ValueError("Plugin name must match ^[A-Za-z0-9_-]+$")
         return v
 
+    @field_validator("command")
+    @classmethod
+    def command_safe(cls, v: str) -> str:
+        if len(v) > 512:
+            raise ValueError("Plugin command must not exceed 512 characters")
+        if "\x00" in v:
+            raise ValueError("Plugin command must not contain null bytes")
+        if ".." in v:
+            raise ValueError("Plugin command must not contain '..' (path traversal)")
+        return v
+
     @field_validator("env")
     @classmethod
     def env_keys_safe(cls, v: dict[str, str]) -> dict[str, str]:
@@ -84,6 +95,19 @@ class PluginUpdate(BaseModel):
     args: list[str] | None = None
     env: dict[str, str] | None = None
     enabled: bool | None = None
+
+    @field_validator("command")
+    @classmethod
+    def command_safe(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        if len(v) > 512:
+            raise ValueError("Plugin command must not exceed 512 characters")
+        if "\x00" in v:
+            raise ValueError("Plugin command must not contain null bytes")
+        if ".." in v:
+            raise ValueError("Plugin command must not contain '..' (path traversal)")
+        return v
 
     @field_validator("env")
     @classmethod
@@ -109,7 +133,7 @@ class RuleOut(BaseModel):
 class RuleCreate(BaseModel):
     plugin_id: int
     title: str = Field(..., min_length=1, max_length=120)
-    rule_text: str = Field(..., min_length=1)
+    rule_text: str = Field(..., min_length=1, max_length=2000)
     enabled: bool = True
 
 
@@ -244,14 +268,14 @@ async def create_plugin(body: PluginCreate):
 async def update_plugin(plugin_id: int, body: PluginUpdate):
     async with aiosqlite.connect(get_db_path()) as conn:
         conn.row_factory = aiosqlite.Row
-        row = await _fetch_plugin(conn, plugin_id)
-        new_command = body.command if body.command is not None else row["command"]
-        new_args = json.dumps(body.args) if body.args is not None else row["args"]
-        new_enabled = int(body.enabled) if body.enabled is not None else row["enabled"]
+        old_row = await _fetch_plugin(conn, plugin_id)
+        new_command = body.command if body.command is not None else old_row["command"]
+        new_args = json.dumps(body.args) if body.args is not None else old_row["args"]
+        new_enabled = int(body.enabled) if body.enabled is not None else old_row["enabled"]
         if body.env is not None:
             new_env_keys = json.dumps(sorted(body.env.keys()))
         else:
-            new_env_keys = row["env_keys"]
+            new_env_keys = old_row["env_keys"]
         await conn.execute(
             """UPDATE plugins
                SET command = ?, args = ?, env_keys = ?, enabled = ?
@@ -263,13 +287,16 @@ async def update_plugin(plugin_id: int, body: PluginUpdate):
         plugin_name = row["name"]
 
     if body.env is not None:
+        old_keys = set(json.loads(old_row["env_keys"] or "[]"))
+        new_keys = set(body.env.keys())
         for k, v in body.env.items():
             try:
                 set_plugin_env_value(plugin_name, k, v)
             except RuntimeError:
                 logger.exception("Could not save env %s for plugin %s", k, plugin_name)
+        for k in old_keys - new_keys:
+            delete_plugin_env_value(plugin_name, k)
 
-    # Restart subprocess so it picks up new command/args/env, and refresh schedule.
     orch = _get_orchestrator()
     await orch.pool.restart(plugin_id)
     await orch.refresh_rules()

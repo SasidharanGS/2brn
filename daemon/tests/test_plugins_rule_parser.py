@@ -149,3 +149,35 @@ def test_render_args_serialises_list_values():
 def test_render_args_preserves_non_string_leaves():
     out = render_args({"count": 5, "flag": True}, {})
     assert out == {"count": 5, "flag": True}
+
+
+def test_every_1s_rejected():
+    """every_1s is below the 60s minimum and must raise RuleParseError."""
+    with pytest.raises(RuleParseError, match="minimum interval"):
+        validate_trigger("every_1s")
+
+
+def test_every_59s_rejected():
+    """every_59s is below the 60s minimum and must raise RuleParseError."""
+    with pytest.raises(RuleParseError, match="minimum interval"):
+        validate_trigger("every_59s")
+
+
+def test_every_60s_accepted():
+    """every_60s is exactly at the minimum and must be accepted."""
+    validate_trigger("every_60s")
+
+
+def test_every_300s_accepted():
+    """every_300s is above the minimum and must be accepted."""
+    validate_trigger("every_300s")
+
+
+def test_daily_at_accepted():
+    """daily_at_HH:MM triggers must still be accepted."""
+    validate_trigger("daily_at_08:00")
+
+
+def test_event_trigger_accepted():
+    """Event triggers must still be accepted."""
+    validate_trigger("journal_generated")

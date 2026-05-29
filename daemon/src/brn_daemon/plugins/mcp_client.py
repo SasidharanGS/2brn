@@ -186,8 +186,8 @@ class MCPClient:
         async with self._lock:
             req_id = self._next_id
             self._next_id += 1
-        fut: asyncio.Future[Any] = asyncio.get_running_loop().create_future()
-        self._pending[req_id] = fut
+            fut: asyncio.Future[Any] = asyncio.get_running_loop().create_future()
+            self._pending[req_id] = fut
         msg = {"jsonrpc": "2.0", "id": req_id, "method": method, "params": params}
         await self._write(msg)
         try:

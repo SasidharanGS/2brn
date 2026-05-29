@@ -77,6 +77,11 @@ def test_is_duplicate_none_prev():
 
 
 def test_is_duplicate_very_different_images():
-    h1 = compute_phash(_make_image((0, 0, 0)))
-    h2 = compute_phash(_make_image((255, 255, 255)))
+    size = (64, 64)
+    import numpy as np
+    arr_grad = np.zeros((size[1], size[0], 3), dtype=np.uint8)
+    for col in range(size[0]):
+        arr_grad[:, col] = int(col * 4)
+    h1 = compute_phash(Image.fromarray(arr_grad))
+    h2 = compute_phash(_make_image((128, 128, 128)))
     assert is_duplicate(h1, h2) is False

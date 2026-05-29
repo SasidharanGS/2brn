@@ -401,9 +401,12 @@ async def _capture_loop(cfg, inference_queue: InferenceQueue):
             loop = asyncio.get_running_loop()
 
             # ── Phase 1: fan-out phash + screenshot save to executor (CPU/IO-bound) ──
+            app_results = await asyncio.gather(*[
+                loop.run_in_executor(None, get_app_for_monitor, monitor_rect, windows)
+                for _, _, monitor_rect in monitors
+            ])
             phase1_candidates = []
-            for monitor_idx, img, monitor_rect in monitors:
-                app_name, window_title = get_app_for_monitor(monitor_rect, windows)
+            for (monitor_idx, img, monitor_rect), (app_name, window_title) in zip(monitors, app_results):
                 if app_name in excluded_apps:
                     continue
                 phase1_candidates.append((monitor_idx, img, monitor_rect, app_name, window_title))

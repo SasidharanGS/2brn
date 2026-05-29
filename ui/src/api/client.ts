@@ -147,6 +147,7 @@ export const api = {
       body: JSON.stringify({ question, date_filter, category_filter }),
       signal,
     })
+    if (!res.ok) throw new ApiError(res.status, `POST /chat failed: ${res.status}`)
     if (!res.body) return
     const reader = res.body.getReader()
     const decoder = new TextDecoder()

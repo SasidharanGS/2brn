@@ -1,4 +1,5 @@
 import pytest
+import httpx
 from unittest.mock import AsyncMock, patch, MagicMock
 from brn_daemon.providers import CustomEmbedClient, OpenAIEmbedClient
 
@@ -39,7 +40,7 @@ async def test_custom_embed_batch_retries_on_failure(custom_client):
         nonlocal call_count
         call_count += 1
         if call_count < 3:
-            raise Exception("transient error")
+            raise httpx.HTTPError("transient error")
         mock_resp = MagicMock()
         mock_resp.raise_for_status = MagicMock()
         mock_resp.json = MagicMock(return_value={"success": True, "data": {"embeddings": [[0.5]]}})

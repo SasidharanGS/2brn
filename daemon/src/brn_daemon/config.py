@@ -135,9 +135,10 @@ def load_config() -> Config:
             journal_schedule=_parse_schedule(data.get("journal_schedule", {})),
             blog_schedule=_parse_blog_schedule(data.get("blog_schedule", {})),
         )
-    except (json.JSONDecodeError, KeyError, ValueError):
-        logger.warning("Corrupt config.json — using defaults")
-        return Config()
+    except (json.JSONDecodeError, KeyError, ValueError) as exc:
+        raise RuntimeError(
+            f"config.json at {path} is corrupt and cannot be parsed: {exc}"
+        ) from exc
 
 
 def save_config(cfg: Config) -> None:

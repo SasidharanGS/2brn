@@ -86,14 +86,11 @@ async def chat_stream(
 
     try:
         resp = await litellm.acompletion(**kwargs)
-        if resp is None:
-            logger.error("Chat stream failed: provider returned None (check base_url and model name)")
-            yield "Error: provider returned empty response"
-            return
     except Exception as exc:
         logger.exception("Chat stream failed")
-        yield f"Error: {exc}"
-        return
+        raise RuntimeError(f"Chat stream failed: {exc}") from exc
+    if resp is None:
+        raise RuntimeError("Chat stream failed: provider returned empty response (check base_url and model name)")
     async for chunk in resp:  # type: ignore[union-attr]
         if not chunk.choices:
             continue

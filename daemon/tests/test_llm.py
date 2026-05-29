@@ -101,3 +101,22 @@ async def test_chat_stream_yields_chunks():
         ):
             results.append(chunk)
     assert results == ["Hello", " world", "!"]
+
+
+async def test_chat_stream_raises_on_exception():
+    """chat_stream must raise RuntimeError when the provider call fails, not yield an error string."""
+    import litellm
+    from brn_daemon.llm import chat_stream
+
+    with patch.object(litellm, "acompletion", side_effect=RuntimeError("provider down")):
+        gen = chat_stream(
+            messages=[{"role": "user", "content": "hi"}],
+            provider_type="openai_compatible",
+            base_url="http://localhost:1234",
+            api_key="test",
+            model="test-model",
+            extra_headers={},
+        )
+        with pytest.raises(RuntimeError, match="provider down"):
+            async for _ in gen:
+                pass

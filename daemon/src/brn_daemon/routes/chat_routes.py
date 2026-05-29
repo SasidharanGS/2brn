@@ -36,6 +36,10 @@ async def chat_endpoint(body: ChatRequest):
         except asyncio.CancelledError:
             logger.debug("Chat SSE client disconnected")
             return
+        except RuntimeError as exc:
+            logger.exception("Chat stream error")
+            yield "data: " + json.dumps({"error": str(exc)}) + "\n\n"
+            yield "data: [DONE]\n\n"
         except Exception as exc:
             logger.exception("Chat stream error")
             yield "data: " + json.dumps({"chunk": f"Error: {exc}"}) + "\n\n"

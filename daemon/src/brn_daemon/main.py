@@ -216,6 +216,7 @@ async def lifespan(app: FastAPI):
     asyncio.create_task(_startup_backfill_blog(blog_gen, event_bus, cfg.blog_schedule))
 
     inference_task = asyncio.create_task(inference_queue.run())
+    asyncio.create_task(app_state["inference_queue"].heal_unembedded())
     capture_task = asyncio.create_task(_capture_loop(cfg, inference_queue))
 
     # Optional Joplin note embedding watcher — off by default for OSS users.

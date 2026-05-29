@@ -118,7 +118,9 @@ export const api = {
   updateInstruction: (id: number, patch: Partial<Pick<UserInstruction, 'title' | 'body' | 'enabled'>>) =>
     put<UserInstruction>(`/instructions/${id}`, patch),
   deleteInstruction: (id: number) =>
-    fetch(`${BASE_URL}/instructions/${id}`, { method: 'DELETE' }).then(() => undefined),
+    fetch(`${BASE_URL}/instructions/${id}`, { method: 'DELETE' }).then(r => {
+      if (!r.ok) throw new ApiError(r.status, `DELETE /instructions/${id} failed: ${r.status}`)
+    }),
 
   // ── Plugins ─────────────────────────────────────────────────────────────────
   listPlugins: () => get<Plugin[]>('/plugins'),

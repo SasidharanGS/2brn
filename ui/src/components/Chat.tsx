@@ -71,7 +71,8 @@ export default function Chat() {
         u[u.length - 1] = { ...u[u.length - 1], content: acc, streaming: false }
         return u
       })
-    } catch {
+    } catch (e) {
+      if (e instanceof DOMException && e.name === 'AbortError') return
       setMessages(prev => {
         const u = [...prev]
         u[u.length - 1] = { ...u[u.length - 1], content: 'Something went wrong. Please try again.', streaming: false }

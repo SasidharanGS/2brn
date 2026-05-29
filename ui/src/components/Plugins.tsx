@@ -521,6 +521,7 @@ function PluginDetail({ plugin, onDeleted }: { plugin: Plugin; onDeleted: () => 
 function RuleCard({ rule, onEdit }: { rule: PluginRule; onEdit: () => void }) {
   const qc = useQueryClient()
   const [showExec, setShowExec] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
 
   const toggleMut = useMutation({
     mutationFn: () => api.updatePluginRule(rule.id, { enabled: !rule.enabled }),
@@ -624,13 +625,33 @@ function RuleCard({ rule, onEdit }: { rule: PluginRule; onEdit: () => void }) {
         >
           edit
         </button>
-        <button
-          onClick={() => { if (confirm(`Delete rule "${rule.title}"?`)) deleteMut.mutate() }}
-          className="text-[11px] font-mono px-2 py-0.5 rounded-[5px]"
-          style={{ color: 'var(--red)', background: 'var(--red-bg)' }}
-        >
-          delete
-        </button>
+        {confirmDelete ? (
+          <>
+            <span className="text-[11px] font-mono" style={{ color: 'var(--text-dim)' }}>delete?</span>
+            <button
+              onClick={() => { setConfirmDelete(false); deleteMut.mutate() }}
+              className="text-[11px] font-mono px-2 py-0.5 rounded-[5px]"
+              style={{ color: 'var(--red)', background: 'var(--red-bg)' }}
+            >
+              yes
+            </button>
+            <button
+              onClick={() => setConfirmDelete(false)}
+              className="text-[11px] font-mono px-2 py-0.5 rounded-[5px]"
+              style={{ color: 'var(--text-dim)', background: 'var(--bg-surface-2)' }}
+            >
+              cancel
+            </button>
+          </>
+        ) : (
+          <button
+            onClick={() => setConfirmDelete(true)}
+            className="text-[11px] font-mono px-2 py-0.5 rounded-[5px]"
+            style={{ color: 'var(--red)', background: 'var(--red-bg)' }}
+          >
+            delete
+          </button>
+        )}
       </div>
 
       {showExec && <ExecutionHistory ruleId={rule.id} />}

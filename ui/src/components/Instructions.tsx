@@ -89,7 +89,7 @@ export default function Instructions() {
         )}
 
         {showNew && (
-          <NewCard
+          <InstructionForm
             title={newTitle}
             body={newBody}
             onTitleChange={setNewTitle}
@@ -97,12 +97,13 @@ export default function Instructions() {
             onSave={handleCreate}
             onCancel={() => { setShowNew(false); setNewTitle(''); setNewBody('') }}
             saving={createMut.isPending}
+            placeholders={{ title: 'Title (e.g. Opencode tab rename)', body: "Instruction (e.g. When Microsoft Edge tab title contains 'Opencode', classify the app_name as 'Opencode')" }}
           />
         )}
 
         {instructions.map(inst =>
           editingId === inst.id ? (
-            <EditCard
+            <InstructionForm
               key={inst.id}
               title={editTitle}
               body={editBody}
@@ -193,12 +194,14 @@ function InstructionCard({
   )
 }
 
-function NewCard({
+function InstructionForm({
   title, body, onTitleChange, onBodyChange, onSave, onCancel, saving,
+  placeholders,
 }: {
   title: string; body: string
   onTitleChange: (v: string) => void; onBodyChange: (v: string) => void
   onSave: () => void; onCancel: () => void; saving: boolean
+  placeholders?: { title?: string; body?: string }
 }) {
   return (
     <div
@@ -207,7 +210,7 @@ function NewCard({
     >
       <input
         autoFocus
-        placeholder="Title (e.g. Opencode tab rename)"
+        placeholder={placeholders?.title}
         value={title}
         onChange={e => onTitleChange(e.target.value)}
         className="w-full text-[13px] px-3 py-2 rounded-[7px] outline-none"
@@ -218,62 +221,7 @@ function NewCard({
         }}
       />
       <textarea
-        placeholder="Instruction (e.g. When Microsoft Edge tab title contains 'Opencode', classify the app_name as 'Opencode')"
-        value={body}
-        onChange={e => onBodyChange(e.target.value)}
-        rows={3}
-        className="w-full text-[12px] px-3 py-2 rounded-[7px] outline-none resize-none leading-relaxed"
-        style={{
-          background: 'var(--bg-input)',
-          border: '1px solid var(--border-2)',
-          color: 'var(--text)',
-        }}
-      />
-      <div className="flex gap-2 justify-end">
-        <button
-          onClick={onCancel}
-          className="text-[12px] px-3 py-1.5 rounded-[7px] transition-all"
-          style={{ color: 'var(--text-dim)', background: 'var(--bg-surface-2)' }}
-        >
-          cancel
-        </button>
-        <button
-          onClick={onSave}
-          disabled={saving || !title.trim() || !body.trim()}
-          className="text-[12px] px-3 py-1.5 rounded-[7px] font-medium transition-all disabled:opacity-40"
-          style={{ background: 'var(--accent-glow)', color: 'var(--accent)', border: '1px solid var(--border-focus)' }}
-        >
-          {saving ? 'saving…' : 'save'}
-        </button>
-      </div>
-    </div>
-  )
-}
-
-function EditCard({
-  title, body, onTitleChange, onBodyChange, onSave, onCancel, saving,
-}: {
-  title: string; body: string
-  onTitleChange: (v: string) => void; onBodyChange: (v: string) => void
-  onSave: () => void; onCancel: () => void; saving: boolean
-}) {
-  return (
-    <div
-      className="rounded-[10px] p-4 flex flex-col gap-3"
-      style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-focus)' }}
-    >
-      <input
-        autoFocus
-        value={title}
-        onChange={e => onTitleChange(e.target.value)}
-        className="w-full text-[13px] px-3 py-2 rounded-[7px] outline-none"
-        style={{
-          background: 'var(--bg-input)',
-          border: '1px solid var(--border-2)',
-          color: 'var(--text)',
-        }}
-      />
-      <textarea
+        placeholder={placeholders?.body}
         value={body}
         onChange={e => onBodyChange(e.target.value)}
         rows={3}

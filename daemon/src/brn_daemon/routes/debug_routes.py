@@ -1,3 +1,5 @@
+import asyncio
+
 import httpx
 from fastapi import APIRouter, Query
 from pydantic import BaseModel
@@ -65,8 +67,9 @@ async def get_debug_status():
     note_count = 0
     if chroma is not None:
         try:
-            activity_count = chroma.collection.count()
-            note_count = chroma.note_collection.count()
+            loop = asyncio.get_event_loop()
+            activity_count = await loop.run_in_executor(None, chroma.collection.count)
+            note_count = await loop.run_in_executor(None, chroma.note_collection.count)
         except Exception:
             pass
 

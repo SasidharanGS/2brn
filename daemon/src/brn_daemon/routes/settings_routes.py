@@ -320,7 +320,7 @@ async def chroma_status():
     if chroma is None:
         from brn_daemon.embeddings import ChromaStore
         chroma = ChromaStore()
-    chroma_count = chroma.collection.count()
+    chroma_count = await asyncio.get_event_loop().run_in_executor(None, chroma.collection.count)
     return {"total_activities": total, "embedded": embedded, "chroma_count": chroma_count}
 
 

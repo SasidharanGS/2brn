@@ -41,14 +41,18 @@ async def generate_blog_post(date: str):
     if not gen:
         raise HTTPException(503, "Blog generator not available")
 
+    from datetime import date as dt_date
+    try:
+        target = dt_date.fromisoformat(date)
+    except ValueError:
+        raise HTTPException(400, f"Invalid date '{date}', expected YYYY-MM-DD")
+
     generating: set = app_state.setdefault("blog_generating", set())
     if date in generating:
         raise HTTPException(409, f"Blog post for {date} is already being generated")
 
     generating.add(date)
     try:
-        from datetime import date as dt_date
-        target = dt_date.fromisoformat(date)
         content = await gen.generate(target_date=target)
     finally:
         generating.discard(date)

@@ -51,6 +51,17 @@ and the UI passes `tsc --noEmit`.
   Blog / Insights show a real error state instead of "no data" when a request fails;
   deleting a user instruction now asks for confirmation.
 
+## 4. Performance & further robustness
+
+- **Plugins:** concurrent tool executions are capped (an event burst can't pile up);
+  a timed-out tool call is recorded as `timeout` (not a generic error); plugin secret
+  values are scrubbed from stored/returned error messages; one plugin's slow startup
+  no longer blocks the others.
+- **API:** the journal/blog generate endpoints return `400` on a malformed date (was a
+  `500`); `GET /captures` uses an index-friendly, local-day range query.
+- **Event loop:** capture-image read/decrypt and ChromaDB `count()` calls now run off
+  the event loop, so they no longer stall capture / inference / HTTP.
+
 ---
 
 ## Project layout
@@ -65,7 +76,10 @@ See `README.md` for setup and `CONTRIBUTING.md` for the dev workflow.
 ## Known follow-ups (not done here)
 
 - Migrate the remaining read-path DB call sites to `get_conn()` (mechanical).
+- Batch embeddings in the manual "Resync ChromaDB" job; validate plugin-rule args
+  against the tool schema; move the optional Joplin watcher's writes off the loop.
+- Product ideas from the review: an in-app health surface (embed backlog, queue
+  depth) and activity durations.
 - Already-embedded activities keep a UTC date tag until a one-off **Settings →
   Resync ChromaDB**; new activities use the local date.
-- A broader set of medium/low findings from the code review remain (see the
-  review report kept alongside the repo).
+- Remaining low/polish items from the review report.

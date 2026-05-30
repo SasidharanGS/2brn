@@ -240,9 +240,12 @@ def delete_screenshot_password() -> None:
 def get_gateway_token() -> str | None:
     try:
         import keyring
-        return keyring.get_password(KEYCHAIN_SERVICE, KEYCHAIN_USERNAME)
+        val = keyring.get_password(KEYCHAIN_SERVICE, KEYCHAIN_USERNAME)
+        if val:
+            return val
     except Exception:
-        return os.environ.get("BRN_GATEWAY_TOKEN")
+        pass
+    return os.environ.get("BRN_GATEWAY_TOKEN")
 
 
 def set_gateway_token(token: str) -> None:

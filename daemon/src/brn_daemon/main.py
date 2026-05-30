@@ -394,6 +394,7 @@ async def _phase1_process_monitor(
     img,
     *,
     key: bytes | None,
+    monitor_index: int = 0,
 ) -> tuple[str, "Path"]:
     """Run compute_phash and save_screenshot in the thread executor.
 
@@ -401,7 +402,7 @@ async def _phase1_process_monitor(
     Both are CPU/IO-bound and must not block the event loop.
     """
     def save_screenshot_bound():
-        return save_screenshot(img, key=key)
+        return save_screenshot(img, key=key, monitor_index=monitor_index)
     save_screenshot_bound.__name__ = "save_screenshot"
 
     phash_fut = loop.run_in_executor(None, compute_phash, img)
@@ -456,7 +457,7 @@ async def _capture_loop(cfg, inference_queue: InferenceQueue):
                 continue
 
             phase1_results = await asyncio.gather(*[
-                _phase1_process_monitor(loop, item[1], key=app_state.get("screenshot_key"))
+                _phase1_process_monitor(loop, item[1], key=app_state.get("screenshot_key"), monitor_index=item[0])
                 for item in phase1_candidates
             ])
 

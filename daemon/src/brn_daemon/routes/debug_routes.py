@@ -43,6 +43,7 @@ async def get_debug_status():
         "last_captured_at": app_state.get("last_captured_at"),
         "paused": bool(app_state.get("paused")),
         "dropped_inferences": _iq.dropped_count if _iq is not None else 0,
+        "inference_queue_depth": _iq.queue_depth if _iq is not None else 0,
     }
 
     # Gateway reachability — try /actuator/health with 3s timeout

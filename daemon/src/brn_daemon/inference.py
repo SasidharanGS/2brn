@@ -211,6 +211,18 @@ class InferenceQueue:
         """Captures dropped because the inference queue was full (gateway backlog)."""
         return self._dropped
 
+    @property
+    def queue_depth(self) -> int:
+        """Number of captures currently waiting for inference."""
+        return self._queue.qsize()
+
+    def set_chat_fn(self, chat_fn) -> None:
+        """Swap the chat fn after a config change (avoids poking a private attr)."""
+        self._chat_fn = chat_fn
+
+    def set_embedding_service(self, service) -> None:
+        self._embedding_service = service
+
     async def _process_one(self, capture_id: int, app_name: str, window_title: str, ocr_text: str,
                            captured_at: str | None = None) -> None:
         """Process a single inference item: call LLM, write to SQLite, embed.

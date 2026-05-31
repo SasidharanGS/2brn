@@ -547,16 +547,16 @@ async def _rebuild_ai_clients() -> None:
 
     iq = app_state.get("inference_queue")
     if iq is not None:
-        iq._chat_fn = new_chat_fn
-        iq._embedding_service = new_embedding_service
+        iq.set_chat_fn(new_chat_fn)
+        iq.set_embedding_service(new_embedding_service)
 
     jg = app_state.get("journal_generator")
     if jg is not None:
-        jg._chat_fn = new_chat_fn
+        jg.set_chat_fn(new_chat_fn)
 
     bg = app_state.get("blog_generator")
     if bg is not None:
-        bg._chat_fn = new_chat_fn
+        bg.set_chat_fn(new_chat_fn)
 
     po = app_state.get("plugin_orchestrator")
     if po is not None:

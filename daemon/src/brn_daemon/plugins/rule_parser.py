@@ -62,6 +62,13 @@ def validate_trigger(trigger: str) -> None:
                         f"Scheduled trigger '{trigger}' has a minimum interval of "
                         f"{MIN_SCHEDULE_INTERVAL_SECONDS}s to prevent abuse."
                     )
+            elif trigger.startswith("daily_at_"):
+                hh, mm = trigger.removeprefix("daily_at_").split(":")
+                if not (0 <= int(hh) <= 23 and 0 <= int(mm) <= 59):
+                    raise RuleParseError(
+                        f"Scheduled trigger '{trigger}' has an invalid time "
+                        f"(expected hour 00-23, minute 00-59)."
+                    )
             return
     raise RuleParseError(
         f"Invalid trigger '{trigger}'. Must be one of "
@@ -164,6 +171,17 @@ async def parse_rule(
         raise RuleParseError(
             f"Tool '{tool_name}' not in plugin's tool list: {sorted(tool_names)}"
         )
+
+    # Reject args_template keys the tool's schema doesn't declare — guards against a
+    # mis-parse / prompt-injection populating arbitrary argument names for a real tool.
+    tool = next((t for t in available_tools if t["name"] == tool_name), None)
+    props = ((tool or {}).get("input_schema") or {}).get("properties")
+    if isinstance(props, dict) and props:
+        unknown = set(args_template.keys()) - set(props.keys())
+        if unknown:
+            raise RuleParseError(
+                f"args_template has keys not in tool '{tool_name}' schema: {sorted(unknown)}"
+            )
 
     return ParsedRule(trigger=trigger, tool_name=tool_name, args_template=args_template)
 

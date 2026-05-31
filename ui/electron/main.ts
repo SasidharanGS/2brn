@@ -194,6 +194,7 @@ function createWindow(): void {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: true,
     },
   })
 
@@ -256,3 +257,12 @@ app.on('quit', () => {
   if (healthPollTimer) clearInterval(healthPollTimer)
   daemon?.kill()
 })
+
+// Kill the spawned daemon on external termination (kill, OS shutdown), not just
+// on a clean Electron quit, so it isn't orphaned on port 7842.
+for (const sig of ['SIGTERM', 'SIGINT'] as const) {
+  process.on(sig, () => {
+    daemon?.kill()
+    app.quit()
+  })
+}

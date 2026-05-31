@@ -5,7 +5,18 @@ import type {
   Plugin, PluginRule, PluginTool, RuleExecution, PluginCreate, PluginUpdate, RuleCreate, RuleUpdate,
 } from './types'
 
-const BASE_URL = 'http://127.0.0.1:7842'
+let BASE_URL = 'http://127.0.0.1:7842'
+
+/** Point the client at the daemon port reported by the Electron bridge (with a
+ *  fallback to the default). Called once at startup, before any request. */
+export async function initApiBase(): Promise<void> {
+  try {
+    const port = await window.electronAPI?.getDaemonPort?.()
+    if (port) BASE_URL = `http://127.0.0.1:${port}`
+  } catch {
+    /* keep the default */
+  }
+}
 
 export class ApiError extends Error {
   constructor(

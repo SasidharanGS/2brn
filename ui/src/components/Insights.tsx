@@ -258,7 +258,7 @@ export default function Insights() {
                   tick={{ fill: TT.axisTickFill, fontSize: 11 }}
                   axisLine={false} tickLine={false}
                   tickFormatter={(v: number) => `${v}%`}
-                  domain={[0, 100]}
+                  domain={[0, 'dataMax']}
                 />
                 <Tooltip
                   {...TT}

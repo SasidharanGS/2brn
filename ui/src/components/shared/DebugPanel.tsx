@@ -74,6 +74,8 @@ export default function DebugPanel({ onClose }: Props) {
   const userScrolledUp = useRef(false)
   /** Ordered fingerprints of every line we've appended to the DOM. */
   const renderedFingerprintsRef = useRef<string[]>([])
+  const clearedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => () => { if (clearedTimerRef.current) clearTimeout(clearedTimerRef.current) }, [])
 
   const handleDragMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault()
@@ -380,7 +382,11 @@ export default function DebugPanel({ onClose }: Props) {
             </button>
           ))}
           <button
-            onClick={() => { setCleared(true); setTimeout(() => setCleared(false), 2100) }}
+            onClick={() => {
+              setCleared(true)
+              if (clearedTimerRef.current) clearTimeout(clearedTimerRef.current)
+              clearedTimerRef.current = setTimeout(() => setCleared(false), 2100)
+            }}
             className="text-[9px] font-mono ml-auto hover:opacity-80"
             style={{ color: 'var(--text-dim)' }}
           >

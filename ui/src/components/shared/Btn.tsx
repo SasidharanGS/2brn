@@ -18,6 +18,7 @@ interface BtnProps {
 export default function Btn({ onClick, disabled, children, variant = 'ghost' }: BtnProps) {
   return (
     <button
+      type="button"
       onClick={onClick}
       disabled={disabled}
       className="px-4 py-2 rounded-[9px] text-[13px] font-medium transition-all duration-150 disabled:opacity-40"

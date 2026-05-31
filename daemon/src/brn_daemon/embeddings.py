@@ -120,3 +120,32 @@ class EmbeddingService:
                 await conn.commit()
         except Exception:
             logger.exception("Failed to embed activity %d", activity_id)
+
+    async def embed_activities_batch(self, items: list[dict]) -> int:
+        """Embed many activities in a single provider call, then upsert each into
+        ChromaDB and set its chroma_id. ``items`` are dicts with keys
+        ``activity_id``, ``summary``, ``metadata``. Returns the number embedded.
+
+        Used by the manual re-sync so a large backlog isn't one network round-trip
+        per row.
+        """
+        if self._store is None or not items:
+            return 0
+        summaries = [it["summary"] for it in items]
+        try:
+            embeddings = await self._embed_client.embed_batch(summaries)
+        except Exception:
+            logger.exception("Batch embed failed for %d activities", len(items))
+            return 0
+        async with aiosqlite.connect(get_db_path()) as conn:
+            for it, emb in zip(items, embeddings):
+                doc_id = f"activity-{it['activity_id']}"
+                await self._store.add(
+                    doc_id=doc_id, text=it["summary"], metadata=it["metadata"], embedding=emb,
+                )
+                await conn.execute(
+                    "UPDATE activities SET chroma_id = ? WHERE id = ?",
+                    (doc_id, it["activity_id"]),
+                )
+            await conn.commit()
+        return len(items)

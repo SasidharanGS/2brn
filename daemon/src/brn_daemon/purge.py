@@ -1,5 +1,6 @@
+import calendar
 import logging
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from pathlib import Path
 
 import aiosqlite
@@ -22,7 +23,14 @@ async def purge_old_captures(months: int = 12, chroma_store=None) -> int:
     Returns the number of capture rows deleted.
     `chroma_store` is an optional ChromaStore instance for removing stale embeddings.
     """
-    cutoff = datetime.now(UTC) - timedelta(days=months * 30)
+    # Subtract whole calendar months (not months*30 days, which drifts ~5 days/yr).
+    now = datetime.now(UTC)
+    year, month = now.year, now.month - months
+    while month <= 0:
+        month += 12
+        year -= 1
+    day = min(now.day, calendar.monthrange(year, month)[1])
+    cutoff = now.replace(year=year, month=month, day=day)
     cutoff_str = cutoff.strftime("%Y-%m-%dT%H:%M:%S.%f")
     files_deleted = 0
 

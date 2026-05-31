@@ -61,6 +61,18 @@ and the UI passes `tsc --noEmit`.
   `500`); `GET /captures` uses an index-friendly, local-day range query.
 - **Event loop:** capture-image read/decrypt and ChromaDB `count()` calls now run off
   the event loop, so they no longer stall capture / inference / HTTP.
+- **Plugins (more):** out-of-range schedule times and `args_template` keys not in the
+  tool's schema are rejected at save time; JSON-RPC ids are normalized; live plugin
+  subprocesses are capped (LRU eviction).
+- **Data & resilience:** the manual ChromaDB resync embeds in batches; the heal pass
+  keeps real tags and drains fully; purge subtracts whole calendar months and deletes
+  files only after the DB commit; activity override takes a request body and 404s on a
+  missing id; edits refresh `generated_at`; config reads run off the loop.
+- **Quality & a11y:** input validation, env-var fallbacks, per-monitor screenshot
+  filenames, the blog honoring user instructions, dropped-inference + queue-depth
+  health metrics, Joplin note chunking that preserves markdown structure, accessible
+  Toggle/Btn, centralized query keys, an ErrorBoundary "Try again", and AI-client
+  setters in place of private-attribute pokes.
 
 ---
 
@@ -73,13 +85,24 @@ and the UI passes `tsc --noEmit`.
 
 See `README.md` for setup and `CONTRIBUTING.md` for the dev workflow.
 
-## Known follow-ups (not done here)
+## Known follow-ups (intentionally not done here)
 
-- Migrate the remaining read-path DB call sites to `get_conn()` (mechanical).
-- Batch embeddings in the manual "Resync ChromaDB" job; validate plugin-rule args
-  against the tool schema; move the optional Joplin watcher's writes off the loop.
-- Product ideas from the review: an in-app health surface (embed backlog, queue
-  depth) and activity durations.
-- Already-embedded activities keep a UTC date tag until a one-off **Settings →
-  Resync ChromaDB**; new activities use the local date.
-- Remaining low/polish items from the review report.
+Each of these needs a runtime/hardware/product decision, or is a structural cleanup
+with no functional gain:
+
+- **Cross-platform verification** — Windows/Linux active-app detection and tesseract
+  resolution need those platforms to actually test.
+- **Activity durations** — the `ended_at` column is unused; populating it needs a
+  decision on what a "duration" means and UI to display it.
+- **A renderer Content-Security-Policy** — worth adding, but must be tested against
+  both the Vite dev server and the packaged app (a strict CSP breaks Vite's dev-mode
+  inline scripts), which requires running the app.
+- **Migrating the remaining read-path DB calls to `get_conn()`** — purely stylistic:
+  in WAL mode reads don't take the write lock, so they gain nothing from the
+  foreign-keys / busy-timeout that the write paths now use.
+- **Folding journal/blog into one generator** — structural only; the drift it was
+  meant to prevent (the blog ignoring user instructions) is already fixed.
+- **Moving the optional Joplin watcher's ChromaDB upsert off the loop** — that
+  integration is off by default.
+- Already-embedded activities keep a UTC date tag until a one-off **Settings → Resync
+  ChromaDB**; new activities use the local date.

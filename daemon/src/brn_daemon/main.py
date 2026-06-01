@@ -587,7 +587,9 @@ def create_app() -> FastAPI:
         blog_routes,
         captures,
         chat_routes,
+        connection_info,
         debug_routes,
+        ingest,
         insights_routes,
         instructions_routes,
         journal_routes,
@@ -622,6 +624,8 @@ def create_app() -> FastAPI:
     app.include_router(blog_routes.router)
     app.include_router(instructions_routes.router)
     app.include_router(plugins_routes.router)
+    app.include_router(connection_info.router)
+    app.include_router(ingest.router)
     return app
 
 
@@ -630,4 +634,13 @@ app = create_app()
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("brn_daemon.main:app", host="127.0.0.1", port=7842, reload=False)
+
+    from brn_daemon.config import load_config
+
+    # Opt-in LAN access for the mobile companion (off by default). The per-machine
+    # bearer token gates every non-public endpoint regardless of the bind address.
+    cfg = load_config()
+    host = "0.0.0.0" if cfg.lan_access else "127.0.0.1"
+    if cfg.lan_access:
+        logger.info("LAN access enabled — binding 0.0.0.0:7842 (bearer-token gated)")
+    uvicorn.run("brn_daemon.main:app", host=host, port=7842, reload=False)

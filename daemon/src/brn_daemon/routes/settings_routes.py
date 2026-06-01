@@ -75,6 +75,7 @@ class SettingsResponse(BaseModel):
     capture_interval_seconds: int
     purge_months: int
     paused: bool
+    lan_access: bool
     screenshot_encryption_enabled: bool
     joplin_enabled: bool
     joplin_db_path: str
@@ -104,6 +105,7 @@ class SettingsUpdateRequest(BaseModel):
     embed_provider: ProviderConfigIn | None = None
     capture_interval_seconds: Annotated[int, Field(ge=1)] | None = None
     purge_months: Annotated[int, Field(ge=1)] | None = None
+    lan_access: bool | None = None
     joplin_enabled: bool | None = None
     joplin_db_path: str | None = None
     journal_schedule: ScheduleConfigIn | None = None
@@ -127,6 +129,7 @@ async def get_settings():
         capture_interval_seconds=cfg.capture_interval_seconds,
         purge_months=cfg.purge_months,
         paused=cfg.paused,
+        lan_access=cfg.lan_access,
         screenshot_encryption_enabled=is_initialised(),
         joplin_enabled=cfg.joplin_enabled,
         joplin_db_path=cfg.joplin_db_path,
@@ -172,6 +175,8 @@ async def update_settings(body: SettingsUpdateRequest):
         cfg.capture_interval_seconds = body.capture_interval_seconds
     if body.purge_months is not None:
         cfg.purge_months = body.purge_months
+    if body.lan_access is not None:
+        cfg.lan_access = body.lan_access
     if body.joplin_enabled is not None:
         cfg.joplin_enabled = body.joplin_enabled
     if body.joplin_db_path is not None:

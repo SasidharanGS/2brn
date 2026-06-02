@@ -139,3 +139,14 @@ async def test_ingest_note_embeds_when_clients_present(client):
     assert resp.json()["embedded"] is True
     fake_embed.embed.assert_awaited_once()
     fake_chroma.add_note.assert_awaited_once()
+
+
+# ── pairing helper ──────────────────────────────────────────────────────────────
+
+def test_build_pairing_url_encoding():
+    from brn_daemon.pair import build_pairing_url
+
+    url = build_pairing_url("http://192.168.1.23:7842", "tok EN/3")
+    assert url.startswith("twobrn://pair?u=")
+    assert "u=http%3A%2F%2F192.168.1.23%3A7842" in url
+    assert "t=tok%20EN%2F3" in url

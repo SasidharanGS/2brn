@@ -1,0 +1,39 @@
+# Pre-commit hooks — mirror CI so issues are caught before a PR.
+# Set up once after cloning:  cd daemon && uv run pre-commit install
+# Run against everything:      cd daemon && uv run pre-commit run --all-files
+default_install_hook_types: [pre-commit]
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+        exclude: '\.md$'
+      - id: end-of-file-fixer
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: ["--maxkb=1024"]
+      - id: check-yaml
+      - id: check-toml
+      - id: check-json
+
+  # Python (daemon) — lint + format, scoped to daemon/ so config is discovered.
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.8.6
+    hooks:
+      - id: ruff
+        name: ruff lint (daemon)
+        args: [--fix]
+        files: ^daemon/.*\.py$
+      - id: ruff-format
+        name: ruff format (daemon)
+        files: ^daemon/.*\.py$
+
+  # UI (Electron/React) — type-check when TS sources change.
+  - repo: local
+    hooks:
+      - id: ui-typecheck
+        name: tsc --noEmit (ui)
+        entry: bash -c 'cd ui && pnpm exec tsc --noEmit'
+        language: system
+        files: ^ui/.*\.(ts|tsx)$
+        pass_filenames: false

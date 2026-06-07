@@ -3,7 +3,11 @@ from datetime import date
 
 import aiosqlite
 
-from brn_daemon.content_generator import fetch_day_summaries, upsert_generated_content
+from brn_daemon.content_generator import (
+    fetch_day_summaries,
+    load_active_instruction_bodies,
+    upsert_generated_content,
+)
 from brn_daemon.db import get_db_path
 
 logger = logging.getLogger(__name__)
@@ -15,6 +19,13 @@ Write for a public technical audience. Use a direct, honest, personal tone.
 Structure: a short narrative opening, then **What I learned**, **What I built**, **Experimenting with** sections as applicable. Only include sections with content.
 
 IMPORTANT: This is a public blog. Omit anything company-confidential — client names, internal system names, proprietary business logic, employer-specific work tasks, or anything that could identify a client or employer's internal systems. If an activity is purely corporate work with no public learning value, skip it entirely. Personal projects, open-source tools, technical learnings, and experiments are all fair game."""
+
+
+def _build_blog_system_prompt(active_instructions: list[str]) -> str:
+    if not active_instructions:
+        return BLOG_SYSTEM_PROMPT
+    hints = "\n".join(f"- {inst}" for inst in active_instructions)
+    return BLOG_SYSTEM_PROMPT + f"\n\nUser-defined rules (follow these):\n{hints}"
 
 
 def build_blog_prompt(
@@ -37,6 +48,9 @@ class BlogGenerator:
     def __init__(self, chat_fn):
         self._chat_fn = chat_fn
 
+    def set_chat_fn(self, chat_fn) -> None:
+        self._chat_fn = chat_fn
+
     async def generate(self, target_date: date) -> str | None:
         date_str = target_date.isoformat()
 
@@ -56,10 +70,12 @@ class BlogGenerator:
             journal_content = journal_row[0] if journal_row else None
 
         summaries = await fetch_day_summaries(date_str)
+        active_instructions = await load_active_instruction_bodies()
+        system_prompt = _build_blog_system_prompt(active_instructions)
         prompt = build_blog_prompt(date_str, summaries, journal_content)
 
         content = await self._chat_fn([
-            {"role": "system", "content": BLOG_SYSTEM_PROMPT},
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": prompt},
         ])
 

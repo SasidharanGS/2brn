@@ -2,30 +2,29 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api/client'
 import type { UserInstruction } from '../api/types'
+import { queryKeys } from '../api/queryKeys'
 import Toggle from './shared/Toggle'
-
-const QK = 'instructions'
 
 export default function Instructions() {
   const qc = useQueryClient()
   const { data: instructions = [], isLoading } = useQuery({
-    queryKey: [QK],
+    queryKey: queryKeys.instructions(),
     queryFn: api.listInstructions,
   })
 
   const createMut = useMutation({
     mutationFn: ({ title, body }: { title: string; body: string }) =>
       api.createInstruction(title, body, true),
-    onSuccess: () => qc.invalidateQueries({ queryKey: [QK] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.instructions() }),
   })
   const updateMut = useMutation({
     mutationFn: ({ id, patch }: { id: number; patch: Partial<Pick<UserInstruction, 'title' | 'body' | 'enabled'>> }) =>
       api.updateInstruction(id, patch),
-    onSuccess: () => qc.invalidateQueries({ queryKey: [QK] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.instructions() }),
   })
   const deleteMut = useMutation({
     mutationFn: (id: number) => api.deleteInstruction(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: [QK] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.instructions() }),
   })
 
   const [showNew, setShowNew] = useState(false)
@@ -152,6 +151,7 @@ function InstructionCard({
   onEdit: () => void
   onDelete: () => void
 }) {
+  const [confirming, setConfirming] = useState(false)
   return (
     <div
       className="rounded-[10px] p-4 flex flex-col gap-2 transition-all"
@@ -176,13 +176,32 @@ function InstructionCard({
         >
           edit
         </button>
-        <button
-          onClick={onDelete}
-          className="text-[11px] font-mono px-2 py-0.5 rounded-[5px] transition-all"
-          style={{ color: 'var(--red)', background: 'var(--red-bg)' }}
-        >
-          delete
-        </button>
+        {confirming ? (
+          <>
+            <button
+              onClick={onDelete}
+              className="text-[11px] font-mono px-2 py-0.5 rounded-[5px] transition-all"
+              style={{ color: '#fff', background: 'var(--red)' }}
+            >
+              confirm
+            </button>
+            <button
+              onClick={() => setConfirming(false)}
+              className="text-[11px] font-mono px-2 py-0.5 rounded-[5px] transition-all"
+              style={{ color: 'var(--text-dim)', background: 'var(--bg-surface-2)' }}
+            >
+              cancel
+            </button>
+          </>
+        ) : (
+          <button
+            onClick={() => setConfirming(true)}
+            className="text-[11px] font-mono px-2 py-0.5 rounded-[5px] transition-all"
+            style={{ color: 'var(--red)', background: 'var(--red-bg)' }}
+          >
+            delete
+          </button>
+        )}
       </div>
       <p
         className="text-[12px] leading-relaxed pl-[44px]"

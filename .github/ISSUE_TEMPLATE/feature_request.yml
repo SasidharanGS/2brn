@@ -1,0 +1,29 @@
+name: ✨ Feature request
+description: Suggest an idea or enhancement
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / motivation
+      description: What are you trying to do? What's missing or painful today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+  - type: checkboxes
+    id: principles
+    attributes:
+      label: Alignment with 2brn's principles
+      description: 2brn is local-first and resilient by design. Please confirm your idea fits.
+      options:
+        - label: This keeps 2brn local-first (no data sent to third-party clouds by default)
+        - label: This degrades gracefully if the daemon, a provider, or an integration is unavailable

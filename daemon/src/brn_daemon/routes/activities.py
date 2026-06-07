@@ -59,16 +59,23 @@ async def get_activities(
         for r in rows
     ]
 
+class OverrideRequest(BaseModel):
+    task_category: str
+    productivity_state: str
+
+
 @router.patch("/activities/{activity_id}/override")
-async def override_activity(activity_id: int, task_category: str, productivity_state: str):
+async def override_activity(activity_id: int, body: OverrideRequest):
     from brn_daemon.inference import VALID_CATEGORIES, VALID_STATES
-    if task_category not in VALID_CATEGORIES or productivity_state not in VALID_STATES:
+    if body.task_category not in VALID_CATEGORIES or body.productivity_state not in VALID_STATES:
         raise HTTPException(400, "Invalid category or state")
     async with aiosqlite.connect(get_db_path()) as conn:
-        await conn.execute(
+        cur = await conn.execute(
             "UPDATE activities SET task_category = ?, productivity_state = ?, "
             "category_overridden_by_user = 1 WHERE id = ?",
-            (task_category, productivity_state, activity_id)
+            (body.task_category, body.productivity_state, activity_id)
         )
         await conn.commit()
+        if cur.rowcount == 0:
+            raise HTTPException(404, "Activity not found")
     return {"ok": True}

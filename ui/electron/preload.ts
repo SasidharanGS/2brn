@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 
 contextBridge.exposeInMainWorld('electronAPI', {
   getDaemonPort: () => ipcRenderer.invoke('get-daemon-port'),
+  getApiToken: () => ipcRenderer.invoke('get-api-token'),
   getPlatform: () => ipcRenderer.invoke('get-platform'),
   onDaemonStatus: (callback: (status: string) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, status: string) => callback(status)

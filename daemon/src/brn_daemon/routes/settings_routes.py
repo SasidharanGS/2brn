@@ -35,6 +35,17 @@ from brn_daemon.encryption import (
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
+# Hold strong references to fire-and-forget background tasks: asyncio keeps only
+# weak references, so without this the GC can cancel a long backfill/encrypt job
+# mid-run. The done-callback drops the reference (and surfaces any exception).
+_background_tasks: set[asyncio.Task] = set()
+
+
+def _spawn(coro) -> None:
+    task = asyncio.create_task(coro)
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
+
 
 class ProviderConfigOut(BaseModel):
     type: str
@@ -64,6 +75,7 @@ class SettingsResponse(BaseModel):
     capture_interval_seconds: int
     purge_months: int
     paused: bool
+    lan_access: bool
     screenshot_encryption_enabled: bool
     joplin_enabled: bool
     joplin_db_path: str
@@ -91,8 +103,9 @@ class BlogScheduleIn(BaseModel):
 class SettingsUpdateRequest(BaseModel):
     chat_provider: ProviderConfigIn | None = None
     embed_provider: ProviderConfigIn | None = None
-    capture_interval_seconds: int | None = None
-    purge_months: int | None = None
+    capture_interval_seconds: Annotated[int, Field(ge=1)] | None = None
+    purge_months: Annotated[int, Field(ge=1)] | None = None
+    lan_access: bool | None = None
     joplin_enabled: bool | None = None
     joplin_db_path: str | None = None
     journal_schedule: ScheduleConfigIn | None = None
@@ -105,7 +118,7 @@ class ExclusionRequest(BaseModel):
 
 @router.get("/settings", response_model=SettingsResponse)
 async def get_settings():
-    cfg = load_config()
+    cfg = await asyncio.get_event_loop().run_in_executor(None, load_config)
     cp = cfg.chat_provider
     ep = cfg.embed_provider
     return SettingsResponse(
@@ -116,6 +129,7 @@ async def get_settings():
         capture_interval_seconds=cfg.capture_interval_seconds,
         purge_months=cfg.purge_months,
         paused=cfg.paused,
+        lan_access=cfg.lan_access,
         screenshot_encryption_enabled=is_initialised(),
         joplin_enabled=cfg.joplin_enabled,
         joplin_db_path=cfg.joplin_db_path,
@@ -161,6 +175,8 @@ async def update_settings(body: SettingsUpdateRequest):
         cfg.capture_interval_seconds = body.capture_interval_seconds
     if body.purge_months is not None:
         cfg.purge_months = body.purge_months
+    if body.lan_access is not None:
+        cfg.lan_access = body.lan_access
     if body.joplin_enabled is not None:
         cfg.joplin_enabled = body.joplin_enabled
     if body.joplin_db_path is not None:
@@ -237,8 +253,8 @@ async def remove_exclusion(app_name: str):
             "DELETE FROM app_exclusions WHERE app_name = ?", (app_name,)
         )
         await conn.commit()
-    if cur.rowcount == 0:
-        raise HTTPException(404, f"{app_name} is not excluded")
+        if cur.rowcount == 0:
+            raise HTTPException(404, f"{app_name} is not excluded")
     app_state["exclusions_dirty"] = True
     return {"ok": True}
 
@@ -270,25 +286,28 @@ async def resync_chroma():
                    ORDER BY a.started_at"""
             )
             rows = await cur.fetchall()
+        from brn_daemon.timeutil import utc_iso_to_local_date
+        BATCH = 64
+        batch: list[dict] = []
         for row in rows:
-            date_str = row["started_at"][:10] if row["started_at"] else ""
             metadata = {
                 "timestamp": row["started_at"] or "",
                 "app_name": row["app_name"] or "",
                 "tags": row["tags"] or "",
-                "date": date_str,
+                "date": utc_iso_to_local_date(row["started_at"]),
                 "task_category": row["task_category"] or "other",
                 "productivity_state": row["productivity_state"] or "idle",
+                "source": "activity",
             }
-            await service.embed_activity(
-                activity_id=row["id"],
-                summary=row["summary"],
-                metadata=metadata,
-            )
-            synced += 1
+            batch.append({"activity_id": row["id"], "summary": row["summary"], "metadata": metadata})
+            if len(batch) >= BATCH:
+                synced += await service.embed_activities_batch(batch)
+                batch = []
+        if batch:
+            synced += await service.embed_activities_batch(batch)
         return synced
 
-    asyncio.create_task(_run_backfill())
+    _spawn(_run_backfill())
     return {"ok": True, "message": "ChromaDB re-sync started in background"}
 
 
@@ -309,7 +328,7 @@ async def chroma_status():
     if chroma is None:
         from brn_daemon.embeddings import ChromaStore
         chroma = ChromaStore()
-    chroma_count = chroma.collection.count()
+    chroma_count = await asyncio.get_event_loop().run_in_executor(None, chroma.collection.count)
     return {"total_activities": total, "embedded": embedded, "chroma_count": chroma_count}
 
 
@@ -357,7 +376,7 @@ async def set_screenshot_password_route(body: ScreenshotPasswordSet):
                 logger.info("Bulk encrypt complete: %d ok, %d failed, %d DB rows updated", ok, fail, rows)
             except Exception:
                 logger.exception("Bulk encrypt failed")
-        asyncio.create_task(_bulk_encrypt())
+        _spawn(_bulk_encrypt())
 
     return {"ok": True, "message": "Screenshot encryption enabled"}
 
@@ -406,7 +425,7 @@ async def change_screenshot_password_route(body: ScreenshotPasswordChange):
             logger.info("Bulk re-encrypt complete: %d ok, %d failed", ok, fail)
         except Exception:
             logger.exception("Bulk re-encrypt failed")
-    asyncio.create_task(_bulk_reencrypt())
+    _spawn(_bulk_reencrypt())
 
     return {"ok": True, "message": "Screenshot password changed"}
 

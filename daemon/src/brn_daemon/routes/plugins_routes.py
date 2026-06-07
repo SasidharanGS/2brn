@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 from datetime import UTC, datetime
 
@@ -21,7 +22,7 @@ from brn_daemon.config import (
     delete_plugin_env_value,
     set_plugin_env_value,
 )
-from brn_daemon.db import get_db_path
+from brn_daemon.db import get_conn, get_db_path
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -30,6 +31,23 @@ logger = logging.getLogger(__name__)
 # ---- Pydantic models ------------------------------------------------------
 
 _SAFE_ID_RE = re.compile(r'^[A-Za-z0-9_-]+$')
+
+# Plugins launch a long-running MCP server, never an interactive shell.
+# Disallowing bare shells blocks the `sh -c '<arbitrary>'` arbitrary-exec path
+# (defence-in-depth on top of the loopback API token).
+_SHELL_COMMANDS = frozenset({
+    "sh", "bash", "zsh", "fish", "dash", "csh", "ksh", "tcsh",
+    "cmd", "cmd.exe", "powershell", "powershell.exe", "pwsh", "pwsh.exe",
+})
+
+
+def _reject_shell_command(v: str) -> None:
+    base = os.path.basename(v.strip()).lower()
+    if base in _SHELL_COMMANDS:
+        raise ValueError(
+            f"Plugin command '{base}' is not allowed — point it at the MCP server "
+            "binary/script (e.g. node, python, uvx), not a shell"
+        )
 
 
 def _validate_env_keys(v: dict[str, str] | None) -> dict[str, str] | None:
@@ -79,6 +97,7 @@ class PluginCreate(BaseModel):
             raise ValueError("Plugin command must not contain null bytes")
         if ".." in v:
             raise ValueError("Plugin command must not contain '..' (path traversal)")
+        _reject_shell_command(v)
         return v
 
     @field_validator("env")
@@ -107,6 +126,7 @@ class PluginUpdate(BaseModel):
             raise ValueError("Plugin command must not contain null bytes")
         if ".." in v:
             raise ValueError("Plugin command must not contain '..' (path traversal)")
+        _reject_shell_command(v)
         return v
 
     @field_validator("env")
@@ -305,12 +325,11 @@ async def update_plugin(plugin_id: int, body: PluginUpdate):
 
 @router.delete("/plugins/{plugin_id}", status_code=204)
 async def delete_plugin(plugin_id: int):
-    async with aiosqlite.connect(get_db_path()) as conn:
+    async with get_conn() as conn:
         conn.row_factory = aiosqlite.Row
         row = await _fetch_plugin(conn, plugin_id)
         env_keys = json.loads(row["env_keys"] or "[]")
         plugin_name = row["name"]
-        await conn.execute("PRAGMA foreign_keys = ON")
         await conn.execute("DELETE FROM plugins WHERE id = ?", (plugin_id,))
         await conn.commit()
 
@@ -456,10 +475,9 @@ async def update_rule(rule_id: int, body: RuleUpdate):
 
 @router.delete("/plugin-rules/{rule_id}", status_code=204)
 async def delete_rule(rule_id: int):
-    async with aiosqlite.connect(get_db_path()) as conn:
+    async with get_conn() as conn:
         conn.row_factory = aiosqlite.Row
         await _fetch_rule(conn, rule_id)
-        await conn.execute("PRAGMA foreign_keys = ON")
         await conn.execute("DELETE FROM plugin_rules WHERE id = ?", (rule_id,))
         await conn.commit()
     orch = _get_orchestrator()

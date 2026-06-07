@@ -1,3 +1,5 @@
+import asyncio
+
 import httpx
 from fastapi import APIRouter, Query
 from pydantic import BaseModel
@@ -31,14 +33,17 @@ async def get_debug_status():
     from brn_daemon.config import load_config
     from brn_daemon.main import app_state
 
-    cfg = load_config()
+    cfg = await asyncio.get_event_loop().run_in_executor(None, load_config)
 
     # Daemon section — reuse existing app_state
+    _iq = app_state.get("inference_queue")
     daemon_section = {
         "status": "paused" if app_state.get("paused") else "capturing",
         "capture_count_today": app_state.get("capture_count_today", 0),
         "last_captured_at": app_state.get("last_captured_at"),
         "paused": bool(app_state.get("paused")),
+        "dropped_inferences": _iq.dropped_count if _iq is not None else 0,
+        "inference_queue_depth": _iq.queue_depth if _iq is not None else 0,
     }
 
     # Gateway reachability — try /actuator/health with 3s timeout
@@ -65,8 +70,9 @@ async def get_debug_status():
     note_count = 0
     if chroma is not None:
         try:
-            activity_count = chroma.collection.count()
-            note_count = chroma.note_collection.count()
+            loop = asyncio.get_event_loop()
+            activity_count = await loop.run_in_executor(None, chroma.collection.count)
+            note_count = await loop.run_in_executor(None, chroma.note_collection.count)
         except Exception:
             pass
 

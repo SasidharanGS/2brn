@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useLocation } from 'react-router-dom'
 import { useAppDate, toDateStr } from '../../context/DateContext'
 
@@ -33,6 +33,15 @@ export default function CalendarPanel() {
     const d = new Date(selectedDate + 'T00:00:00')
     return d.getMonth()
   })
+
+  // Sync the visible month when selectedDate changes from outside (e.g. another
+  // section, or a "Today" reset). In-calendar prev/next don't touch selectedDate,
+  // so the user's own navigation is preserved.
+  useEffect(() => {
+    const d = new Date(selectedDate + 'T00:00:00')
+    setViewYear(d.getFullYear())
+    setViewMonth(d.getMonth())
+  }, [selectedDate])
 
   const today = toDateStr(new Date())
   const todayDate = new Date(today + 'T00:00:00')

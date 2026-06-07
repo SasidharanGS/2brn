@@ -129,8 +129,12 @@ export default function Settings() {
     window.electronAPI.isDaemonOwned().then(setDaemonOwned).catch(() => setDaemonOwned(false))
   }, [])
 
-  useEffect(() => () => {
-    if (restartIntervalRef.current) clearInterval(restartIntervalRef.current)
+  const mountedRef = useRef(true)
+  useEffect(() => {
+    return () => {
+      mountedRef.current = false
+      if (restartIntervalRef.current) clearInterval(restartIntervalRef.current)
+    }
   }, [])
 
   useEffect(() => {
@@ -162,11 +166,13 @@ export default function Settings() {
     restartIntervalRef.current = setInterval(async () => {
       try {
         await api.getStatus()
+        if (!mountedRef.current) return
         clearInterval(restartIntervalRef.current!)
         restartIntervalRef.current = null
         setRestartState('idle')
         flash('Daemon restarted successfully')
       } catch {
+        if (!mountedRef.current) return
         if (Date.now() >= deadline) {
           clearInterval(restartIntervalRef.current!)
           restartIntervalRef.current = null
@@ -199,7 +205,7 @@ export default function Settings() {
   })
 
   const togglePause = useMutation({
-    mutationFn: () => api.setPaused(!settings?.paused),
+    mutationFn: (paused: boolean) => api.setPaused(paused),
     onSuccess:  () => qc.invalidateQueries({ queryKey: queryKeys.settings() }),
   })
 
@@ -282,7 +288,7 @@ export default function Settings() {
             </div>
           </div>
           <button
-            onClick={() => togglePause.mutate()}
+            onClick={() => togglePause.mutate(!settings?.paused)}
             disabled={togglePause.isPending}
             className="px-4 py-2 rounded-[9px] text-[13px] font-medium transition-all disabled:opacity-40"
             style={settings.paused

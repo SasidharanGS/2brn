@@ -1,7 +1,8 @@
 # 2brn — Improvements (June 2026)
 
-A round of hardening across the daemon and UI, plus open-source scaffolding. All
-changes are on this branch; `main` is unchanged. Everything below is verified:
+A round of hardening across the daemon and UI, plus open-source scaffolding. This
+work has since been merged into `main` (together with the `feat/mobile-bridge`
+daemon branch) and pushed to `origin/main`. Everything below is verified:
 the daemon passes `ruff`, `pyright` (0 errors), and the full `pytest` suite
 (**319 passing, 1 skipped**), and the UI passes `tsc --noEmit`.
 

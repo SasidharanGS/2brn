@@ -236,3 +236,26 @@ def test_build_pairing_url_special_chars_in_token():
     url = build_pairing_url("http://10.0.0.1:7842", "a+b=c&d")
     assert "a+b=c&d" not in url
     assert "a%2Bb%3Dc%26d" in url
+
+
+# ── /connection-info extended ───────────────────────────────────────────────────
+
+async def test_connection_info_lan_access_true_reflected(client):
+    """After enabling lan_access via PUT /settings, the flag appears in /connection-info."""
+    await client.put("/settings", json={"lan_access": True})
+    resp = await client.get("/connection-info")
+    assert resp.json()["lan_access"] is True
+
+
+async def test_connection_info_hostname_non_empty(client):
+    resp = await client.get("/connection-info")
+    assert resp.json()["hostname"]  # non-empty string
+
+
+async def test_connection_info_lan_urls_all_valid(client):
+    """Every url in lan_urls starts with http:// and ends with :7842."""
+    resp = await client.get("/connection-info")
+    for url in resp.json()["lan_urls"]:
+        assert url.startswith("http://"), f"Bad url: {url}"
+        assert url.endswith(":7842"), f"Bad url: {url}"
+        assert "127.0.0.1" not in url

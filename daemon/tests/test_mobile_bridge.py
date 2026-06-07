@@ -174,7 +174,7 @@ async def test_list_notes_limit_clamped(client):
         await client.post("/ingest/note", json={"text": f"note {i}"})
     resp_low = await client.get("/ingest/notes?limit=0")
     assert resp_low.status_code == 200
-    assert len(resp_low.json()) >= 1  # clamped to 1
+    assert len(resp_low.json()) == 1  # clamped to 1
 
     resp_high = await client.get("/ingest/notes?limit=9999")
     assert resp_high.status_code == 200
@@ -204,8 +204,6 @@ async def test_delete_note_removes_from_listing(client):
 
 async def test_ingest_note_chroma_delete_best_effort(client):
     """If Chroma delete raises, the HTTP response is still 200."""
-    from unittest.mock import AsyncMock, MagicMock
-
     from brn_daemon.main import app_state
 
     fake_embed = MagicMock()

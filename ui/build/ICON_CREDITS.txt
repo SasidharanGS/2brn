@@ -1,0 +1,9 @@
+Placeholder app icon — the "brain" emoji (🧠, U+1F9E0) from Google Noto Emoji,
+licensed under the Apache License 2.0:
+  https://github.com/googlefonts/noto-emoji
+
+Source: build/brain-noto.svg (unmodified Noto SVG). build/icon.icns (the macOS
+app icon electron-builder bundles) and public/favicon.png composite this brain
+over a white background.
+
+This is a temporary placeholder, to be replaced with a custom design.

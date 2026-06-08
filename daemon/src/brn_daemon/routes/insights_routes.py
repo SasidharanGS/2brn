@@ -9,6 +9,7 @@ import aiosqlite
 from fastapi import APIRouter, HTTPException, Query
 
 from brn_daemon.db import get_db_path
+from brn_daemon.timeutil import local_day_bounds_utc, local_range_bounds_utc
 
 router = APIRouter()
 
@@ -29,12 +30,12 @@ def _pct(count: int, total: int) -> float:
 
 
 def _day_bounds(date: str) -> tuple[str, str]:
-    """Return (start, exclusive_end) ISO strings for one YYYY-MM-DD day.
+    """Return (start, end) naive-UTC bounds covering the LOCAL day `date`.
 
-    Uses range bounds so the idx_activities_started_at index can be used
-    instead of applying date() to every row.
+    Range bounds (not date()) so idx_activities_started_at is used, and
+    local-day aware so buckets match the user's timezone (brn_daemon.timeutil).
     """
-    return f"{date}T00:00:00", f"{date}T23:59:59.999999"
+    return local_day_bounds_utc(date)
 
 
 def _parse_date(date: str) -> datetime:
@@ -52,19 +53,11 @@ def _period_range(date: str, period: str) -> tuple[str, str, int]:
       week  → the 7 days ending on `date`
       month → the 30 days ending on `date`
     """
-    anchor = _parse_date(date)
-    if period == "day":
-        span = 1
-    elif period == "week":
-        span = 7
-    elif period == "month":
-        span = 30
-    else:
+    _parse_date(date)  # validate format → 400 on bad input
+    span = {"day": 1, "week": 7, "month": 30}.get(period)
+    if span is None:
         raise HTTPException(status_code=400, detail=f"invalid period: {period}")
-
-    start = anchor - timedelta(days=span - 1)
-    start_iso = start.strftime("%Y-%m-%dT00:00:00")
-    end_iso = anchor.strftime("%Y-%m-%dT23:59:59.999999")
+    start_iso, end_iso = local_range_bounds_utc(date, span)
     return start_iso, end_iso, span
 
 
@@ -77,35 +70,19 @@ def _baseline_range(date: str, period: str) -> tuple[str, str, int, str]:
     """
     anchor = _parse_date(date)
     if period == "day":
-        cur_start = anchor - timedelta(days=0)
-        base_end = cur_start - timedelta(seconds=1)
-        base_start = cur_start - timedelta(days=7)
-        return (
-            base_start.strftime("%Y-%m-%dT00:00:00"),
-            base_end.strftime("%Y-%m-%dT%H:%M:%S"),
-            7,
-            "7-day average",
-        )
+        # 7 local days ending the day before the anchor day.
+        base_end_date = (anchor - timedelta(days=1)).strftime("%Y-%m-%d")
+        lo, hi = local_range_bounds_utc(base_end_date, 7)
+        return lo, hi, 7, "7-day average"
     if period == "week":
-        cur_start = anchor - timedelta(days=6)
-        base_end = cur_start - timedelta(seconds=1)
-        base_start = cur_start - timedelta(days=28)
-        return (
-            base_start.strftime("%Y-%m-%dT00:00:00"),
-            base_end.strftime("%Y-%m-%dT%H:%M:%S"),
-            4,
-            "4-week average",
-        )
-    # month
-    cur_start = anchor - timedelta(days=29)
-    base_end = cur_start - timedelta(seconds=1)
-    base_start = cur_start - timedelta(days=90)
-    return (
-        base_start.strftime("%Y-%m-%dT00:00:00"),
-        base_end.strftime("%Y-%m-%dT%H:%M:%S"),
-        3,
-        "3-month average",
-    )
+        # 28 local days ending the day before the current 7-day window.
+        base_end_date = (anchor - timedelta(days=7)).strftime("%Y-%m-%d")
+        lo, hi = local_range_bounds_utc(base_end_date, 28)
+        return lo, hi, 4, "4-week average"
+    # month: 90 local days ending the day before the current 30-day window.
+    base_end_date = (anchor - timedelta(days=30)).strftime("%Y-%m-%d")
+    lo, hi = local_range_bounds_utc(base_end_date, 90)
+    return lo, hi, 3, "3-month average"
 
 
 # ---------------------------------------------------------------------------
@@ -283,7 +260,7 @@ async def _query_top_apps(conn, lo: str, hi: str, total: int, limit: int = 10) -
 async def _query_heatmap(conn, lo: str, hi: str, total: int) -> list[dict]:
     """Aggregate activities by hour-of-day across the entire range."""
     cur = await conn.execute(
-        """SELECT CAST(strftime('%H', started_at) AS INTEGER) AS hour,
+        """SELECT CAST(strftime('%H', started_at, 'localtime') AS INTEGER) AS hour,
                   productivity_state,
                   COUNT(*) AS count
            FROM activities
@@ -506,13 +483,16 @@ async def insights_summary(
 
 @router.get("/insights/weekly")
 async def weekly_insights(week_start: str = Query(..., description="YYYY-MM-DD of Monday")):
+    # 7 local days starting on week_start; group by LOCAL day.
+    end_date = (_parse_date(week_start) + timedelta(days=6)).strftime("%Y-%m-%d")
+    lo, hi = local_range_bounds_utc(end_date, 7)
     async with aiosqlite.connect(get_db_path()) as conn:
         cur = await conn.execute(
-            """SELECT date(started_at) as day, task_category, COUNT(*) as count
+            """SELECT date(started_at, 'localtime') as day, task_category, COUNT(*) as count
                FROM activities
-               WHERE started_at >= ? AND started_at < date(?, '+7 days')
+               WHERE started_at >= ? AND started_at <= ?
                GROUP BY day, task_category ORDER BY day""",
-            (f"{week_start}T00:00:00", week_start),
+            (lo, hi),
         )
         rows = await cur.fetchall()
     return {

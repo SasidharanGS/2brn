@@ -69,6 +69,7 @@ async def update_blog_post(date: str, body: BlogPostUpdateRequest):
                VALUES (?, ?, ?, 1)
                ON CONFLICT(date) DO UPDATE SET
                  content = excluded.content,
+                 generated_at = excluded.generated_at,
                  edited_by_user = 1""",
             (date, body.content, now)
         )

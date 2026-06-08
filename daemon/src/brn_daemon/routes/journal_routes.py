@@ -64,6 +64,7 @@ async def update_journal(date: str, body: JournalUpdateRequest):
                VALUES (?, ?, ?, 1)
                ON CONFLICT(date) DO UPDATE SET
                  content = excluded.content,
+                 generated_at = excluded.generated_at,
                  edited_by_user = 1""",
             (date, body.content, datetime.now(UTC).isoformat())
         )

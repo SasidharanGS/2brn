@@ -102,8 +102,8 @@ class BlogScheduleIn(BaseModel):
 class SettingsUpdateRequest(BaseModel):
     chat_provider: ProviderConfigIn | None = None
     embed_provider: ProviderConfigIn | None = None
-    capture_interval_seconds: int | None = None
-    purge_months: int | None = None
+    capture_interval_seconds: Annotated[int, Field(ge=1)] | None = None
+    purge_months: Annotated[int, Field(ge=1)] | None = None
     joplin_enabled: bool | None = None
     joplin_db_path: str | None = None
     journal_schedule: ScheduleConfigIn | None = None
@@ -116,7 +116,7 @@ class ExclusionRequest(BaseModel):
 
 @router.get("/settings", response_model=SettingsResponse)
 async def get_settings():
-    cfg = load_config()
+    cfg = await asyncio.get_event_loop().run_in_executor(None, load_config)
     cp = cfg.chat_provider
     ep = cfg.embed_provider
     return SettingsResponse(
@@ -248,8 +248,8 @@ async def remove_exclusion(app_name: str):
             "DELETE FROM app_exclusions WHERE app_name = ?", (app_name,)
         )
         await conn.commit()
-    if cur.rowcount == 0:
-        raise HTTPException(404, f"{app_name} is not excluded")
+        if cur.rowcount == 0:
+            raise HTTPException(404, f"{app_name} is not excluded")
     app_state["exclusions_dirty"] = True
     return {"ok": True}
 
@@ -281,22 +281,25 @@ async def resync_chroma():
                    ORDER BY a.started_at"""
             )
             rows = await cur.fetchall()
+        from brn_daemon.timeutil import utc_iso_to_local_date
+        BATCH = 64
+        batch: list[dict] = []
         for row in rows:
-            date_str = row["started_at"][:10] if row["started_at"] else ""
             metadata = {
                 "timestamp": row["started_at"] or "",
                 "app_name": row["app_name"] or "",
                 "tags": row["tags"] or "",
-                "date": date_str,
+                "date": utc_iso_to_local_date(row["started_at"]),
                 "task_category": row["task_category"] or "other",
                 "productivity_state": row["productivity_state"] or "idle",
+                "source": "activity",
             }
-            await service.embed_activity(
-                activity_id=row["id"],
-                summary=row["summary"],
-                metadata=metadata,
-            )
-            synced += 1
+            batch.append({"activity_id": row["id"], "summary": row["summary"], "metadata": metadata})
+            if len(batch) >= BATCH:
+                synced += await service.embed_activities_batch(batch)
+                batch = []
+        if batch:
+            synced += await service.embed_activities_batch(batch)
         return synced
 
     _spawn(_run_backfill())

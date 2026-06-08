@@ -79,7 +79,7 @@ async def test_get_activities_filters_by_category(activities_client):
 async def test_patch_override_updates_category_and_state(activities_client):
     resp = await activities_client.patch(
         "/activities/1/override",
-        params={"task_category": "research", "productivity_state": "focused"},
+        json={"task_category": "research", "productivity_state": "focused"},
     )
     assert resp.status_code == 200
     assert resp.json()["ok"] is True
@@ -95,7 +95,7 @@ async def test_patch_override_updates_category_and_state(activities_client):
 async def test_patch_override_rejects_invalid_category(activities_client):
     resp = await activities_client.patch(
         "/activities/1/override",
-        params={"task_category": "invalid_cat", "productivity_state": "productive"},
+        json={"task_category": "invalid_cat", "productivity_state": "productive"},
     )
     assert resp.status_code == 400
 
@@ -103,9 +103,17 @@ async def test_patch_override_rejects_invalid_category(activities_client):
 async def test_patch_override_rejects_invalid_state(activities_client):
     resp = await activities_client.patch(
         "/activities/1/override",
-        params={"task_category": "work", "productivity_state": "invalid_state"},
+        json={"task_category": "work", "productivity_state": "invalid_state"},
     )
     assert resp.status_code == 400
+
+
+async def test_patch_override_unknown_activity_returns_404(activities_client):
+    resp = await activities_client.patch(
+        "/activities/99999/override",
+        json={"task_category": "work", "productivity_state": "focused"},
+    )
+    assert resp.status_code == 404
 
 
 async def test_get_activities_returns_empty_for_unknown_date(activities_client):

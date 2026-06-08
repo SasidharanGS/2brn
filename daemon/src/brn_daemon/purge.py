@@ -36,16 +36,6 @@ async def purge_old_captures(months: int = 12, chroma_store=None) -> int:
         if not old_captures:
             return 0
 
-        for _capture_id, file_path in old_captures:
-            if file_path:
-                try:
-                    p = Path(file_path)
-                    if p.exists():
-                        p.unlink()
-                        files_deleted += 1
-                except Exception:
-                    logger.exception("Could not delete file %s", file_path)
-
         ids = [row[0] for row in old_captures]
 
         # Collect chroma IDs before deleting activities
@@ -71,6 +61,19 @@ async def purge_old_captures(months: int = 12, chroma_store=None) -> int:
                 f"DELETE FROM captures WHERE id IN ({placeholders})", batch
             )
         await conn.commit()
+
+    # Delete screenshot files only AFTER the DB deletions commit. A crash in
+    # between leaks a few orphaned files (harmless) rather than leaving DB rows
+    # that point at missing files (which would surface as broken images).
+    for _capture_id, file_path in old_captures:
+        if file_path:
+            try:
+                p = Path(file_path)
+                if p.exists():
+                    p.unlink()
+                    files_deleted += 1
+            except Exception:
+                logger.exception("Could not delete file %s", file_path)
 
     # Remove stale ChromaDB embeddings outside the SQLite transaction
     if chroma_store is not None and chroma_ids:

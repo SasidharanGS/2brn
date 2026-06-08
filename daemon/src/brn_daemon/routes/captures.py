@@ -1,3 +1,4 @@
+import asyncio
 from pathlib import Path
 
 import aiosqlite
@@ -7,6 +8,7 @@ from pydantic import BaseModel
 
 from brn_daemon.db import get_db_path
 from brn_daemon.encryption import ENCRYPTED_EXT, decrypt_bytes
+from brn_daemon.timeutil import local_day_bounds_utc
 
 router = APIRouter()
 
@@ -24,12 +26,18 @@ class CaptureRecord(BaseModel):
 
 @router.get("/captures", response_model=list[CaptureRecord])
 async def get_captures(date: str = Query(..., description="YYYY-MM-DD")):
+    try:
+        lo, hi = local_day_bounds_utc(date)
+    except ValueError:
+        raise HTTPException(400, f"Invalid date '{date}', expected YYYY-MM-DD")
     async with aiosqlite.connect(get_db_path()) as conn:
         conn.row_factory = aiosqlite.Row
+        # Range bounds (not date(captured_at)) so idx_captures_captured_at is used,
+        # and local-day aware to match the rest of the app (see timeutil).
         cur = await conn.execute(
             "SELECT id, captured_at, app_name, window_title, file_path, trigger, monitor_index "
-            "FROM captures WHERE date(captured_at) = ? ORDER BY captured_at",
-            (date,)
+            "FROM captures WHERE captured_at >= ? AND captured_at <= ? ORDER BY captured_at",
+            (lo, hi)
         )
         rows = await cur.fetchall()
     return [
@@ -53,8 +61,11 @@ async def get_capture_image(capture_id: int) -> Response:
     if not path.exists():
         raise HTTPException(404, "Image file missing from disk")
 
+    # Read (and decrypt) off the event loop — these are blocking disk/CPU work.
+    loop = asyncio.get_event_loop()
+    raw = await loop.run_in_executor(None, path.read_bytes)
     if not str(path).endswith(ENCRYPTED_EXT):
-        return Response(path.read_bytes(), media_type="image/jpeg")
+        return Response(raw, media_type="image/jpeg")
 
     # Encrypted — need the in-memory key.
     from brn_daemon.main import app_state
@@ -62,7 +73,7 @@ async def get_capture_image(capture_id: int) -> Response:
     if key is None:
         raise HTTPException(503, "Image is encrypted but no screenshot password is loaded")
     try:
-        plaintext = decrypt_bytes(path.read_bytes(), key)
+        plaintext = await loop.run_in_executor(None, decrypt_bytes, raw, key)
     except Exception as exc:
         raise HTTPException(500, f"Failed to decrypt image: {exc}") from exc
     return Response(plaintext, media_type="image/jpeg")

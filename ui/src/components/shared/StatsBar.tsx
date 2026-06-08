@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { api } from '../../api/client'
 import { queryKeys } from '../../api/queryKeys'
 import { stateChip, categoryChip } from '../../utils/design'
+import { toDateStr } from '../../context/DateContext'
 
 type ThemeMode = 'light' | 'system' | 'dark'
 
@@ -15,8 +16,6 @@ interface Props {
   themeMode: ThemeMode
   onThemeModeChange: (mode: ThemeMode) => void
 }
-
-function toDateStr(d: Date) { return d.toISOString().split('T')[0] }
 
 export default function StatsBar({ themeMode, onThemeModeChange }: Props) {
   const today = toDateStr(new Date())

@@ -22,7 +22,7 @@ from brn_daemon.config import (
     delete_plugin_env_value,
     set_plugin_env_value,
 )
-from brn_daemon.db import get_db_path
+from brn_daemon.db import get_conn, get_db_path
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -325,12 +325,11 @@ async def update_plugin(plugin_id: int, body: PluginUpdate):
 
 @router.delete("/plugins/{plugin_id}", status_code=204)
 async def delete_plugin(plugin_id: int):
-    async with aiosqlite.connect(get_db_path()) as conn:
+    async with get_conn() as conn:
         conn.row_factory = aiosqlite.Row
         row = await _fetch_plugin(conn, plugin_id)
         env_keys = json.loads(row["env_keys"] or "[]")
         plugin_name = row["name"]
-        await conn.execute("PRAGMA foreign_keys = ON")
         await conn.execute("DELETE FROM plugins WHERE id = ?", (plugin_id,))
         await conn.commit()
 
@@ -476,10 +475,9 @@ async def update_rule(rule_id: int, body: RuleUpdate):
 
 @router.delete("/plugin-rules/{rule_id}", status_code=204)
 async def delete_rule(rule_id: int):
-    async with aiosqlite.connect(get_db_path()) as conn:
+    async with get_conn() as conn:
         conn.row_factory = aiosqlite.Row
         await _fetch_rule(conn, rule_id)
-        await conn.execute("PRAGMA foreign_keys = ON")
         await conn.execute("DELETE FROM plugin_rules WHERE id = ?", (rule_id,))
         await conn.commit()
     orch = _get_orchestrator()

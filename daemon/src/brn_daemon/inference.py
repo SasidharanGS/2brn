@@ -4,6 +4,7 @@ import logging
 import re
 from dataclasses import dataclass, field
 
+from brn_daemon.db import get_conn
 from brn_daemon.timeutil import utc_iso_to_local_date, utc_now_iso
 
 logger = logging.getLogger(__name__)
@@ -200,7 +201,6 @@ class InferenceQueue:
         activities to when they were processed. Falls back to the capture row's
         ``captured_at`` (then to now) when the caller didn't supply it.
         """
-        import aiosqlite
         try:
             if captured_at is None:
                 captured_at = await self._lookup_captured_at(capture_id)
@@ -213,7 +213,7 @@ class InferenceQueue:
                 {"role": "user", "content": user_prompt},
             ])
             result = parse_inference_response(raw)
-            async with aiosqlite.connect(self._db_path_fn()) as conn:
+            async with get_conn(self._db_path_fn()) as conn:
                 cur = await conn.execute(
                     """INSERT INTO activities
                        (capture_id, started_at, summary, tags, task_category,

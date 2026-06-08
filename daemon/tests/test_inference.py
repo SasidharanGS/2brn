@@ -113,6 +113,13 @@ async def test_started_at_stored_without_timezone_offset(tmp_home, db):
     async def fake_chat(messages):
         return '{"summary": "test", "tags": [], "task_category": "work", "task_category_confidence": 0.9, "productivity_state": "productive", "productivity_confidence": 0.9}'
 
+    # A real capture must exist: activities.capture_id is a FK and the daemon now
+    # enforces foreign_keys (via get_conn), so a dangling capture_id is rejected.
+    await db.execute(
+        "INSERT INTO captures (captured_at, app_name) VALUES ('2024-01-01T08:00:00.000000', 'TestApp')"
+    )
+    await db.commit()
+
     from brn_daemon.inference import InferenceQueue
     with patch("brn_daemon.inference.parse_inference_response", return_value=fake_result):
         queue = InferenceQueue(db_path_fn=lambda: str(tmp_home / "2brn.db"), chat_fn=fake_chat)

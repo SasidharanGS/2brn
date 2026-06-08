@@ -82,6 +82,7 @@ class MCPClient:
         self._reader_task: asyncio.Task[None] | None = None
         self._stderr_task: asyncio.Task[None] | None = None
         self._lock = asyncio.Lock()
+        self._write_lock = asyncio.Lock()
         self._initialized = False
         self._tools_cache: list[MCPTool] | None = None
 
@@ -102,6 +103,10 @@ class MCPClient:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 env=full_env,
+                # Allow large single-line JSON tool results (e.g. a note body).
+                # The default 64 KiB StreamReader limit would raise on a longer
+                # line and tear down the read loop, hanging every pending request.
+                limit=16 * 1024 * 1024,
             )
         except FileNotFoundError as exc:
             raise MCPError(f"Command not found: {self.command}") from exc
@@ -204,8 +209,12 @@ class MCPClient:
         if not self._proc or not self._proc.stdin:
             raise MCPError("MCP stdin not available")
         data = (json.dumps(msg) + "\n").encode("utf-8")
-        self._proc.stdin.write(data)
-        await self._proc.stdin.drain()
+        # Serialize writes: concurrent tool calls share one client (event
+        # fan-out), and an interleaved write+drain would corrupt the framed
+        # JSON-RPC stream and hang both requests.
+        async with self._write_lock:
+            self._proc.stdin.write(data)
+            await self._proc.stdin.drain()
 
     async def _read_loop(self) -> None:
         assert self._proc and self._proc.stdout

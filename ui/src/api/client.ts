@@ -93,7 +93,10 @@ export const api = {
   },
   overrideActivity: (id: number, task_category: string, productivity_state: string) =>
     patch<ActivityRecord>(`/activities/${id}/override`, { task_category, productivity_state }),
-  getJournal: (date: string) => get<JournalEntry>(`/journal/${date}`),
+  getJournal: (date: string) => get<JournalEntry>(`/journal/${date}`).catch((e: unknown) => {
+    if (e instanceof ApiError && e.status === 404) return null
+    throw e
+  }),
   generateJournal: (date: string) => post(`/journal/${date}/generate`),
   updateJournal: (date: string, content: string) => put(`/journal/${date}`, { content }),
   getBlogPost: (date: string) => get<BlogPost>(`/blog/${date}`).catch((e: unknown) => {

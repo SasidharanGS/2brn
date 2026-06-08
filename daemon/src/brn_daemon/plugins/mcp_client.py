@@ -15,6 +15,7 @@ import json
 import logging
 import os
 import platform
+import time
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -46,6 +47,7 @@ def _build_subprocess_env(plugin_env: dict[str, str]) -> dict[str, str]:
 # JSON-RPC error code for "method not found" / generic invalid response.
 MCP_PROTOCOL_VERSION = "2024-11-05"
 DEFAULT_REQUEST_TIMEOUT = 30.0  # seconds
+MAX_PLUGIN_CLIENTS = 16  # cap live plugin subprocesses; evict the LRU beyond this
 
 
 class MCPError(RuntimeError):
@@ -62,6 +64,19 @@ class MCPTool:
     name: str
     description: str = ""
     input_schema: dict[str, Any] = field(default_factory=dict)
+
+
+def _normalize_id(raw: Any) -> Any:
+    """Coerce a spec-permitted string/float JSON-RPC id back to the int we issued,
+    so response matching is robust to non-strict servers."""
+    if isinstance(raw, str):
+        try:
+            return int(raw)
+        except ValueError:
+            return raw
+    if isinstance(raw, float) and raw.is_integer():
+        return int(raw)
+    return raw
 
 
 class MCPClient:
@@ -247,7 +262,9 @@ class MCPClient:
         self._pending.clear()
 
     def _dispatch(self, msg: dict[str, Any]) -> None:
-        msg_id = msg.get("id")
+        if not isinstance(msg, dict):
+            return
+        msg_id = _normalize_id(msg.get("id"))
         if msg_id is None:
             # Server-initiated notification — ignore for now.
             return
@@ -283,6 +300,7 @@ class MCPClientPool:
     def __init__(self) -> None:
         self._clients: dict[int, MCPClient] = {}
         self._locks: dict[int, asyncio.Lock] = {}
+        self._last_used: dict[int, float] = {}
         self._guard = asyncio.Lock()  # protects the dicts only, never held across start()
 
     def _lock_for(self, plugin_id: int) -> asyncio.Lock:
@@ -306,20 +324,44 @@ class MCPClientPool:
         async with lock:
             existing = self._clients.get(plugin_id)
             if existing and existing.is_running:
+                self._last_used[plugin_id] = time.monotonic()
                 return existing
             # Replace stale (crashed) client.
             if existing:
                 await existing.stop()
+            await self._maybe_evict_lru(plugin_id)
             client = MCPClient(command=command, args=args, env=env)
             await client.start()
             self._clients[plugin_id] = client
+            self._last_used[plugin_id] = time.monotonic()
             return client
+
+    async def _maybe_evict_lru(self, keep_id: int) -> None:
+        """Bound live plugin subprocesses: stop the least-recently-used other
+        client when at capacity (it lazily restarts on next use)."""
+        if len(self._clients) < MAX_PLUGIN_CLIENTS:
+            return
+        candidates = [
+            (t, pid) for pid, t in self._last_used.items()
+            if pid != keep_id and pid in self._clients
+        ]
+        if not candidates:
+            return
+        _, victim = min(candidates)
+        client = self._clients.pop(victim, None)
+        self._last_used.pop(victim, None)
+        if client:
+            try:
+                await client.stop()
+            except Exception:
+                logger.exception("Failed to stop evicted MCP client %s", victim)
 
     async def restart(self, plugin_id: int) -> None:
         async with self._guard:
             lock = self._lock_for(plugin_id)
         async with lock:
             client = self._clients.pop(plugin_id, None)
+            self._last_used.pop(plugin_id, None)
             if client:
                 await client.stop()
 
@@ -327,4 +369,5 @@ class MCPClientPool:
         async with self._guard:
             clients = list(self._clients.values())
             self._clients.clear()
+            self._last_used.clear()
         await asyncio.gather(*(c.stop() for c in clients), return_exceptions=True)

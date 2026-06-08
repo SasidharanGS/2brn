@@ -48,6 +48,9 @@ class BlogGenerator:
     def __init__(self, chat_fn):
         self._chat_fn = chat_fn
 
+    def set_chat_fn(self, chat_fn) -> None:
+        self._chat_fn = chat_fn
+
     async def generate(self, target_date: date) -> str | None:
         date_str = target_date.isoformat()
 

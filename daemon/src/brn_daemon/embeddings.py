@@ -28,7 +28,6 @@ class ChromaStore:
             name=NOTE_COLLECTION_NAME,
             metadata={"hnsw:space": "cosine"},
         )
-        self._count: int = 0
 
     @property
     def collection(self):
@@ -53,22 +52,26 @@ class ChromaStore:
                 embeddings=[embedding],
             ),
         )
-        self._count += 1
 
     async def query(self, embedding: list[float], n_results: int = 10,
               where: dict | None = None) -> dict:
-        if self._count == 0:
-            return {"documents": [[]], "metadatas": [[]], "distances": [[]]}
-        actual_n = min(n_results, self._count)
-        kwargs: dict = {
-            "query_embeddings": [embedding],
-            "n_results": actual_n,
-            "include": ["documents", "metadatas", "distances"],
-        }
-        if where:
-            kwargs["where"] = where
         loop = asyncio.get_running_loop()
         try:
+            # Read the count live from the collection rather than an in-process
+            # cache: it must reflect documents persisted by previous daemon runs,
+            # not just adds made since this process started. (A cached counter
+            # reset to 0 on every restart, silently emptying activity RAG.)
+            count = await loop.run_in_executor(None, self._collection.count)
+            if count == 0:
+                return {"documents": [[]], "metadatas": [[]], "distances": [[]]}
+            actual_n = min(n_results, count)
+            kwargs: dict = {
+                "query_embeddings": [embedding],
+                "n_results": actual_n,
+                "include": ["documents", "metadatas", "distances"],
+            }
+            if where:
+                kwargs["where"] = where
             return await loop.run_in_executor(  # type: ignore[return-value]
                 None, lambda: self._collection.query(**kwargs)
             )

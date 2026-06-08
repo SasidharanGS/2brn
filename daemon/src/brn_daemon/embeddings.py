@@ -53,6 +53,23 @@ class ChromaStore:
             ),
         )
 
+    async def add_note(self, doc_id: str, text: str, metadata: dict, embedding: list[float]) -> None:
+        """Upsert a document into the note_memories collection (off the event loop).
+
+        Used for externally-ingested notes (Joplin, and the mobile share-sheet),
+        which live alongside Joplin notes so chat RAG can retrieve them.
+        """
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(
+            None,
+            lambda: self._note_collection.upsert(
+                ids=[doc_id],
+                documents=[text],
+                metadatas=[metadata],
+                embeddings=[embedding],
+            ),
+        )
+
     async def query(self, embedding: list[float], n_results: int = 10,
               where: dict | None = None) -> dict:
         loop = asyncio.get_running_loop()

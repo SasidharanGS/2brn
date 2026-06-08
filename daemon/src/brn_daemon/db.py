@@ -155,6 +155,18 @@ async def init_db() -> None:
                 result TEXT
             );
 
+            CREATE TABLE IF NOT EXISTS shared_notes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT,
+                text TEXT NOT NULL,
+                source_url TEXT,
+                tags TEXT,
+                source TEXT NOT NULL DEFAULT 'mobile-share',
+                chroma_id TEXT,
+                embedded INTEGER NOT NULL DEFAULT 0,
+                created_at DATETIME NOT NULL
+            );
+
             CREATE INDEX IF NOT EXISTS idx_captures_captured_at ON captures(captured_at);
             CREATE INDEX IF NOT EXISTS idx_captures_monitor ON captures(monitor_index);
             CREATE INDEX IF NOT EXISTS idx_activities_capture_id ON activities(capture_id);
@@ -167,6 +179,7 @@ async def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_plugin_rules_trigger ON plugin_rules(trigger);
             CREATE INDEX IF NOT EXISTS idx_plugin_rule_executions_rule_id ON plugin_rule_executions(rule_id);
             CREATE INDEX IF NOT EXISTS idx_plugin_rule_executions_started_at ON plugin_rule_executions(started_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_shared_notes_created_at ON shared_notes(created_at DESC);
         """)
         await conn.commit()
 

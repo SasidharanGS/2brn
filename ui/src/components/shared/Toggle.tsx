@@ -1,11 +1,16 @@
 interface ToggleProps {
   enabled: boolean
   onToggle: () => void
+  label?: string
 }
 
-export default function Toggle({ enabled, onToggle }: ToggleProps) {
+export default function Toggle({ enabled, onToggle, label }: ToggleProps) {
   return (
     <button
+      type="button"
+      role="switch"
+      aria-checked={enabled}
+      aria-label={label}
       onClick={onToggle}
       className="relative shrink-0 rounded-full transition-all duration-200"
       style={{

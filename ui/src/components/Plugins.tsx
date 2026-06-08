@@ -3,11 +3,12 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api/client'
 import type { Plugin, PluginRule, PluginTool, RuleExecution } from '../api/types'
 import Toggle from './shared/Toggle'
+import { queryKeys } from '../api/queryKeys'
 
-const PLUGINS_QK = ['plugins']
-const RULES_QK = (id: number | null) => ['plugin-rules', id ?? 0]
-const TOOLS_QK = (id: number | null) => ['plugin-tools', id ?? 0]
-const EXEC_QK = (id: number | null) => ['rule-executions', id ?? 0]
+const PLUGINS_QK = queryKeys.plugins()
+const RULES_QK = queryKeys.pluginRules
+const TOOLS_QK = queryKeys.pluginTools
+const EXEC_QK = queryKeys.ruleExecutions
 
 
 export default function Plugins() {

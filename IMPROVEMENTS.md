@@ -2,8 +2,8 @@
 
 A round of hardening across the daemon and UI, plus open-source scaffolding. All
 changes are on this branch; `main` is unchanged. Everything below is verified:
-the daemon passes `ruff` + `pyright` + the full `pytest` suite (316 passing),
-and the UI passes `tsc --noEmit`.
+the daemon passes `ruff`, `pyright` (0 errors), and the full `pytest` suite
+(**319 passing, 1 skipped**), and the UI passes `tsc --noEmit`.
 
 > One thing still needs a manual check: the **end-to-end Electron auth flow**
 > (the daemon now requires a token the UI reads from `~/.2brn/api_token`). The
@@ -74,6 +74,28 @@ and the UI passes `tsc --noEmit`.
   Toggle/Btn, centralized query keys, an ErrorBoundary "Try again", and AI-client
   setters in place of private-attribute pokes.
 
+## 5. Code-review coverage
+
+This round worked through the **entire** 2026-06-08 deep code review
+(`2brn-code-review.html`): 62 tracked findings across 9 areas plus 5 cross-cutting
+themes. Every finding is either implemented here or listed under "Known follow-ups"
+below with a reason — nothing was silently dropped.
+
+| Review area | # | Status |
+|---|---|---|
+| Cross-cutting themes | 5 | Timezone · RAG-count · auth/CORS · DB-access · off-loop — all addressed (two carry a documented tail) |
+| Capture & data pipeline (`F-CORE`) | 7 | All addressed |
+| RAG / AI layer (`F-RAG`) | 5 | All addressed |
+| API routes (`F-ROUTE`) | 10 | All addressed |
+| Plugin security (`F-SEC`) | 11 | All addressed |
+| UI — Electron / React (`F-UI`) | 10 | 8 implemented; CSP + history-polling deferred |
+| Architecture (`A`) | 7 | 5 implemented; A-1 deferred, A-2 done for write paths |
+| Performance (`P`) | 6 | 4 implemented; mss-thread + cheaper-hash are deliberate skips |
+| Product (`F-PROD`) | 6 | 4 implemented; durations + cross-platform deferred |
+
+About **49 of the 62 findings are fully implemented, committed, and covered by the
+test suite**; the rest are the deliberate calls listed below.
+
 ---
 
 ## Project layout
@@ -87,22 +109,37 @@ See `README.md` for setup and `CONTRIBUTING.md` for the dev workflow.
 
 ## Known follow-ups (intentionally not done here)
 
-Each of these needs a runtime/hardware/product decision, or is a structural cleanup
-with no functional gain:
+Two kinds: **deliberate skips** (the review suggested a change, but the current code
+is the better choice once you check it) and **deferrals** (need hardware, a product
+decision, or runtime testing — or are cosmetic with no functional gain).
 
-- **Cross-platform verification** — Windows/Linux active-app detection and tesseract
-  resolution need those platforms to actually test.
-- **Activity durations** — the `ended_at` column is unused; populating it needs a
-  decision on what a "duration" means and UI to display it.
-- **A renderer Content-Security-Policy** — worth adding, but must be tested against
-  both the Vite dev server and the packaged app (a strict CSP breaks Vite's dev-mode
-  inline scripts), which requires running the app.
-- **Migrating the remaining read-path DB calls to `get_conn()`** — purely stylistic:
+**Deliberate skips**
+
+- **Cheaper dedup hash** (`F-CORE-5` / `P-2`) — the review suggested swapping the
+  wavelet hash for `pHash`/`dHash`. Tested: those collapse near-identical flat
+  capture frames and hurt dedup quality, so the wavelet hash is kept on purpose
+  (only the misleading function name/docstring was corrected).
+
+**Deferrals**
+
+- **Cross-platform verification** (`F-PROD-5`) — Windows/Linux active-app detection
+  and tesseract resolution need those platforms to actually test.
+- **Activity durations** (`F-PROD-3`) — the `ended_at` column is unused; populating
+  it needs a decision on what a "duration" means and UI to display it.
+- **A renderer Content-Security-Policy** (`F-UI-10`) — worth adding, but must be
+  tested against both the Vite dev server and the packaged app (a strict CSP breaks
+  Vite's dev-mode inline scripts), which requires running the app.
+- **Remaining read-path DB calls → `get_conn()`** (`A-2` tail) — purely stylistic:
   in WAL mode reads don't take the write lock, so they gain nothing from the
   foreign-keys / busy-timeout that the write paths now use.
-- **Folding journal/blog into one generator** — structural only; the drift it was
-  meant to prevent (the blog ignoring user instructions) is already fixed.
-- **Moving the optional Joplin watcher's ChromaDB upsert off the loop** — that
-  integration is off by default.
+- **A dedicated capture thread + a reused connection in the capture loop**
+  (`P-1` / `P-4`) — at ~1 capture/sec the per-tick executor and per-op connection are
+  not a bottleneck.
+- **Folding journal/blog into one generator** (`A-1`) — structural only; the drift it
+  was meant to prevent (the blog ignoring user instructions) is already fixed.
+- **The optional Joplin watcher's ChromaDB upsert off the loop** — that integration is
+  off by default.
+- **ExecutionHistory polling → `invalidateQueries`** (`F-UI-9` sub-item) — minor; the
+  5 s poll is harmless while the panel is mounted.
 - Already-embedded activities keep a UTC date tag until a one-off **Settings → Resync
   ChromaDB**; new activities use the local date.

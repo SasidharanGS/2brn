@@ -3,7 +3,14 @@ from PIL import Image
 
 
 def compute_phash(image: Image.Image) -> str:
-    """Compute a perceptual (wavelet) hash of an image, returned as a hex string."""
+    """Compute a perceptual hash of an image, returned as a hex string.
+
+    Intentionally uses imagehash's wavelet hash (whash), not DCT pHash: whash
+    retains distinct structure for the flat / low-frequency frames common in
+    screen captures (a solid panel vs a gradient), which the is_duplicate
+    threshold below is tuned against — DCT pHash collapses those to near-identical
+    hashes. The function name is kept for call-site/log stability.
+    """
     return str(imagehash.whash(image))
 
 

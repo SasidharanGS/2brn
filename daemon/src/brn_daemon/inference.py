@@ -96,15 +96,18 @@ class InferenceQueue:
         self._instructions_cache_at: float = 0.0
         self._INSTRUCTIONS_CACHE_TTL = 30.0
         self._failed_captures: set[int] = set()
+        self._dropped: int = 0
+
     async def enqueue(self, capture_id: int, app_name: str, window_title: str, ocr_text: str,
                       captured_at: str | None = None) -> None:
         try:
             self._queue.put_nowait((capture_id, app_name, window_title, ocr_text, captured_at))
         except asyncio.QueueFull:
+            self._dropped += 1
             logger.warning(
-                "Inference queue full (%d items) — dropping capture %d. "
+                "Inference queue full (%d items) — dropping capture %d (%d dropped total). "
                 "Gateway may be unreachable.",
-                INFERENCE_QUEUE_MAX, capture_id,
+                INFERENCE_QUEUE_MAX, capture_id, self._dropped,
             )
 
     async def _load_instructions(self) -> list[str]:
@@ -153,36 +156,47 @@ class InferenceQueue:
             return 0
         import aiosqlite
         healed = 0
-        async with aiosqlite.connect(self._db_path_fn()) as conn:
-            conn.row_factory = aiosqlite.Row
-            cur = await conn.execute(
-                """SELECT a.id, a.summary, a.task_category, a.productivity_state,
-                          a.started_at, c.app_name
-                   FROM activities a
-                   LEFT JOIN captures c ON c.id = a.capture_id
-                   WHERE a.chroma_id IS NULL AND a.summary IS NOT NULL AND trim(a.summary) != ''
-                   LIMIT 200"""
-            )
-            rows = await cur.fetchall()
-        for row in rows:
-            try:
-                metadata = {
-                    "timestamp": row["started_at"] or "",
-                    "app_name": row["app_name"] or "",
-                    "tags": "[]",
-                    "date": utc_iso_to_local_date(row["started_at"]),
-                    "task_category": row["task_category"] or "",
-                    "productivity_state": row["productivity_state"] or "",
-                    "source": "activity",
-                }
-                await self._embedding_service.embed_activity(
-                    activity_id=row["id"],
-                    summary=row["summary"],
-                    metadata=metadata,
+        BATCH = 200
+        while True:
+            async with aiosqlite.connect(self._db_path_fn()) as conn:
+                conn.row_factory = aiosqlite.Row
+                cur = await conn.execute(
+                    """SELECT a.id, a.summary, a.tags, a.task_category, a.productivity_state,
+                              a.started_at, c.app_name
+                       FROM activities a
+                       LEFT JOIN captures c ON c.id = a.capture_id
+                       WHERE a.chroma_id IS NULL AND a.summary IS NOT NULL AND trim(a.summary) != ''
+                       LIMIT ?""",
+                    (BATCH,),
                 )
-                healed += 1
-            except Exception:
-                logger.exception("Heal-pass failed for activity #%d", row["id"])
+                rows = list(await cur.fetchall())
+            if not rows:
+                break
+            batch_healed = 0
+            for row in rows:
+                try:
+                    metadata = {
+                        "timestamp": row["started_at"] or "",
+                        "app_name": row["app_name"] or "",
+                        "tags": row["tags"] or "[]",
+                        "date": utc_iso_to_local_date(row["started_at"]),
+                        "task_category": row["task_category"] or "",
+                        "productivity_state": row["productivity_state"] or "",
+                        "source": "activity",
+                    }
+                    await self._embedding_service.embed_activity(
+                        activity_id=row["id"],
+                        summary=row["summary"],
+                        metadata=metadata,
+                    )
+                    batch_healed += 1
+                except Exception:
+                    logger.exception("Heal-pass failed for activity #%d", row["id"])
+            healed += batch_healed
+            # Stop if a whole batch made no progress (e.g. embed provider down) so a
+            # persistent failure can't loop forever; otherwise continue until drained.
+            if batch_healed == 0 or len(rows) < BATCH:
+                break
         if healed:
             logger.info("Heal-pass: re-embedded %d activities with chroma_id IS NULL", healed)
         return healed
@@ -191,6 +205,11 @@ class InferenceQueue:
     def failed_capture_ids(self) -> list[int]:
         """Return capture IDs that failed inference (for /debug/status)."""
         return sorted(self._failed_captures)
+
+    @property
+    def dropped_count(self) -> int:
+        """Captures dropped because the inference queue was full (gateway backlog)."""
+        return self._dropped
 
     async def _process_one(self, capture_id: int, app_name: str, window_title: str, ocr_text: str,
                            captured_at: str | None = None) -> None:

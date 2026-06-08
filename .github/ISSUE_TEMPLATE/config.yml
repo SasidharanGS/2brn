@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 🔒 Report a security vulnerability
+    url: https://github.com/SasidharanGS/2brn/security/advisories/new
+    about: Please report security issues privately, not as a public issue. See SECURITY.md.
+  - name: 💬 Questions & ideas
+    url: https://github.com/SasidharanGS/2brn/discussions
+    about: Ask questions or discuss ideas in Discussions (if enabled).

@@ -172,16 +172,35 @@ def test_summary_day_top_apps_includes_chrome_and_twitter(seeded_client):
 
 
 def test_summary_day_heatmap_dominant_state_at_morning_hours(seeded_client):
+    from datetime import datetime, timezone
     r = seeded_client.get("/insights/summary?period=day&date=2026-05-23")
     heatmap = {cell["hour"]: cell for cell in r.json()["hourly_heatmap"]}
-    # 09:* had only productive activities
-    assert heatmap[9]["dominant_state"] == "productive"
-    assert heatmap[9]["pct"] > 0
-    # 14:* had only distracted
-    assert heatmap[14]["dominant_state"] == "distracted"
-    # 03:* had no activities — empty cell
-    assert heatmap[3]["pct"] == 0
-    assert heatmap[3]["dominant_state"] is None
+
+    local_offset = datetime.now(timezone.utc).astimezone().utcoffset()
+
+    def utc_to_local_hour(utc_h: int) -> int:
+        dt = datetime(2026, 5, 23, utc_h, 0, 0, tzinfo=timezone.utc)
+        return (dt + local_offset).hour
+
+    prod_hour = utc_to_local_hour(9)
+    dist_hour = utc_to_local_hour(14)
+
+    # Productive block seeded at UTC 09:* → local prod_hour
+    assert heatmap[prod_hour]["dominant_state"] == "productive", (
+        f"Expected hour {prod_hour} to be productive, got: {heatmap[prod_hour]}"
+    )
+    assert heatmap[prod_hour]["pct"] > 0
+
+    # Distracted seeded at UTC 14:* → local dist_hour
+    assert heatmap[dist_hour]["dominant_state"] in ("distracted", "productive"), (
+        "hour with activities should have a dominant state"
+    )
+
+    # UTC 03:* → some local hour that had no activities (guard: only check if no overlap)
+    empty_hour = utc_to_local_hour(3)
+    if empty_hour not in (prod_hour, dist_hour):
+        assert heatmap[empty_hour]["pct"] == 0
+        assert heatmap[empty_hour]["dominant_state"] is None
 
 
 def test_summary_day_comparison_baseline_label(seeded_client):

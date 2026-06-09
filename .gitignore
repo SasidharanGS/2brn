@@ -55,6 +55,7 @@ design-previews/
 
 # ── One-time migration scripts (done) ─────────────────────────────────────────
 scripts/
+!ui/scripts/
 
 # ── Internal design docs with employer-specific context ───────────────────────
 docs/superpowers/specs/
@@ -64,6 +65,9 @@ docs/superpowers/plans/
 .openclaude/
 
 ui/release/
+
+# Generated screenshots
+docs/screenshots/
 
 # Git worktrees
 .worktrees/

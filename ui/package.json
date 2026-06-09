@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "electron:dev": "vite",
-    "electron:build": "pnpm build && electron-builder && node -e \"['release/mac','release/mac-arm64'].forEach(d=>{try{require('fs').rmSync(d,{recursive:true,force:true})}catch(_){}})\""
+    "electron:build": "pnpm build && electron-builder && node -e \"['release/mac','release/mac-arm64'].forEach(d=>{try{require('fs').rmSync(d,{recursive:true,force:true})}catch(_){}}})\"",
+    "screenshots": "node scripts/capture-screenshots.mjs"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.100.1",

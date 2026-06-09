@@ -153,6 +153,7 @@ function stubResponse(url) {
   if (p.startsWith('/insights/summary')) return STUB_INSIGHTS_SUMMARY
   if (p === '/settings') return STUB_SETTINGS
   if (p.startsWith('/settings/exclusions')) return []
+  if (p.startsWith('/settings')) return STUB_SETTINGS
   if (p.startsWith('/instructions')) return []
   if (p.startsWith('/plugins')) return []
   if (p.startsWith('/plugin-rules')) return []
@@ -231,7 +232,7 @@ async function run() {
     for (const section of SECTIONS) {
       console.log(`\n[${theme}] ${section.name}`)
 
-      await page.goto(`${BASE_URL}${section.route}`, { waitUntil: 'networkidle' })
+      await page.goto(`${BASE_URL}/#${section.route}`, { waitUntil: 'networkidle' })
       await forceTheme(page, theme)
 
       if (section.hasCalendar) {
@@ -273,7 +274,7 @@ async function run() {
 
       // Debug panel variant — only on home
       if (section.name === 'home') {
-        const dbgBtn = page.getByText('⬡ debug')
+        const dbgBtn = page.getByRole('button', { name: '⬡ debug' })
         await dbgBtn.click()
         await page.waitForTimeout(400)
 
@@ -283,8 +284,7 @@ async function run() {
 
         await dbgBtn.click()
         await page.waitForTimeout(200)
-      }
-    }
+      }    }
 
     await context.close()
   }

@@ -1,16 +1,17 @@
 """Tests that PUT /settings with provider fields rebuilds in-memory AI clients."""
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-from httpx import AsyncClient, ASGITransport
+
+import pytest
+from httpx import ASGITransport, AsyncClient
 
 
 @pytest.fixture
 async def test_client(tmp_home):
     """Minimal FastAPI test client with app_state stubs."""
-    from brn_daemon.main import create_app, app_state
+    from brn_daemon.blog import BlogGenerator
     from brn_daemon.chat import ChatService
     from brn_daemon.journal import JournalGenerator
-    from brn_daemon.blog import BlogGenerator
+    from brn_daemon.main import app_state, create_app
 
     fake_chat_fn = AsyncMock(return_value='{"summary":"x","tags":[],"task_category":"work","task_category_confidence":0.9,"productivity_state":"productive","productivity_confidence":0.9}')
     fake_stream_fn = AsyncMock()
@@ -73,3 +74,17 @@ async def test_put_settings_without_provider_skips_rebuild(test_client, tmp_home
     assert resp.status_code == 200
     mock_chat.assert_not_called()
     assert state["chat_service"] is original
+
+
+async def test_settings_lan_access_roundtrip(test_client, tmp_home):
+    """GET /settings returns lan_access; PUT /settings updates it."""
+    client, _ = test_client
+    r_get = await client.get("/settings")
+    assert "lan_access" in r_get.json()
+    original = r_get.json()["lan_access"]
+
+    r_put = await client.put("/settings", json={"lan_access": not original})
+    assert r_put.status_code == 200
+
+    r_get2 = await client.get("/settings")
+    assert r_get2.json()["lan_access"] == (not original)

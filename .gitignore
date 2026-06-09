@@ -40,6 +40,7 @@ ui/dist/
 *.gif
 *.pptx
 *.ppt
+!docs/screenshots/*.png
 
 # ── Legacy Dendron vault (fully migrated to Joplin 2026-04-19) ─────────────────
 notes/

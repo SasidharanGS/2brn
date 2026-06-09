@@ -1,5 +1,10 @@
+from datetime import UTC
+
+import aiosqlite
 import pytest
-from brn_daemon.db import init_db, get_db_path
+
+from brn_daemon.db import get_db_path, init_db
+
 
 async def test_init_db_creates_all_tables(tmp_home):
     await init_db()
@@ -38,7 +43,8 @@ async def test_captures_table_schema(db):
 async def test_captures_monitor_index_migration(tmp_home):
     """monitor_index column should be present after init_db(), even on a pre-existing DB."""
     import aiosqlite
-    from brn_daemon.db import init_db, get_db_path
+
+    from brn_daemon.db import get_db_path, init_db
     await init_db()
     await init_db()  # second call — migration guard must not fail
     async with aiosqlite.connect(get_db_path()) as conn:
@@ -74,7 +80,8 @@ async def test_journals_date_unique(db):
 
 async def test_journals_schema_has_no_label_column(tmp_home):
     import aiosqlite
-    from brn_daemon.db import init_db, get_db_path
+
+    from brn_daemon.db import get_db_path, init_db
     await init_db()
     async with aiosqlite.connect(get_db_path()) as conn:
         cursor = await conn.execute("PRAGMA table_info(journals)")
@@ -96,8 +103,8 @@ async def test_blog_posts_table_exists(db):
     assert row is not None, "blog_posts table should exist after init_db()"
 
 async def test_blog_posts_unique_date(db):
-    from datetime import datetime, timezone
-    now = datetime.now(timezone.utc).isoformat()
+    from datetime import datetime
+    now = datetime.now(UTC).isoformat()
     await db.execute(
         "INSERT INTO blog_posts (date, content, generated_at, edited_by_user) VALUES (?, ?, ?, 0)",
         ("2026-04-26", "First post", now)
@@ -164,6 +171,7 @@ async def test_plugin_rule_executions_cascade_delete(db):
 async def test_activities_has_app_name_override_column(tmp_home):
     await init_db()
     import aiosqlite
+
     from brn_daemon.db import get_db_path
     async with aiosqlite.connect(get_db_path()) as conn:
         cursor = await conn.execute("PRAGMA table_info(activities)")
@@ -212,3 +220,24 @@ async def test_activities_cascade_delete(tmp_home, db):
     cur = await db.execute("SELECT COUNT(*) FROM activities WHERE capture_id = ?", (capture_id,))
     row = await cur.fetchone()
     assert row[0] == 0, "activity should have been cascade-deleted"
+
+
+async def test_init_db_creates_shared_notes_table(tmp_home):
+    """shared_notes table and its index exist after init_db."""
+    await init_db()
+    async with aiosqlite.connect(get_db_path()) as conn:
+        cur = await conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='shared_notes'"
+        )
+        assert await cur.fetchone() is not None, "shared_notes table missing"
+
+        cur = await conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='index' AND name='idx_shared_notes_created_at'"
+        )
+        assert await cur.fetchone() is not None, "idx_shared_notes_created_at index missing"
+
+
+async def test_init_db_idempotent_with_shared_notes(tmp_home):
+    """Calling init_db twice must not raise (IF NOT EXISTS guards)."""
+    await init_db()
+    await init_db()

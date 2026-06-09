@@ -150,3 +150,91 @@ def test_build_pairing_url_encoding():
     assert url.startswith("twobrn://pair?u=")
     assert "u=http%3A%2F%2F192.168.1.23%3A7842" in url
     assert "t=tok%20EN%2F3" in url
+
+
+# ── /ingest/note edge cases ─────────────────────────────────────────────────────
+
+async def test_ingest_note_strips_whitespace_but_keeps_content(client):
+    """Text with leading/trailing whitespace is accepted after stripping."""
+    resp = await client.post("/ingest/note", json={"text": "  hello world  "})
+    assert resp.status_code == 200
+    assert resp.json()["ok"] is True
+
+
+async def test_ingest_note_very_long_text(client):
+    """Notes over 10 000 chars should persist without error."""
+    long_text = "x" * 15_000
+    resp = await client.post("/ingest/note", json={"text": long_text})
+    assert resp.status_code == 200
+
+
+async def test_list_notes_limit_clamped(client):
+    """Limit values out of [1, 200] are clamped, not rejected."""
+    for i in range(5):
+        await client.post("/ingest/note", json={"text": f"note {i}"})
+    resp_low = await client.get("/ingest/notes?limit=0")
+    assert resp_low.status_code == 200
+    assert len(resp_low.json()) >= 1  # clamped to 1
+
+    resp_high = await client.get("/ingest/notes?limit=9999")
+    assert resp_high.status_code == 200
+
+
+async def test_ingest_note_optional_fields_nullable(client):
+    """title, source_url, tags are all nullable; response fields are present."""
+    resp = await client.post("/ingest/note", json={"text": "minimal note"})
+    data = resp.json()
+    assert data["ok"] is True
+    listing = await client.get("/ingest/notes")
+    note = next(n for n in listing.json() if n["id"] == data["id"])
+    assert note["title"] is None
+    assert note["source_url"] is None
+    assert note["tags"] is None
+
+
+async def test_delete_note_removes_from_listing(client):
+    """After delete the note no longer appears in GET /ingest/notes."""
+    r = await client.post("/ingest/note", json={"text": "to be deleted"})
+    note_id = r.json()["id"]
+    del_resp = await client.delete(f"/ingest/notes/{note_id}")
+    assert del_resp.json()["ok"] is True
+    ids = {n["id"] for n in (await client.get("/ingest/notes")).json()}
+    assert note_id not in ids
+
+
+async def test_ingest_note_chroma_delete_best_effort(client):
+    """If Chroma delete raises, the HTTP response is still 200."""
+    from unittest.mock import AsyncMock, MagicMock
+
+    from brn_daemon.main import app_state
+
+    fake_embed = MagicMock()
+    fake_embed.embed = AsyncMock(return_value=[0.1] * 3)
+    fake_chroma = MagicMock()
+    fake_chroma.add_note = AsyncMock()
+    fake_chroma.note_collection = MagicMock()
+    fake_chroma.note_collection.delete.side_effect = RuntimeError("chroma down")
+    app_state["_embed_client_ref"] = fake_embed
+    app_state["chroma_store"] = fake_chroma
+
+    r = await client.post("/ingest/note", json={"text": "embed then delete"})
+    note_id = r.json()["id"]
+    del_resp = await client.delete(f"/ingest/notes/{note_id}")
+    assert del_resp.status_code == 200
+    assert del_resp.json()["ok"] is True
+
+
+# ── pair.py edge cases ──────────────────────────────────────────────────────────
+
+def test_build_pairing_url_minimal():
+    from brn_daemon.pair import build_pairing_url
+    url = build_pairing_url("http://192.168.0.1:7842", "simpletoken")
+    assert url.startswith("twobrn://pair?u=")
+    assert "t=simpletoken" in url
+
+
+def test_build_pairing_url_special_chars_in_token():
+    from brn_daemon.pair import build_pairing_url
+    url = build_pairing_url("http://10.0.0.1:7842", "a+b=c&d")
+    assert "a+b=c&d" not in url
+    assert "a%2Bb%3Dc%26d" in url

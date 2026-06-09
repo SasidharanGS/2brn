@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import os as _os
+import secrets
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from datetime import date as dt_date
@@ -13,9 +14,12 @@ from dotenv import load_dotenv
 load_dotenv(Path(__file__).resolve().parents[2] / ".env")  # daemon/.env
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from starlette.middleware.base import BaseHTTPMiddleware
 
+from brn_daemon.auth import PUBLIC_PATHS, load_or_create_token
 from brn_daemon.blog import BlogGenerator
 from brn_daemon.capture import (
     capture_all_monitors_with_rects,
@@ -30,7 +34,7 @@ from brn_daemon.config import (
     get_screenshot_password,
     load_config,
 )
-from brn_daemon.db import get_db_path, init_db
+from brn_daemon.db import get_conn, get_db_path, init_db
 from brn_daemon.dedup import compute_phash, is_duplicate
 from brn_daemon.embeddings import ChromaStore, EmbeddingService
 from brn_daemon.encryption import load_encryption_state, verify_password
@@ -41,6 +45,7 @@ from brn_daemon.ocr import extract_text, is_text_sparse
 from brn_daemon.plugins import EventBus, EventNames, PluginOrchestrator
 from brn_daemon.providers import make_embed_client
 from brn_daemon.purge import purge_old_captures
+from brn_daemon.timeutil import utc_now_iso
 
 
 class JsonFormatter(logging.Formatter):
@@ -100,6 +105,7 @@ class AppState(TypedDict, total=False):
     scheduler: AsyncIOScheduler | None
     inference_queue: InferenceQueue | None
     _embed_client_ref: object | None
+    api_token: str | None
 
 
 app_state: AppState = {
@@ -120,6 +126,7 @@ app_state: AppState = {
     "scheduler": None,
     "inference_queue": None,
     "_embed_client_ref": None,
+    "api_token": None,
 }
 
 
@@ -177,6 +184,11 @@ async def lifespan(app: FastAPI):
     cfg = load_config()
     app_state["paused"] = cfg.paused
     app_state["screenshot_key"] = _load_screenshot_key()
+    app_state["api_token"] = load_or_create_token()
+    if app_state["api_token"]:
+        logger.info("Local API authentication: enabled")
+    else:
+        logger.warning("Local API authentication: DISABLED (could not create token file)")
 
     chat_fn, stream_fn = make_chat_fn()
     embed_client = make_embed_client()
@@ -318,7 +330,9 @@ async def _startup_backfill_journal(
     event_bus,
     schedule: ScheduleConfig,
 ) -> None:
-    now = datetime.now(UTC)
+    # Local clock: APScheduler fires the journal job at the local schedule hour,
+    # so the "have we already passed it today?" check must be local too.
+    now = datetime.now()
     if now.hour < schedule.hour or (now.hour == schedule.hour and now.minute < schedule.minute):
         return
     today = dt_date.today()
@@ -335,7 +349,8 @@ async def _startup_backfill_blog(
     event_bus,
     schedule: "BlogScheduleConfig",
 ) -> None:
-    now = datetime.now(UTC)
+    # Local clock — see _startup_backfill_journal.
+    now = datetime.now()
     if schedule.frequency == "monthly" and now.day != schedule.day:
         return
     if schedule.frequency == "weekly" and schedule.days_of_week:
@@ -379,6 +394,7 @@ async def _phase1_process_monitor(
     img,
     *,
     key: bytes | None,
+    monitor_index: int = 0,
 ) -> tuple[str, "Path"]:
     """Run compute_phash and save_screenshot in the thread executor.
 
@@ -386,7 +402,7 @@ async def _phase1_process_monitor(
     Both are CPU/IO-bound and must not block the event loop.
     """
     def save_screenshot_bound():
-        return save_screenshot(img, key=key)
+        return save_screenshot(img, key=key, monitor_index=monitor_index)
     save_screenshot_bound.__name__ = "save_screenshot"
 
     phash_fut = loop.run_in_executor(None, compute_phash, img)
@@ -441,7 +457,7 @@ async def _capture_loop(cfg, inference_queue: InferenceQueue):
                 continue
 
             phase1_results = await asyncio.gather(*[
-                _phase1_process_monitor(loop, item[1], key=app_state.get("screenshot_key"))
+                _phase1_process_monitor(loop, item[1], key=app_state.get("screenshot_key"), monitor_index=item[0])
                 for item in phase1_candidates
             ])
 
@@ -470,10 +486,10 @@ async def _capture_loop(cfg, inference_queue: InferenceQueue):
             ocr_results = await asyncio.gather(*ocr_tasks)
 
             # ── Phase 3: DB inserts + inference enqueue ────────────────────────
-            async with aiosqlite.connect(get_db_path()) as conn:
+            async with get_conn() as conn:
                 for item, ocr_text in zip(pending, ocr_results):
                     monitor_idx, img, monitor_rect, app_name, window_title, trigger, file_path, current_phash = item
-                    now_iso = datetime.now(UTC).isoformat()
+                    now_iso = utc_now_iso()
                     cur = await conn.execute(
                         "INSERT INTO captures (captured_at, app_name, window_title, file_path, "
                         "ocr_text, phash, trigger, monitor_index) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
@@ -484,7 +500,7 @@ async def _capture_loop(cfg, inference_queue: InferenceQueue):
                     capture_id: int = cur.lastrowid  # type: ignore[assignment]
 
                     if not is_text_sparse(ocr_text):
-                        await inference_queue.enqueue(capture_id, app_name, window_title, ocr_text)
+                        await inference_queue.enqueue(capture_id, app_name, window_title, ocr_text, now_iso)
                         logger.info("Capture #%d → inference queued", capture_id)
                     else:
                         logger.info("Capture #%d → saved (sparse text, skipping inference)", capture_id)
@@ -531,16 +547,16 @@ async def _rebuild_ai_clients() -> None:
 
     iq = app_state.get("inference_queue")
     if iq is not None:
-        iq._chat_fn = new_chat_fn
-        iq._embedding_service = new_embedding_service
+        iq.set_chat_fn(new_chat_fn)
+        iq.set_embedding_service(new_embedding_service)
 
     jg = app_state.get("journal_generator")
     if jg is not None:
-        jg._chat_fn = new_chat_fn
+        jg.set_chat_fn(new_chat_fn)
 
     bg = app_state.get("blog_generator")
     if bg is not None:
-        bg._chat_fn = new_chat_fn
+        bg.set_chat_fn(new_chat_fn)
 
     po = app_state.get("plugin_orchestrator")
     if po is not None:
@@ -549,13 +565,31 @@ async def _rebuild_ai_clients() -> None:
     logger.info("AI clients rebuilt from updated config")
 
 
+async def _require_api_token(request: Request, call_next):
+    """Reject requests lacking the loopback bearer token.
+
+    Inert until a token is loaded into app_state, so the test harness (which
+    doesn't run the lifespan) is unaffected. The liveness probe and CORS
+    preflight pass through unauthenticated.
+    """
+    expected = app_state.get("api_token")
+    if expected and request.method != "OPTIONS" and request.url.path not in PUBLIC_PATHS:
+        header = request.headers.get("authorization", "")
+        token = header[7:].strip() if header[:7].lower() == "bearer " else ""
+        if not (token and secrets.compare_digest(token, expected)):
+            return JSONResponse({"detail": "Unauthorized"}, status_code=401)
+    return await call_next(request)
+
+
 def create_app() -> FastAPI:
     from brn_daemon.routes import (
         activities,
         blog_routes,
         captures,
         chat_routes,
+        connection_info,
         debug_routes,
+        ingest,
         insights_routes,
         instructions_routes,
         journal_routes,
@@ -565,11 +599,17 @@ def create_app() -> FastAPI:
     )
 
     app = FastAPI(title="2brn Daemon", lifespan=lifespan)
-    # Allow requests from Vite dev server and Electron renderer
+    # Loopback bearer-token auth (inner). Added before CORS so CORS stays the
+    # outermost layer — it answers preflight and decorates the 401 so the UI can
+    # read it. Enforced only once a token is loaded into app_state (lifespan).
+    app.add_middleware(BaseHTTPMiddleware, dispatch=_require_api_token)
+    # Allow the Vite dev server and the Electron renderer only. The bearer token
+    # is the real gate; this drops the previous any-localhost-port allowance
+    # that let any local web page reach the API.
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
-        allow_origin_regex=r"file://.*|https?://(localhost|127\.0\.0\.1)(:\d+)?",
+        allow_origin_regex=r"file://.*",
         allow_methods=["*"],
         allow_headers=["*"],
     )
@@ -584,6 +624,8 @@ def create_app() -> FastAPI:
     app.include_router(blog_routes.router)
     app.include_router(instructions_routes.router)
     app.include_router(plugins_routes.router)
+    app.include_router(connection_info.router)
+    app.include_router(ingest.router)
     return app
 
 
@@ -592,4 +634,13 @@ app = create_app()
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("brn_daemon.main:app", host="127.0.0.1", port=7842, reload=False)
+
+    from brn_daemon.config import load_config
+
+    # Opt-in LAN access for the mobile companion (off by default). The per-machine
+    # bearer token gates every non-public endpoint regardless of the bind address.
+    cfg = load_config()
+    host = "0.0.0.0" if cfg.lan_access else "127.0.0.1"
+    if cfg.lan_access:
+        logger.info("LAN access enabled — binding 0.0.0.0:7842 (bearer-token gated)")
+    uvicorn.run("brn_daemon.main:app", host=host, port=7842, reload=False)

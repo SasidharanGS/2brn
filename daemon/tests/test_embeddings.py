@@ -85,19 +85,24 @@ async def test_chroma_store_query_is_awaitable(tmp_home):
     assert inspect.iscoroutinefunction(store.query), "ChromaStore.query must be async"
 
 
-async def test_chroma_store_add_updates_count_cache(tmp_home):
-    from brn_daemon.embeddings import ChromaStore
-    store = ChromaStore()
-    assert store._count == 0
-    await store.add("id-1", "text", {"date": "2026-05-28"}, [0.1] * 128)
-    assert store._count == 1
+async def test_chroma_store_query_works_after_restart(tmp_home):
+    """Regression for F-RAG-1: a fresh ChromaStore (as after a daemon restart)
+    must see documents persisted by a previous run. query() reads the live
+    collection count rather than an in-process counter that reset to 0 on every
+    start — the cached counter silently returned empty activity RAG results
+    (and capped n_results to the in-session count) until new activities embedded.
+    """
+    persist = str(tmp_home / "chroma")
+    store1 = ChromaStore(persist_dir=persist)
+    await store1.add(
+        doc_id="act-1",
+        text="reviewing a pull request on GitHub",
+        metadata={"date": "2026-05-28", "source": "activity"},
+        embedding=[0.1] * 384,
+    )
 
-
-async def test_chroma_store_query_uses_cache_not_live_count(tmp_home, monkeypatch):
-    from brn_daemon.embeddings import ChromaStore
-    store = ChromaStore()
-    store._count = 5
-    live_count_calls = []
-    monkeypatch.setattr(store._collection, "count", lambda: live_count_calls.append(1) or 5)
-    await store.query([0.0] * 128, n_results=3)
-    assert live_count_calls == [], "query() must not call live count() when cache is set"
+    # Simulate a daemon restart: a brand-new store over the same persisted dir.
+    store2 = ChromaStore(persist_dir=persist)
+    results = await store2.query(embedding=[0.1] * 384, n_results=5)
+    assert results["ids"][0], "query after restart must return persisted docs"
+    assert results["ids"][0][0] == "act-1"

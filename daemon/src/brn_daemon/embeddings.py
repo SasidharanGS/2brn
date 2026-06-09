@@ -28,7 +28,6 @@ class ChromaStore:
             name=NOTE_COLLECTION_NAME,
             metadata={"hnsw:space": "cosine"},
         )
-        self._count: int = 0
 
     @property
     def collection(self):
@@ -53,22 +52,43 @@ class ChromaStore:
                 embeddings=[embedding],
             ),
         )
-        self._count += 1
+
+    async def add_note(self, doc_id: str, text: str, metadata: dict, embedding: list[float]) -> None:
+        """Upsert a document into the note_memories collection (off the event loop).
+
+        Used for externally-ingested notes (Joplin, and the mobile share-sheet),
+        which live alongside Joplin notes so chat RAG can retrieve them.
+        """
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(
+            None,
+            lambda: self._note_collection.upsert(
+                ids=[doc_id],
+                documents=[text],
+                metadatas=[metadata],
+                embeddings=[embedding],
+            ),
+        )
 
     async def query(self, embedding: list[float], n_results: int = 10,
               where: dict | None = None) -> dict:
-        if self._count == 0:
-            return {"documents": [[]], "metadatas": [[]], "distances": [[]]}
-        actual_n = min(n_results, self._count)
-        kwargs: dict = {
-            "query_embeddings": [embedding],
-            "n_results": actual_n,
-            "include": ["documents", "metadatas", "distances"],
-        }
-        if where:
-            kwargs["where"] = where
         loop = asyncio.get_running_loop()
         try:
+            # Read the count live from the collection rather than an in-process
+            # cache: it must reflect documents persisted by previous daemon runs,
+            # not just adds made since this process started. (A cached counter
+            # reset to 0 on every restart, silently emptying activity RAG.)
+            count = await loop.run_in_executor(None, self._collection.count)
+            if count == 0:
+                return {"documents": [[]], "metadatas": [[]], "distances": [[]]}
+            actual_n = min(n_results, count)
+            kwargs: dict = {
+                "query_embeddings": [embedding],
+                "n_results": actual_n,
+                "include": ["documents", "metadatas", "distances"],
+            }
+            if where:
+                kwargs["where"] = where
             return await loop.run_in_executor(  # type: ignore[return-value]
                 None, lambda: self._collection.query(**kwargs)
             )
@@ -117,3 +137,32 @@ class EmbeddingService:
                 await conn.commit()
         except Exception:
             logger.exception("Failed to embed activity %d", activity_id)
+
+    async def embed_activities_batch(self, items: list[dict]) -> int:
+        """Embed many activities in a single provider call, then upsert each into
+        ChromaDB and set its chroma_id. ``items`` are dicts with keys
+        ``activity_id``, ``summary``, ``metadata``. Returns the number embedded.
+
+        Used by the manual re-sync so a large backlog isn't one network round-trip
+        per row.
+        """
+        if self._store is None or not items:
+            return 0
+        summaries = [it["summary"] for it in items]
+        try:
+            embeddings = await self._embed_client.embed_batch(summaries)
+        except Exception:
+            logger.exception("Batch embed failed for %d activities", len(items))
+            return 0
+        async with aiosqlite.connect(get_db_path()) as conn:
+            for it, emb in zip(items, embeddings):
+                doc_id = f"activity-{it['activity_id']}"
+                await self._store.add(
+                    doc_id=doc_id, text=it["summary"], metadata=it["metadata"], embedding=emb,
+                )
+                await conn.execute(
+                    "UPDATE activities SET chroma_id = ? WHERE id = ?",
+                    (doc_id, it["activity_id"]),
+                )
+            await conn.commit()
+        return len(items)

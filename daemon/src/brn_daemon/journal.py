@@ -44,6 +44,9 @@ class JournalGenerator:
     def __init__(self, chat_fn):
         self._chat_fn = chat_fn
 
+    def set_chat_fn(self, chat_fn) -> None:
+        self._chat_fn = chat_fn
+
     async def generate(self, target_date: date) -> str | None:
         """Generate a full-day journal for target_date. Returns content or None if skipped."""
         date_str = target_date.isoformat()

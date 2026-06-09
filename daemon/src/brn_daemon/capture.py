@@ -166,12 +166,13 @@ def capture_all_monitors() -> list[tuple[int, Image.Image]]:
     return results
 
 
-def save_screenshot(image: Image.Image, *, key: bytes | None = None) -> Path:
-    """Save screenshot as JPEG under ``~/.2brn/screenshots/YYYY/MM/DD/<ts>.jpg``.
+def save_screenshot(image: Image.Image, *, key: bytes | None = None, monitor_index: int = 0) -> Path:
+    """Save screenshot as JPEG under ``~/.2brn/screenshots/YYYY/MM/DD/<ts>_m<n>.jpg``.
 
-    When ``key`` is provided, the JPEG bytes are encrypted with AES-256-GCM and the file is
-    written with a ``.jpg.enc`` suffix instead. The encryption format is defined in
-    ``brn_daemon.encryption``.
+    The monitor index is part of the filename so simultaneous multi-monitor saves
+    in the same microsecond can't overwrite each other. When ``key`` is provided
+    the JPEG bytes are encrypted with AES-256-GCM and written with a ``.jpg.enc``
+    suffix. The encryption format is defined in ``brn_daemon.encryption``.
     """
     now = datetime.now(UTC)
     dir_path = (
@@ -182,9 +183,10 @@ def save_screenshot(image: Image.Image, *, key: bytes | None = None) -> Path:
         / now.strftime("%d")
     )
     dir_path.mkdir(parents=True, exist_ok=True)
+    stem = f"{now.strftime('%H%M%S_%f')}_m{monitor_index}"
 
     if key is None:
-        file_path = dir_path / f"{now.strftime('%H%M%S_%f')}.jpg"
+        file_path = dir_path / f"{stem}.jpg"
         image.save(file_path, "JPEG", quality=80)
         return file_path
 
@@ -193,6 +195,6 @@ def save_screenshot(image: Image.Image, *, key: bytes | None = None) -> Path:
     buf = io.BytesIO()
     image.save(buf, "JPEG", quality=80)
     blob = encrypt_bytes(buf.getvalue(), key)
-    file_path = dir_path / f"{now.strftime('%H%M%S_%f')}{ENCRYPTED_EXT}"
+    file_path = dir_path / f"{stem}{ENCRYPTED_EXT}"
     file_path.write_bytes(blob)
     return file_path

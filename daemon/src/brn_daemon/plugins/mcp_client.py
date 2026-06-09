@@ -15,6 +15,7 @@ import json
 import logging
 import os
 import platform
+import time
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -46,10 +47,16 @@ def _build_subprocess_env(plugin_env: dict[str, str]) -> dict[str, str]:
 # JSON-RPC error code for "method not found" / generic invalid response.
 MCP_PROTOCOL_VERSION = "2024-11-05"
 DEFAULT_REQUEST_TIMEOUT = 30.0  # seconds
+MAX_PLUGIN_CLIENTS = 16  # cap live plugin subprocesses; evict the LRU beyond this
 
 
 class MCPError(RuntimeError):
     pass
+
+
+class MCPTimeoutError(MCPError):
+    """Raised when an MCP request exceeds its timeout — distinct from other errors
+    so callers can record a 'timeout' status rather than a generic 'error'."""
 
 
 @dataclass
@@ -57,6 +64,19 @@ class MCPTool:
     name: str
     description: str = ""
     input_schema: dict[str, Any] = field(default_factory=dict)
+
+
+def _normalize_id(raw: Any) -> Any:
+    """Coerce a spec-permitted string/float JSON-RPC id back to the int we issued,
+    so response matching is robust to non-strict servers."""
+    if isinstance(raw, str):
+        try:
+            return int(raw)
+        except ValueError:
+            return raw
+    if isinstance(raw, float) and raw.is_integer():
+        return int(raw)
+    return raw
 
 
 class MCPClient:
@@ -82,6 +102,7 @@ class MCPClient:
         self._reader_task: asyncio.Task[None] | None = None
         self._stderr_task: asyncio.Task[None] | None = None
         self._lock = asyncio.Lock()
+        self._write_lock = asyncio.Lock()
         self._initialized = False
         self._tools_cache: list[MCPTool] | None = None
 
@@ -102,6 +123,10 @@ class MCPClient:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 env=full_env,
+                # Allow large single-line JSON tool results (e.g. a note body).
+                # The default 64 KiB StreamReader limit would raise on a longer
+                # line and tear down the read loop, hanging every pending request.
+                limit=16 * 1024 * 1024,
             )
         except FileNotFoundError as exc:
             raise MCPError(f"Command not found: {self.command}") from exc
@@ -194,7 +219,9 @@ class MCPClient:
             return await asyncio.wait_for(fut, timeout=self.request_timeout)
         except TimeoutError as exc:
             self._pending.pop(req_id, None)
-            raise MCPError(f"MCP request '{method}' timed out after {self.request_timeout}s") from exc
+            raise MCPTimeoutError(
+                f"MCP request '{method}' timed out after {self.request_timeout}s"
+            ) from exc
 
     async def _notify(self, method: str, params: dict[str, Any]) -> None:
         msg = {"jsonrpc": "2.0", "method": method, "params": params}
@@ -204,8 +231,12 @@ class MCPClient:
         if not self._proc or not self._proc.stdin:
             raise MCPError("MCP stdin not available")
         data = (json.dumps(msg) + "\n").encode("utf-8")
-        self._proc.stdin.write(data)
-        await self._proc.stdin.drain()
+        # Serialize writes: concurrent tool calls share one client (event
+        # fan-out), and an interleaved write+drain would corrupt the framed
+        # JSON-RPC stream and hang both requests.
+        async with self._write_lock:
+            self._proc.stdin.write(data)
+            await self._proc.stdin.drain()
 
     async def _read_loop(self) -> None:
         assert self._proc and self._proc.stdout
@@ -231,7 +262,9 @@ class MCPClient:
         self._pending.clear()
 
     def _dispatch(self, msg: dict[str, Any]) -> None:
-        msg_id = msg.get("id")
+        if not isinstance(msg, dict):
+            return
+        msg_id = _normalize_id(msg.get("id"))
         if msg_id is None:
             # Server-initiated notification — ignore for now.
             return
@@ -266,7 +299,16 @@ class MCPClientPool:
 
     def __init__(self) -> None:
         self._clients: dict[int, MCPClient] = {}
-        self._lock = asyncio.Lock()
+        self._locks: dict[int, asyncio.Lock] = {}
+        self._last_used: dict[int, float] = {}
+        self._guard = asyncio.Lock()  # protects the dicts only, never held across start()
+
+    def _lock_for(self, plugin_id: int) -> asyncio.Lock:
+        lock = self._locks.get(plugin_id)
+        if lock is None:
+            lock = asyncio.Lock()
+            self._locks[plugin_id] = lock
+        return lock
 
     async def get(
         self,
@@ -275,26 +317,57 @@ class MCPClientPool:
         args: list[str],
         env: dict[str, str],
     ) -> MCPClient:
-        async with self._lock:
+        # Per-plugin lock: only concurrent gets for the SAME plugin serialize, so
+        # one plugin's slow handshake doesn't block every other plugin's get().
+        async with self._guard:
+            lock = self._lock_for(plugin_id)
+        async with lock:
             existing = self._clients.get(plugin_id)
             if existing and existing.is_running:
+                self._last_used[plugin_id] = time.monotonic()
                 return existing
             # Replace stale (crashed) client.
             if existing:
                 await existing.stop()
+            await self._maybe_evict_lru(plugin_id)
             client = MCPClient(command=command, args=args, env=env)
             await client.start()
             self._clients[plugin_id] = client
+            self._last_used[plugin_id] = time.monotonic()
             return client
 
+    async def _maybe_evict_lru(self, keep_id: int) -> None:
+        """Bound live plugin subprocesses: stop the least-recently-used other
+        client when at capacity (it lazily restarts on next use)."""
+        if len(self._clients) < MAX_PLUGIN_CLIENTS:
+            return
+        candidates = [
+            (t, pid) for pid, t in self._last_used.items()
+            if pid != keep_id and pid in self._clients
+        ]
+        if not candidates:
+            return
+        _, victim = min(candidates)
+        client = self._clients.pop(victim, None)
+        self._last_used.pop(victim, None)
+        if client:
+            try:
+                await client.stop()
+            except Exception:
+                logger.exception("Failed to stop evicted MCP client %s", victim)
+
     async def restart(self, plugin_id: int) -> None:
-        async with self._lock:
+        async with self._guard:
+            lock = self._lock_for(plugin_id)
+        async with lock:
             client = self._clients.pop(plugin_id, None)
+            self._last_used.pop(plugin_id, None)
             if client:
                 await client.stop()
 
     async def close_all(self) -> None:
-        async with self._lock:
+        async with self._guard:
             clients = list(self._clients.values())
             self._clients.clear()
+            self._last_used.clear()
         await asyncio.gather(*(c.stop() for c in clients), return_exceptions=True)

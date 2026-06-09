@@ -56,22 +56,28 @@ export default function Chat() {
     streamAccRef.current = ''
     if (rafRef.current !== null) cancelAnimationFrame(rafRef.current)
 
+    // Target updates by the assistant message's stable id, not by array index
+    // (index-based updates can hit the wrong message and are fragile).
+    const assistantId = crypto.randomUUID()
     setMessages(prev => [
       ...prev,
       { id: crypto.randomUUID(), role: 'user', content: question },
-      { id: crypto.randomUUID(), role: 'assistant', content: '', streaming: true },
+      { id: assistantId, role: 'assistant', content: '', streaming: true },
     ])
+    const setAssistant = (patch: Partial<Message>) =>
+      setMessages(prev => prev.map(m => (m.id === assistantId ? { ...m, ...patch } : m)))
+    const stopRaf = () => {
+      if (rafRef.current !== null) {
+        cancelAnimationFrame(rafRef.current)
+        rafRef.current = null
+      }
+    }
 
     const scheduleFlush = () => {
       if (rafRef.current !== null) return
       rafRef.current = requestAnimationFrame(() => {
         rafRef.current = null
-        const acc = streamAccRef.current
-        setMessages(prev => {
-          const u = [...prev]
-          u[u.length - 1] = { ...u[u.length - 1], content: acc, streaming: true }
-          return u
-        })
+        setAssistant({ content: streamAccRef.current, streaming: true })
       })
     }
 
@@ -80,26 +86,17 @@ export default function Chat() {
         streamAccRef.current += chunk
         scheduleFlush()
       }
-      if (rafRef.current !== null) {
-        cancelAnimationFrame(rafRef.current)
-        rafRef.current = null
-      }
-      setMessages(prev => {
-        const u = [...prev]
-        u[u.length - 1] = { ...u[u.length - 1], content: streamAccRef.current, streaming: false }
-        return u
-      })
+      stopRaf()
+      setAssistant({ content: streamAccRef.current, streaming: false })
     } catch (e) {
-      if (rafRef.current !== null) {
-        cancelAnimationFrame(rafRef.current)
-        rafRef.current = null
+      stopRaf()
+      if (e instanceof DOMException && e.name === 'AbortError') {
+        // Clear the streaming cursor on the partial message instead of leaving
+        // it blinking forever after the user navigates away and back.
+        setAssistant({ streaming: false })
+        return
       }
-      if (e instanceof DOMException && e.name === 'AbortError') return
-      setMessages(prev => {
-        const u = [...prev]
-        u[u.length - 1] = { ...u[u.length - 1], content: 'Something went wrong. Please try again.', streaming: false }
-        return u
-      })
+      setAssistant({ content: 'Something went wrong. Please try again.', streaming: false })
     } finally {
       setLoading(false)
     }

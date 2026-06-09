@@ -46,3 +46,21 @@ def test_plugin_update_env_key_accepts_valid():
 def test_plugin_update_env_none_is_allowed():
     p = PluginUpdate(env=None)
     assert p.env is None
+
+
+def test_plugin_command_rejects_bare_shell():
+    """A plugin must launch its MCP server, not a shell (blocks `sh -c …`)."""
+    for cmd in ("/bin/sh", "bash", "/usr/bin/zsh", "powershell.exe"):
+        with pytest.raises(ValidationError):
+            PluginCreate(name="ok", command=cmd, args=["-c", "echo hi"], env={})
+
+
+def test_plugin_update_command_rejects_bare_shell():
+    with pytest.raises(ValidationError):
+        PluginUpdate(command="/bin/bash")
+
+
+def test_plugin_command_allows_real_launchers():
+    for cmd in ("node", "/opt/homebrew/bin/node", "python3", "uvx"):
+        p = PluginCreate(name="ok", command=cmd, args=["server.js"], env={})
+        assert p.command == cmd

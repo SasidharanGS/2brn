@@ -34,13 +34,24 @@ export default class ErrorBoundary extends Component<Props, State> {
           >
             {this.state.message}
           </div>
-          <button
-            onClick={this.handleReload}
-            className="px-4 py-2 rounded-[8px] text-[13px] font-medium"
-            style={{ background: 'var(--accent)', color: '#fff' }}
-          >
-            Reload
-          </button>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => this.setState({ hasError: false, message: '' })}
+              className="px-4 py-2 rounded-[8px] text-[13px] font-medium"
+              style={{ background: 'var(--bg-surface-2)', color: 'var(--text)', border: '1px solid var(--border)' }}
+            >
+              Try again
+            </button>
+            <button
+              type="button"
+              onClick={this.handleReload}
+              className="px-4 py-2 rounded-[8px] text-[13px] font-medium"
+              style={{ background: 'var(--accent)', color: '#fff' }}
+            >
+              Reload
+            </button>
+          </div>
         </div>
       )
     }

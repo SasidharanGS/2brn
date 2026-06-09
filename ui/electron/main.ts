@@ -3,6 +3,7 @@ import { spawn, ChildProcess } from 'child_process'
 import * as fs from 'fs'
 import * as path from 'path'
 import * as http from 'http'
+import * as os from 'os'
 
 const DAEMON_PORT = 7842
 const DAEMON_HOST = '127.0.0.1'
@@ -21,6 +22,17 @@ let healthPollTimer: ReturnType<typeof setInterval> | null = null
 
 function isDev(): boolean {
   return !app.isPackaged
+}
+
+function readApiToken(): string {
+  // The daemon writes a 0600 token file in ~/.2brn (or $BRN_HOME). The renderer
+  // can't read files, so the main process reads it and exposes it over IPC.
+  try {
+    const home = process.env.BRN_HOME || path.join(os.homedir(), '.2brn')
+    return fs.readFileSync(path.join(home, 'api_token'), 'utf-8').trim()
+  } catch {
+    return ''
+  }
 }
 
 function resolveReal(p: string): string | null {
@@ -182,6 +194,7 @@ function createWindow(): void {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: true,
     },
   })
 
@@ -198,6 +211,7 @@ function createWindow(): void {
 }
 
 ipcMain.handle('get-daemon-port', () => DAEMON_PORT)
+ipcMain.handle('get-api-token', () => readApiToken())
 ipcMain.handle('get-platform', () => process.platform)
 ipcMain.handle('get-theme', () => nativeTheme.shouldUseDarkColors ? 'dark' : 'light')
 
@@ -243,3 +257,12 @@ app.on('quit', () => {
   if (healthPollTimer) clearInterval(healthPollTimer)
   daemon?.kill()
 })
+
+// Kill the spawned daemon on external termination (kill, OS shutdown), not just
+// on a clean Electron quit, so it isn't orphaned on port 7842.
+for (const sig of ['SIGTERM', 'SIGINT'] as const) {
+  process.on(sig, () => {
+    daemon?.kill()
+    app.quit()
+  })
+}

@@ -7,16 +7,15 @@ locally-seeded SQLite DB.
 from __future__ import annotations
 
 import sqlite3
-from datetime import datetime, timedelta
+from datetime import UTC, datetime
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from brn_daemon.db import get_db_path, init_db
-from brn_daemon.routes.insights_routes import router as insights_router
 from brn_daemon.routes.insights_routes import _cluster_summaries
-
+from brn_daemon.routes.insights_routes import router as insights_router
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -174,14 +173,32 @@ def test_summary_day_top_apps_includes_chrome_and_twitter(seeded_client):
 def test_summary_day_heatmap_dominant_state_at_morning_hours(seeded_client):
     r = seeded_client.get("/insights/summary?period=day&date=2026-05-23")
     heatmap = {cell["hour"]: cell for cell in r.json()["hourly_heatmap"]}
-    # 09:* had only productive activities
-    assert heatmap[9]["dominant_state"] == "productive"
-    assert heatmap[9]["pct"] > 0
-    # 14:* had only distracted
-    assert heatmap[14]["dominant_state"] == "distracted"
-    # 03:* had no activities — empty cell
-    assert heatmap[3]["pct"] == 0
-    assert heatmap[3]["dominant_state"] is None
+
+    local_offset = datetime.now(UTC).astimezone().utcoffset()
+
+    def utc_to_local_hour(utc_h: int) -> int:
+        dt = datetime(2026, 5, 23, utc_h, 0, 0, tzinfo=UTC)
+        return (dt + local_offset).hour
+
+    prod_hour = utc_to_local_hour(9)
+    dist_hour = utc_to_local_hour(14)
+
+    # Productive block seeded at UTC 09:* → local prod_hour
+    assert heatmap[prod_hour]["dominant_state"] == "productive", (
+        f"Expected hour {prod_hour} to be productive, got: {heatmap[prod_hour]}"
+    )
+    assert heatmap[prod_hour]["pct"] > 0
+
+    # Distracted seeded at UTC 14:* → local dist_hour
+    assert heatmap[dist_hour]["dominant_state"] == "distracted", (
+        f"Expected hour {dist_hour} to be distracted, got: {heatmap[dist_hour]}"
+    )
+
+    # UTC 03:* → some local hour that had no activities (guard: only check if no overlap)
+    empty_hour = utc_to_local_hour(3)
+    if empty_hour not in (prod_hour, dist_hour):
+        assert heatmap[empty_hour]["pct"] == 0
+        assert heatmap[empty_hour]["dominant_state"] is None
 
 
 def test_summary_day_comparison_baseline_label(seeded_client):

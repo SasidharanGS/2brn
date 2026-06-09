@@ -1,0 +1,59 @@
+name: 🐛 Bug report
+description: Report something that isn't working as expected
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for filing a bug! 2brn is local-first and captures your screen — please **do not**
+        paste screenshots, OCR text, journal content, or anything from `~/.2brn/` that you wouldn't
+        want to be public.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear description of the bug and what you expected to happen instead.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. ...
+        2. ...
+        3. ...
+    validations:
+      required: true
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options:
+        - Daemon (Python / FastAPI)
+        - UI (Electron / React)
+        - Capture / OCR / inference
+        - Chat / RAG
+        - Journal / blog / insights
+        - Plugins / integrations
+        - Other / not sure
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: OS and version
+      placeholder: "macOS 15.5 / Windows 11 / Ubuntu 24.04"
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: Python / Node / 2brn versions
+      placeholder: "python 3.12.4, node 20.11, 2brn commit abc1234"
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: Daemon logs with sensitive content scrubbed. Tip — set `BRN_LOG_JSON=1` for structured logs.
+      render: shell

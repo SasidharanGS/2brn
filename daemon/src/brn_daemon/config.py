@@ -82,6 +82,11 @@ class Config:
     capture_interval_seconds: int = 60
     purge_months: int = 12
     paused: bool = False
+    # Opt-in LAN access for the mobile companion. When True the daemon binds
+    # 0.0.0.0 instead of loopback so a paired phone on the same network can reach
+    # it — still gated by the per-machine bearer token. OFF by default; the bind
+    # change takes effect on the next daemon restart.
+    lan_access: bool = False
     excluded_apps: list[str] = field(default_factory=list)
     # Optional internal Joplin note-embedding watcher (off by default for OSS users).
     # When True, JoplinWatcher polls joplin_db_path and embeds notes into note_memories.
@@ -129,6 +134,7 @@ def load_config() -> Config:
             capture_interval_seconds=data.get("capture_interval_seconds", 60),
             purge_months=data.get("purge_months", 12),
             paused=data.get("paused", False),
+            lan_access=data.get("lan_access", False),
             excluded_apps=data.get("excluded_apps", []),
             joplin_enabled=data.get("joplin_enabled", False),
             joplin_db_path=data.get("joplin_db_path", ""),
@@ -154,6 +160,7 @@ def save_config(cfg: Config) -> None:
         "capture_interval_seconds": cfg.capture_interval_seconds,
         "purge_months": cfg.purge_months,
         "paused": cfg.paused,
+        "lan_access": cfg.lan_access,
         "excluded_apps": cfg.excluded_apps,
         "joplin_enabled": cfg.joplin_enabled,
         "joplin_db_path": cfg.joplin_db_path,
@@ -240,9 +247,12 @@ def delete_screenshot_password() -> None:
 def get_gateway_token() -> str | None:
     try:
         import keyring
-        return keyring.get_password(KEYCHAIN_SERVICE, KEYCHAIN_USERNAME)
+        val = keyring.get_password(KEYCHAIN_SERVICE, KEYCHAIN_USERNAME)
+        if val:
+            return val
     except Exception:
-        return os.environ.get("BRN_GATEWAY_TOKEN")
+        pass
+    return os.environ.get("BRN_GATEWAY_TOKEN")
 
 
 def set_gateway_token(token: str) -> None:

@@ -49,15 +49,40 @@ def _clean_body(body: str) -> str:
 
 
 def chunk_markdown(text: str) -> list[str]:
-    """Split markdown into ~400-word chunks, respecting heading boundaries."""
+    """Split markdown into ~CHUNK_SIZE-word chunks at heading then blank-line
+    (paragraph) boundaries, preserving the original text — code fences, tables,
+    lists and indentation stay intact instead of being collapsed to
+    whitespace-separated words (which mangled them and hurt retrieval)."""
     sections = re.split(r'\n(?=#{1,3} )', text)
-    chunks = []
+    chunks: list[str] = []
+    buf: list[str] = []
+    count = 0
+
+    def flush() -> None:
+        nonlocal buf, count
+        joined = "\n\n".join(buf).strip()
+        if joined:
+            chunks.append(joined)
+        buf, count = [], 0
+
     for section in sections:
-        words = section.split()
-        for i in range(0, len(words), CHUNK_SIZE):
-            chunk = " ".join(words[i : i + CHUNK_SIZE])
-            if chunk.strip():
-                chunks.append(chunk)
+        for para in re.split(r'\n\s*\n', section):
+            pwords = para.split()
+            if len(pwords) > CHUNK_SIZE:
+                # A single oversized paragraph (e.g. a long unbroken run): flush
+                # what's buffered, then hard word-split it so no chunk exceeds
+                # the embedding budget.
+                flush()
+                for i in range(0, len(pwords), CHUNK_SIZE):
+                    piece = " ".join(pwords[i : i + CHUNK_SIZE])
+                    if piece.strip():
+                        chunks.append(piece)
+                continue
+            if buf and count + len(pwords) > CHUNK_SIZE:
+                flush()
+            buf.append(para)
+            count += len(pwords)
+    flush()
     return chunks or ([text[:2000]] if text.strip() else [])
 
 

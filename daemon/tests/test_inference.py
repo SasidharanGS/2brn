@@ -113,6 +113,13 @@ async def test_started_at_stored_without_timezone_offset(tmp_home, db):
     async def fake_chat(messages):
         return '{"summary": "test", "tags": [], "task_category": "work", "task_category_confidence": 0.9, "productivity_state": "productive", "productivity_confidence": 0.9}'
 
+    # A real capture must exist: activities.capture_id is a FK and the daemon now
+    # enforces foreign_keys (via get_conn), so a dangling capture_id is rejected.
+    await db.execute(
+        "INSERT INTO captures (captured_at, app_name) VALUES ('2024-01-01T08:00:00.000000', 'TestApp')"
+    )
+    await db.commit()
+
     from brn_daemon.inference import InferenceQueue
     with patch("brn_daemon.inference.parse_inference_response", return_value=fake_result):
         queue = InferenceQueue(db_path_fn=lambda: str(tmp_home / "2brn.db"), chat_fn=fake_chat)
@@ -235,3 +242,26 @@ async def test_heal_unembedded_re_embeds_null_chroma_id(tmp_home, db):
 
     assert count == 1
     mock_embed.embed_activity.assert_called_once()
+
+
+async def test_process_one_uses_capture_time_for_started_at(tmp_home, db):
+    """started_at must be the capture's own timestamp, not the inference time
+    (review finding F-CORE-2): a queue backlog must not re-date activities to
+    when they were processed.
+    """
+    from brn_daemon.db import get_db_path
+
+    chat_fn = AsyncMock(return_value='{"summary":"s","tags":[],"task_category":"work","task_category_confidence":0.9,"productivity_state":"productive","productivity_confidence":0.8}')
+    q = InferenceQueue(chat_fn=chat_fn, db_path_fn=get_db_path)
+
+    captured_at = "2024-03-03T08:00:00.000000"
+    await db.execute("INSERT INTO captures (captured_at, app_name) VALUES (?, 'App')", (captured_at,))
+    await db.commit()
+    capture_id = (await (await db.execute("SELECT last_insert_rowid()")).fetchone())[0]
+
+    # captured_at omitted → must fall back to the capture row's own timestamp.
+    await q._process_one(capture_id, "App", "Win", "ocr text")
+
+    cur = await db.execute("SELECT started_at FROM activities WHERE capture_id = ?", (capture_id,))
+    started_at = (await cur.fetchone())[0]
+    assert started_at == captured_at, f"started_at should equal capture time, got {started_at!r}"

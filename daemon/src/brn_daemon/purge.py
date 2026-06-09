@@ -1,5 +1,6 @@
+import calendar
 import logging
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from pathlib import Path
 
 import aiosqlite
@@ -22,7 +23,14 @@ async def purge_old_captures(months: int = 12, chroma_store=None) -> int:
     Returns the number of capture rows deleted.
     `chroma_store` is an optional ChromaStore instance for removing stale embeddings.
     """
-    cutoff = datetime.now(UTC) - timedelta(days=months * 30)
+    # Subtract whole calendar months (not months*30 days, which drifts ~5 days/yr).
+    now = datetime.now(UTC)
+    year, month = now.year, now.month - months
+    while month <= 0:
+        month += 12
+        year -= 1
+    day = min(now.day, calendar.monthrange(year, month)[1])
+    cutoff = now.replace(year=year, month=month, day=day)
     cutoff_str = cutoff.strftime("%Y-%m-%dT%H:%M:%S.%f")
     files_deleted = 0
 
@@ -35,16 +43,6 @@ async def purge_old_captures(months: int = 12, chroma_store=None) -> int:
 
         if not old_captures:
             return 0
-
-        for _capture_id, file_path in old_captures:
-            if file_path:
-                try:
-                    p = Path(file_path)
-                    if p.exists():
-                        p.unlink()
-                        files_deleted += 1
-                except Exception:
-                    logger.exception("Could not delete file %s", file_path)
 
         ids = [row[0] for row in old_captures]
 
@@ -71,6 +69,19 @@ async def purge_old_captures(months: int = 12, chroma_store=None) -> int:
                 f"DELETE FROM captures WHERE id IN ({placeholders})", batch
             )
         await conn.commit()
+
+    # Delete screenshot files only AFTER the DB deletions commit. A crash in
+    # between leaks a few orphaned files (harmless) rather than leaving DB rows
+    # that point at missing files (which would surface as broken images).
+    for _capture_id, file_path in old_captures:
+        if file_path:
+            try:
+                p = Path(file_path)
+                if p.exists():
+                    p.unlink()
+                    files_deleted += 1
+            except Exception:
+                logger.exception("Could not delete file %s", file_path)
 
     # Remove stale ChromaDB embeddings outside the SQLite transaction
     if chroma_store is not None and chroma_ids:

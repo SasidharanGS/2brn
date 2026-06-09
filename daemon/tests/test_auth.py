@@ -1,4 +1,5 @@
 """Tests for loopback API authentication (review finding F-SEC-1)."""
+import pytest
 from httpx import ASGITransport, AsyncClient
 
 from brn_daemon import main as main_mod
@@ -51,3 +52,28 @@ async def test_auth_inert_when_no_token_loaded(tmp_home):
     app = main_mod.create_app()
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as client:
         assert (await client.get("/captures?date=2026-01-01")).status_code == 200
+
+
+@pytest.mark.parametrize("method,path,body", [
+    ("GET",    "/connection-info",  None),
+    ("POST",   "/ingest/note",      {"text": "hi"}),
+    ("GET",    "/ingest/notes",     None),
+    ("DELETE", "/ingest/notes/1",   None),
+])
+async def test_mobile_endpoints_require_token(tmp_home, monkeypatch, method, path, body):
+    """Every new mobile-bridge endpoint returns 401 when no token is provided."""
+    from brn_daemon.db import init_db
+
+    await init_db()
+    monkeypatch.setitem(main_mod.app_state, "api_token", "secret-token")
+    app = main_mod.create_app()
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as client:
+        if method == "GET":
+            resp = await client.get(path)
+        elif method == "POST":
+            resp = await client.post(path, json=body)
+        else:
+            resp = await client.delete(path)
+        assert resp.status_code == 401, (
+            f"{method} {path} returned {resp.status_code}, expected 401"
+        )

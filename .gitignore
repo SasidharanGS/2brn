@@ -77,3 +77,7 @@ worktrees/
 # Tool caches
 .vite/
 .sisyphus/
+
+# ── App icon resources (override build/ above; favicon is SVG to dodge *.png) ──
+# electron-builder reads ui/build/icon.icns; keep the icon + its source tracked.
+!ui/build/

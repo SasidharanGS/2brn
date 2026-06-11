@@ -34,7 +34,11 @@ The following are especially relevant to 2brn's threat model:
   under `~/.2brn/`. Screenshots can be AES-256-GCM encrypted.
 - **Secret handling** — API keys and plugin secrets are stored in the OS keychain
   and must never be written to disk or logs.
-- **The local API** — the daemon listens on `127.0.0.1:7842` (loopback only).
+- **The local API** — the daemon listens on `127.0.0.1:7842` (loopback) by
+  default. Every endpoint except the `/status` liveness probe requires a
+  per-machine bearer token (`~/.2brn/api_token`). Opting into `lan_access` binds
+  `0.0.0.0:7842` for the mobile companion; the same token is the gate, and
+  transport is plain HTTP on the LAN (TLS is future work).
 - **The plugin system** — plugins are local MCP servers launched as subprocesses
   over stdio. Reports about sandboxing, argument injection, or secret leakage are
   welcome.

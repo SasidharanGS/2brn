@@ -1,7 +1,7 @@
 # Mobile bridge (companion app support)
 
-These are **additive, opt-in** changes that let the [2brn mobile companion](https://github.com/SasidharanGS/2brn)
-(React Native / Android) reach the daemon and feed it shared content. They are
+These are **additive, opt-in** changes that let the 2brn mobile companion
+(React Native / Expo Android) reach the daemon and feed it shared content. They are
 **off by default** — with no config change the daemon behaves exactly as before
 (loopback-only, no new behavior).
 

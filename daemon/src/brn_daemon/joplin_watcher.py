@@ -18,6 +18,7 @@ import asyncio
 import logging
 import re
 import sqlite3
+from functools import partial
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -261,11 +262,19 @@ class JoplinWatcher:
             }
             for i in range(len(chunks))
         ]
-        collection.upsert(
-            ids=ids,
-            documents=chunks,
-            metadatas=metadatas,
-            embeddings=embeddings,
+        # ChromaDB's upsert is synchronous and can do real work (HNSW index
+        # update + disk write), so run it in the default executor rather than
+        # blocking the event loop that also drives capture/inference/HTTP.
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(
+            None,
+            partial(
+                collection.upsert,
+                ids=ids,
+                documents=chunks,
+                metadatas=metadatas,
+                embeddings=embeddings,
+            ),
         )
 
         logger.debug("Embedded %d chunks from Joplin note '%s'", len(chunks), title)

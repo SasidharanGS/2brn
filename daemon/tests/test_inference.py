@@ -152,6 +152,24 @@ def test_build_prompt_includes_app_and_ocr():
     assert "main.py" in prompt
     assert "def capture_screen" in prompt
 
+def test_build_prompt_sparse_text_classifies_from_metadata_alone():
+    prompt = build_inference_prompt(
+        app_name="VLC", window_title="movie.mp4 — VLC", ocr_text="x7@"
+    )
+    assert "VLC" in prompt
+    assert "movie.mp4" in prompt
+    assert "x7@" not in prompt  # OCR noise must not read as screen content
+    assert "window title alone" in prompt
+
+
+def test_build_prompt_readable_text_includes_ocr():
+    prompt = build_inference_prompt(
+        app_name="Code", window_title="main.py", ocr_text="a" * 30
+    )
+    assert "OCR text:" in prompt
+    assert "window title alone" not in prompt
+
+
 def test_parse_valid_inference_response():
     raw = json.dumps({
         "summary": "User was writing Python code in VS Code.",

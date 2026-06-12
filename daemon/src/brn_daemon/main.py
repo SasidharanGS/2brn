@@ -418,6 +418,21 @@ class _MonitorMemo:
     ocr_text: str
 
 
+@dataclass(frozen=True)
+class _SparseMemo:
+    """The last metadata-classified sparse capture per monitor.
+
+    Metadata-only classification depends only on (app_name, window_title), so
+    while those stay the same, later sparse frames clone this capture's
+    activity instead of re-running inference — a video would otherwise pay an
+    LLM call for the same classification on every change keep.
+    """
+
+    app_name: str
+    window_title: str
+    capture_id: int
+
+
 async def _ocr_kept_frames(
     loop: asyncio.AbstractEventLoop,
     kept: list[KeptFrame],
@@ -443,9 +458,96 @@ async def _ocr_kept_frames(
     ]
 
 
+async def _record_capture(
+    conn,
+    inference_queue: InferenceQueue,
+    item: KeptFrame,
+    file_path,
+    ocr_text: str,
+    reused: bool,
+    ocr_memos: dict[int, _MonitorMemo],
+    sparse_memos: dict[int, _SparseMemo],
+) -> None:
+    """Insert one kept frame's capture row and route it to a classification source.
+
+    Cheapest source first:
+    - unchanged heartbeat → clone the memoised fresh capture's activity
+      (``reused`` implies the monitor has an entry in ``ocr_memos``)
+    - readable OCR text → normal inference
+    - sparse text with app/window metadata → metadata-only inference; while
+      the metadata stays the same, later sparse frames clone the result
+    - nothing to go on → record the capture, leave it unclassified
+    """
+    frame = item.frame
+    now_iso = utc_now_iso()
+    cur = await conn.execute(
+        "INSERT INTO captures (captured_at, app_name, window_title, file_path, "
+        "ocr_text, phash, trigger, monitor_index) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (now_iso, frame.app_name, frame.window_title, str(file_path),
+         ocr_text, item.phash, item.trigger, frame.monitor_index)
+    )
+    await conn.commit()
+    capture_id: int = cur.lastrowid  # type: ignore[assignment]
+
+    if reused:
+        cloned = await clone_activity(
+            conn,
+            source_capture_id=ocr_memos[frame.monitor_index].capture_id,
+            capture_id=capture_id,
+            started_at=now_iso,
+        )
+        if cloned:
+            logger.info(
+                "Capture #%d → unchanged heartbeat — reused OCR + classification",
+                capture_id,
+            )
+            return
+        # Source has no activity yet (inference pending, failed, or sparse) —
+        # fall through to the normal routing with the reused text, but keep the
+        # memo pointing at the original root so later heartbeats can still
+        # clone its activity once it lands.
+    else:
+        ocr_memos[frame.monitor_index] = _MonitorMemo(
+            capture_id=capture_id, ocr_text=ocr_text
+        )
+
+    if not is_text_sparse(ocr_text):
+        await inference_queue.enqueue(
+            capture_id, frame.app_name, frame.window_title, ocr_text, now_iso
+        )
+        logger.info("Capture #%d → inference queued", capture_id)
+        return
+
+    if frame.app_name or frame.window_title:
+        memo = sparse_memos.get(frame.monitor_index)
+        if (
+            memo is not None
+            and (memo.app_name, memo.window_title) == (frame.app_name, frame.window_title)
+            and await clone_activity(
+                conn, source_capture_id=memo.capture_id,
+                capture_id=capture_id, started_at=now_iso,
+            )
+        ):
+            logger.info("Capture #%d → sparse text — cloned metadata classification", capture_id)
+            return
+        # New metadata (or the memoised classification never landed): infer from
+        # app + window title, and make this capture the monitor's new sparse root.
+        await inference_queue.enqueue(
+            capture_id, frame.app_name, frame.window_title, ocr_text, now_iso
+        )
+        sparse_memos[frame.monitor_index] = _SparseMemo(
+            app_name=frame.app_name, window_title=frame.window_title, capture_id=capture_id
+        )
+        logger.info("Capture #%d → sparse text — metadata-only inference queued", capture_id)
+        return
+
+    logger.info("Capture #%d → saved (no readable text or metadata, skipping inference)", capture_id)
+
+
 async def _capture_loop(cfg, inference_queue: InferenceQueue):
     policy = CapturePolicy(heartbeat_seconds=cfg.capture_interval_seconds)
     ocr_memos: dict[int, _MonitorMemo] = {}
+    sparse_memos: dict[int, _SparseMemo] = {}
     excluded_apps: set[str] = set()
     exclusion_cache_time = 0.0
     EXCLUSION_CACHE_TTL = 30.0
@@ -510,49 +612,13 @@ async def _capture_loop(cfg, inference_queue: InferenceQueue):
             # ── Phase 2: OCR — reused for unchanged heartbeats, else off-loop ─
             ocr_results = await _ocr_kept_frames(loop, kept, ocr_memos)
 
-            # ── Phase 3: DB inserts + inference enqueue ────────────────────────
+            # ── Phase 3: DB insert + classification routing per kept frame ────
             async with get_conn() as conn:
                 for item, file_path, (ocr_text, reused) in zip(kept, file_paths, ocr_results):
-                    frame = item.frame
-                    now_iso = utc_now_iso()
-                    cur = await conn.execute(
-                        "INSERT INTO captures (captured_at, app_name, window_title, file_path, "
-                        "ocr_text, phash, trigger, monitor_index) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                        (now_iso, frame.app_name, frame.window_title, str(file_path),
-                         ocr_text, item.phash, item.trigger, frame.monitor_index)
+                    await _record_capture(
+                        conn, inference_queue, item, file_path, ocr_text, reused,
+                        ocr_memos, sparse_memos,
                     )
-                    await conn.commit()
-                    capture_id: int = cur.lastrowid  # type: ignore[assignment]
-
-                    if reused:
-                        cloned = await clone_activity(
-                            conn,
-                            source_capture_id=ocr_memos[frame.monitor_index].capture_id,
-                            capture_id=capture_id,
-                            started_at=now_iso,
-                        )
-                        if cloned:
-                            logger.info(
-                                "Capture #%d → unchanged heartbeat — reused OCR + classification",
-                                capture_id,
-                            )
-                            continue
-                        # Source has no activity yet (inference pending, failed, or
-                        # sparse) — fall through to the normal path with the reused
-                        # text, but keep the memo pointing at the original root so
-                        # later heartbeats can still clone its activity once it lands.
-                    else:
-                        ocr_memos[frame.monitor_index] = _MonitorMemo(
-                            capture_id=capture_id, ocr_text=ocr_text
-                        )
-
-                    if not is_text_sparse(ocr_text):
-                        await inference_queue.enqueue(
-                            capture_id, frame.app_name, frame.window_title, ocr_text, now_iso
-                        )
-                        logger.info("Capture #%d → inference queued", capture_id)
-                    else:
-                        logger.info("Capture #%d → saved (sparse text, skipping inference)", capture_id)
 
             app_state["last_captured_at"] = datetime.now(UTC).isoformat()
             app_state["capture_count_today"] = app_state.get("capture_count_today", 0) + 1

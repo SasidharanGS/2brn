@@ -19,7 +19,9 @@ you actually did. Your data stays on your machine.
   activity summary, a task category (`work` / `research` / `play` / `learning` /
   `communication` / `creative` / `admin` / `other`) and a productivity state;
   heartbeat captures of an unchanged screen reuse the previous OCR text and
-  classification instead of paying Tesseract + LLM again
+  classification instead of paying Tesseract + LLM again; screens with no
+  readable text (videos, images, games) are classified from the app name and
+  window title instead of being left unclassified
   (`productive` / `focused` / `chilling` / `procrastinating` / `distracted` /
   `in-meeting` / `idle`)
 - 💬 **Chat (RAG)** — ask questions about your day; answers are grounded in your

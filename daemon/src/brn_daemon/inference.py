@@ -57,6 +57,19 @@ class InferenceResult:
 
 
 def build_inference_prompt(app_name: str, window_title: str, ocr_text: str) -> str:
+    """Build the user prompt for one capture.
+
+    Sparse OCR text (videos, images, games) carries no signal — worse, a few
+    noise characters would read as the screen's content. Those captures are
+    classified from the app name and window title alone, which usually name
+    exactly what is on screen ("movie.mp4 — VLC", a YouTube tab title).
+    """
+    if is_text_sparse(ocr_text):
+        return (
+            f"App: {app_name} | Window: {window_title}\n"
+            "No readable text could be extracted from the screen (video, image, or other "
+            "graphical content). Classify from the app name and window title alone."
+        )
     return f"App: {app_name} | Window: {window_title}\nOCR text:\n{ocr_text[:MAX_OCR_CHARS]}"
 
 

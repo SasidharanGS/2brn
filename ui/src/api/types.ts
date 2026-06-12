@@ -67,35 +67,25 @@ export interface SessionsResponse {
   }
 }
 
-export interface DailyInsights {
-  date: string
-  categories: { task_category: string; count: number; avg_confidence: number }[]
-  productivity_states: { productivity_state: string; count: number }[]
-  top_apps: { app_name: string; count: number }[]
-}
-
 // ── Insights summary (Day / Week / Month) ─────────────────────────────────────
+// All pct values are shares of observed block-time (interval union).
 
 export type InsightsPeriod = 'day' | 'week' | 'month'
 
 export interface InsightsCategoryBucket {
   task_category: string
-  count: number
   seconds: number
-  pct: number  // share of observed block-time
-  avg_confidence: number | null
+  pct: number
 }
 
 export interface InsightsStateBucket {
   productivity_state: string
-  count: number
   seconds: number
   pct: number
 }
 
 export interface InsightsAppBucket {
   app_name: string
-  count: number
   seconds: number
   pct: number
 }
@@ -121,8 +111,8 @@ export interface InsightsComparison {
 
 export interface RecurringActivity {
   canonical_summary: string
-  pct: number
-  session_count: number
+  occurrences: number
+  approx_seconds: number  // occurrences × capture interval
   variant_count: number
 }
 
@@ -130,7 +120,6 @@ export interface InsightsSummary {
   period: InsightsPeriod
   date: string
   range: { start: string; end: string; span_days: number }
-  total_captures: number
   observed_seconds: number
   categories: InsightsCategoryBucket[]
   productivity_states: InsightsStateBucket[]

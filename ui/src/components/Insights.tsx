@@ -396,14 +396,14 @@ export default function Insights() {
                 {summary.recurring_activities.map((r, i) => (
                   <div key={i} className="flex items-start gap-3">
                     <span className="text-[11px] font-mono w-14 shrink-0 mt-0.5" style={{ color: 'var(--accent)' }}>
-                      {fmtPct(r.pct)}
+                      ≈{fmtDur(r.approx_seconds)}
                     </span>
                     <div className="flex-1 min-w-0">
                       <div className="text-[13px] truncate" style={{ color: 'var(--text)' }}>
                         {r.canonical_summary}
                       </div>
                       <div className="text-[10px] mt-0.5" style={{ color: 'var(--text-dim)' }}>
-                        {r.session_count} session{r.session_count === 1 ? '' : 's'}
+                        {r.occurrences} occurrence{r.occurrences === 1 ? '' : 's'}
                         {r.variant_count > 1 ? ` · ${r.variant_count} variants` : ''}
                       </div>
                     </div>

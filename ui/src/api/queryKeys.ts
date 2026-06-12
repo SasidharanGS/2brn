@@ -1,6 +1,5 @@
 export const queryKeys = {
   status: () => ['status'] as const,
-  dailyInsights: (date: string) => ['insights', 'daily', date] as const,
   insightsSummary: (date: string, period: string) =>
     ['insights', 'summary', period, date] as const,
   activities: (date: string) => ['activities', date] as const,

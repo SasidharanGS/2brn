@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { api } from '../../api/client'
 import { queryKeys } from '../../api/queryKeys'
 import { stateChip, categoryChip } from '../../utils/design'
+import { fmtDur } from '../../utils/time'
 import { toDateStr } from '../../context/DateContext'
 
 type ThemeMode = 'light' | 'system' | 'dark'
@@ -20,18 +21,17 @@ interface Props {
 export default function StatsBar({ themeMode, onThemeModeChange }: Props) {
   const today = toDateStr(new Date())
   const { data: insights } = useQuery({
-    queryKey: queryKeys.dailyInsights(today),
-    queryFn: () => api.getDailyInsights(today),
+    queryKey: queryKeys.insightsSummary(today, 'day'),
+    queryFn: () => api.getInsightsSummary(today, 'day'),
     refetchInterval: 30_000,
   })
 
+  // All time-based: buckets arrive sorted by block-time; focus% is the
+  // productive share of observed time.
   const topState    = insights?.productivity_states[0]?.productivity_state ?? null
   const topCategory = insights?.categories[0]?.task_category ?? null
-  const total       = insights?.categories.reduce((s, c) => s + c.count, 0) ?? 0
-  const focusedCt   = insights?.productivity_states
-    .filter(s => ['productive', 'focused'].includes(s.productivity_state))
-    .reduce((s, c) => s + c.count, 0) ?? 0
-  const focusPct = total > 0 ? Math.round((focusedCt / total) * 100) : 0
+  const observed    = insights?.observed_seconds ?? 0
+  const focusPct    = Math.round(insights?.comparison.productive.current_pct ?? 0)
 
   const sc = stateChip(topState)
   const cc = categoryChip(topCategory)
@@ -63,6 +63,16 @@ export default function StatsBar({ themeMode, onThemeModeChange }: Props) {
           style={{ background: cc.bg, color: cc.text }}
         >
           {topCategory ?? '—'}
+        </span>
+      </div>
+
+      <div className="w-px h-3.5" style={{ background: 'var(--border-2)' }} />
+
+      {/* Screen time */}
+      <div className="flex items-center gap-2">
+        <span style={{ color: 'var(--text-dim)' }}>screen</span>
+        <span className="font-mono font-medium" style={{ color: 'var(--text-muted)' }}>
+          {observed > 0 ? fmtDur(observed) : '—'}
         </span>
       </div>
 

@@ -80,6 +80,11 @@ class Config:
         model="",
     ))
     capture_interval_seconds: int = 60
+    # Capture-loop tuning (see brn_daemon.capture_policy for what each does).
+    # The loop reads these at startup; changes apply on daemon restart.
+    change_cooldown_seconds: float = 5.0
+    max_idle_tick_seconds: float = 16.0
+    similarity_threshold: float = 0.95
     purge_months: int = 12
     paused: bool = False
     # Opt-in LAN access for the mobile companion. When True the daemon binds
@@ -94,6 +99,16 @@ class Config:
     joplin_db_path: str = ""
     journal_schedule: ScheduleConfig = field(default_factory=lambda: ScheduleConfig(hour=21, minute=0))
     blog_schedule: BlogScheduleConfig = field(default_factory=BlogScheduleConfig)
+
+    def __post_init__(self):
+        if self.capture_interval_seconds < 1:
+            raise ValueError(f"capture_interval_seconds must be >= 1, got {self.capture_interval_seconds}")
+        if self.change_cooldown_seconds < 0:
+            raise ValueError(f"change_cooldown_seconds must be >= 0, got {self.change_cooldown_seconds}")
+        if self.max_idle_tick_seconds < 1:
+            raise ValueError(f"max_idle_tick_seconds must be >= 1, got {self.max_idle_tick_seconds}")
+        if not (0.5 < self.similarity_threshold <= 1.0):
+            raise ValueError(f"similarity_threshold must be in (0.5, 1.0], got {self.similarity_threshold}")
 
 
 def _config_path() -> Path:
@@ -132,6 +147,9 @@ def load_config() -> Config:
             chat_provider=_parse_provider(data.get("chat_provider", {})),
             embed_provider=_parse_provider(data.get("embed_provider", {})),
             capture_interval_seconds=data.get("capture_interval_seconds", 60),
+            change_cooldown_seconds=data.get("change_cooldown_seconds", 5.0),
+            max_idle_tick_seconds=data.get("max_idle_tick_seconds", 16.0),
+            similarity_threshold=data.get("similarity_threshold", 0.95),
             purge_months=data.get("purge_months", 12),
             paused=data.get("paused", False),
             lan_access=data.get("lan_access", False),
@@ -158,6 +176,9 @@ def save_config(cfg: Config) -> None:
         "chat_provider": _provider_dict(cfg.chat_provider),
         "embed_provider": _provider_dict(cfg.embed_provider),
         "capture_interval_seconds": cfg.capture_interval_seconds,
+        "change_cooldown_seconds": cfg.change_cooldown_seconds,
+        "max_idle_tick_seconds": cfg.max_idle_tick_seconds,
+        "similarity_threshold": cfg.similarity_threshold,
         "purge_months": cfg.purge_months,
         "paused": cfg.paused,
         "lan_access": cfg.lan_access,

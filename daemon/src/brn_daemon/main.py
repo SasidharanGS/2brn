@@ -545,7 +545,12 @@ async def _record_capture(
 
 
 async def _capture_loop(cfg, inference_queue: InferenceQueue):
-    policy = CapturePolicy(heartbeat_seconds=cfg.capture_interval_seconds)
+    policy = CapturePolicy(
+        heartbeat_seconds=cfg.capture_interval_seconds,
+        similarity_threshold=cfg.similarity_threshold,
+        change_cooldown_seconds=cfg.change_cooldown_seconds,
+        max_idle_tick_seconds=cfg.max_idle_tick_seconds,
+    )
     ocr_memos: dict[int, _MonitorMemo] = {}
     sparse_memos: dict[int, _SparseMemo] = {}
     excluded_apps: set[str] = set()

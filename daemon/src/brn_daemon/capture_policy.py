@@ -84,10 +84,12 @@ class CapturePolicy:
         heartbeat_seconds: float,
         similarity_threshold: float = SIMILARITY_THRESHOLD,
         change_cooldown_seconds: float = CHANGE_COOLDOWN_SECONDS,
+        max_idle_tick_seconds: float = MAX_IDLE_TICK_SECONDS,
     ) -> None:
         self._heartbeat_seconds = heartbeat_seconds
         self._similarity_threshold = similarity_threshold
         self._change_cooldown_seconds = change_cooldown_seconds
+        self._max_idle_tick_seconds = max_idle_tick_seconds
         self._baseline_phashes: dict[int, str] = {}  # monitor → phash of last kept frame
         self._last_change_at: dict[int, float] = {}  # monitor → time of last changed keep
         self._last_heartbeat = 0.0
@@ -128,7 +130,7 @@ class CapturePolicy:
         if any_change:
             self._tick_seconds = MIN_TICK_SECONDS
         else:
-            self._tick_seconds = min(self._tick_seconds * 2, MAX_IDLE_TICK_SECONDS)
+            self._tick_seconds = min(self._tick_seconds * 2, self._max_idle_tick_seconds)
         return kept
 
     def next_tick_seconds(self, now: float) -> float:

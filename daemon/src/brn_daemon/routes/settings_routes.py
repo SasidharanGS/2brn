@@ -73,6 +73,9 @@ class SettingsResponse(BaseModel):
     has_chat_key: bool
     has_embed_key: bool
     capture_interval_seconds: int
+    change_cooldown_seconds: float
+    max_idle_tick_seconds: float
+    similarity_threshold: float
     purge_months: int
     paused: bool
     lan_access: bool
@@ -104,6 +107,9 @@ class SettingsUpdateRequest(BaseModel):
     chat_provider: ProviderConfigIn | None = None
     embed_provider: ProviderConfigIn | None = None
     capture_interval_seconds: Annotated[int, Field(ge=1)] | None = None
+    change_cooldown_seconds: Annotated[float, Field(ge=0)] | None = None
+    max_idle_tick_seconds: Annotated[float, Field(ge=1)] | None = None
+    similarity_threshold: Annotated[float, Field(gt=0.5, le=1.0)] | None = None
     purge_months: Annotated[int, Field(ge=1)] | None = None
     lan_access: bool | None = None
     joplin_enabled: bool | None = None
@@ -127,6 +133,9 @@ async def get_settings():
         has_chat_key=bool(get_chat_api_key()),
         has_embed_key=bool(get_embed_api_key()),
         capture_interval_seconds=cfg.capture_interval_seconds,
+        change_cooldown_seconds=cfg.change_cooldown_seconds,
+        max_idle_tick_seconds=cfg.max_idle_tick_seconds,
+        similarity_threshold=cfg.similarity_threshold,
         purge_months=cfg.purge_months,
         paused=cfg.paused,
         lan_access=cfg.lan_access,
@@ -173,6 +182,21 @@ async def update_settings(body: SettingsUpdateRequest):
             set_embed_api_key(p.api_key)
     if body.capture_interval_seconds is not None:
         cfg.capture_interval_seconds = body.capture_interval_seconds
+    if body.change_cooldown_seconds is not None:
+        cfg.change_cooldown_seconds = body.change_cooldown_seconds
+    if body.max_idle_tick_seconds is not None:
+        cfg.max_idle_tick_seconds = body.max_idle_tick_seconds
+    if body.similarity_threshold is not None:
+        cfg.similarity_threshold = body.similarity_threshold
+    # Cross-field check on the merged result: an idle ceiling at or above the
+    # heartbeat would never be reached (sleeps are clamped to the heartbeat),
+    # so reject it as almost certainly a mistake.
+    if cfg.max_idle_tick_seconds >= cfg.capture_interval_seconds:
+        raise HTTPException(
+            400,
+            f"max_idle_tick_seconds ({cfg.max_idle_tick_seconds}) must be smaller than "
+            f"capture_interval_seconds ({cfg.capture_interval_seconds})",
+        )
     if body.purge_months is not None:
         cfg.purge_months = body.purge_months
     if body.lan_access is not None:

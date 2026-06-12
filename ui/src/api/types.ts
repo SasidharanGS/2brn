@@ -154,6 +154,9 @@ export interface AppSettings {
   has_chat_key: boolean
   has_embed_key: boolean
   capture_interval_seconds: number
+  change_cooldown_seconds: number
+  max_idle_tick_seconds: number
+  similarity_threshold: number
   purge_months: number
   paused: boolean
   blog_mirror_enabled: boolean
@@ -176,6 +179,9 @@ export interface SettingsUpdateRequest {
   chat_provider?: ProviderConfigUpdate
   embed_provider?: ProviderConfigUpdate
   capture_interval_seconds?: number
+  change_cooldown_seconds?: number
+  max_idle_tick_seconds?: number
+  similarity_threshold?: number
   purge_months?: number
   blog_mirror_enabled?: boolean
   journal_schedule?: ScheduleConfig

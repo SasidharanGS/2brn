@@ -137,6 +137,9 @@ they live in the OS keychain.
 | Chat provider | `chat_provider` | LLM for inference, journal, blog, and chat (`type`, `base_url`, `model`, optional `extra_headers`) |
 | Embed provider | `embed_provider` | Embeddings for semantic search — `openai_compatible` or `custom` format |
 | Capture interval | `capture_interval_seconds` | Heartbeat seconds between forced captures (default: `60`) |
+| Change cooldown | `change_cooldown_seconds` | Min seconds between change-triggered captures per monitor (default: `5`) |
+| Max idle tick | `max_idle_tick_seconds` | Ceiling for the idle sampling backoff (default: `16`; must stay below the capture interval) |
+| Similarity threshold | `similarity_threshold` | Perceptual-hash similarity above which a frame counts as unchanged (default: `0.95`) |
 | Purge after | `purge_months` | Auto-delete screenshots older than N months (default: `12`) |
 | Paused | `paused` | Pause/resume capture |
 | Excluded apps | `excluded_apps` | App names to never capture |

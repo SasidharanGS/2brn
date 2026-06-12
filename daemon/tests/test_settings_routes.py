@@ -88,3 +88,37 @@ async def test_settings_lan_access_roundtrip(test_client, tmp_home):
 
     r_get2 = await client.get("/settings")
     assert r_get2.json()["lan_access"] == (not original)
+
+
+# ── capture-loop tuning (issue #52) ─────────────────────────────────────────
+
+
+async def test_capture_tuning_roundtrip(test_client, tmp_home):
+    client, _ = test_client
+    resp = await client.put("/settings", json={
+        "capture_interval_seconds": 90,
+        "change_cooldown_seconds": 10,
+        "max_idle_tick_seconds": 30,
+        "similarity_threshold": 0.9,
+    })
+    assert resp.status_code == 200
+    got = (await client.get("/settings")).json()
+    assert got["capture_interval_seconds"] == 90
+    assert got["change_cooldown_seconds"] == 10.0
+    assert got["max_idle_tick_seconds"] == 30.0
+    assert got["similarity_threshold"] == 0.9
+
+
+async def test_put_settings_rejects_out_of_range_threshold(test_client, tmp_home):
+    client, _ = test_client
+    resp = await client.put("/settings", json={"similarity_threshold": 0.4})
+    assert resp.status_code == 422
+
+
+async def test_put_settings_rejects_idle_tick_at_or_above_heartbeat(test_client, tmp_home):
+    client, _ = test_client
+    resp = await client.put(
+        "/settings", json={"capture_interval_seconds": 30, "max_idle_tick_seconds": 30}
+    )
+    assert resp.status_code == 400
+    assert "max_idle_tick_seconds" in resp.json()["detail"]

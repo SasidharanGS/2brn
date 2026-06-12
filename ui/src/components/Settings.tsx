@@ -107,6 +107,11 @@ export default function Settings() {
   })
   const setField = <K extends keyof FormState>(key: K, value: FormState[K]) =>
     setForm(prev => ({ ...prev, [key]: value }))
+  // Capture tuning fields are kept as strings while editing; parsed on save.
+  type TuningState = { interval: string; cooldown: string; idleTick: string; threshold: string }
+  const [tuning, setTuning] = useState<TuningState>({ interval: '', cooldown: '', idleTick: '', threshold: '' })
+  const setTuningField = <K extends keyof TuningState>(key: K, value: string) =>
+    setTuning(prev => ({ ...prev, [key]: value }))
   const [newApp, setNewApp]       = useState('')
   const [saveMessage, setSaveMessage] = useState('')
   const [daemonOwned, setDaemonOwned] = useState<boolean | null>(null)
@@ -152,6 +157,12 @@ export default function Settings() {
       embedKey:     prev.embedKey,
       joplinEnabled: settings.joplin_enabled ?? false,
       joplinDbPath:  settings.joplin_db_path ?? '',
+    }))
+    setTuning(prev => ({
+      interval:  activeId === 'cap-interval'  ? prev.interval  : String(settings.capture_interval_seconds),
+      cooldown:  activeId === 'cap-cooldown'  ? prev.cooldown  : String(settings.change_cooldown_seconds),
+      idleTick:  activeId === 'cap-idle-tick' ? prev.idleTick  : String(settings.max_idle_tick_seconds),
+      threshold: activeId === 'cap-threshold' ? prev.threshold : String(settings.similarity_threshold),
     }))
   }, [settings])
 
@@ -207,6 +218,29 @@ export default function Settings() {
   const togglePause = useMutation({
     mutationFn: (paused: boolean) => api.setPaused(paused),
     onSuccess:  () => qc.invalidateQueries({ queryKey: queryKeys.settings() }),
+  })
+
+  const saveTuning = useMutation({
+    mutationFn: () => {
+      const interval  = parseInt(tuning.interval, 10)
+      const cooldown  = parseFloat(tuning.cooldown)
+      const idleTick  = parseFloat(tuning.idleTick)
+      const threshold = parseFloat(tuning.threshold)
+      if ([interval, cooldown, idleTick, threshold].some(Number.isNaN)) {
+        return Promise.reject(new Error('invalid number'))
+      }
+      return api.updateSettings({
+        capture_interval_seconds: interval,
+        change_cooldown_seconds: cooldown,
+        max_idle_tick_seconds: idleTick,
+        similarity_threshold: threshold,
+      })
+    },
+    onSuccess: () => {
+      flash('Capture settings saved — restart the daemon to apply')
+      qc.invalidateQueries({ queryKey: queryKeys.settings() })
+    },
+    onError: () => flash('Failed to save capture settings (check the values)'),
   })
 
   const addExclusion = useMutation({
@@ -298,6 +332,40 @@ export default function Settings() {
           >
             {settings.paused ? 'Resume' : 'Pause'}
           </button>
+        </div>
+
+        <div className="mt-5 pt-5" style={{ borderTop: '1px solid var(--border-2)' }}>
+          <div className="grid grid-cols-2 gap-4">
+            <Field label="Heartbeat interval" sublabel="seconds between forced captures">
+              <Input id="cap-interval" type="number" min={1} step={1}
+                value={tuning.interval} onChange={e => setTuningField('interval', e.target.value)} />
+            </Field>
+            <Field label="Change cooldown" sublabel="min seconds between change captures">
+              <Input id="cap-cooldown" type="number" min={0} step={0.5}
+                value={tuning.cooldown} onChange={e => setTuningField('cooldown', e.target.value)} />
+            </Field>
+            <Field label="Max idle tick" sublabel="sampling backoff ceiling, seconds">
+              <Input id="cap-idle-tick" type="number" min={1} step={1}
+                value={tuning.idleTick} onChange={e => setTuningField('idleTick', e.target.value)} />
+            </Field>
+            <Field label="Similarity threshold" sublabel="phash duplicate cutoff (0.5–1.0)">
+              <Input id="cap-threshold" type="number" min={0.51} max={1} step={0.01}
+                value={tuning.threshold} onChange={e => setTuningField('threshold', e.target.value)} />
+            </Field>
+          </div>
+          <div className="flex items-center justify-between mt-3">
+            <span className="text-[12px]" style={{ color: 'var(--text-dim)' }}>
+              Applied on the next daemon restart
+            </span>
+            <button
+              onClick={() => saveTuning.mutate()}
+              disabled={saveTuning.isPending}
+              className="px-4 py-2 rounded-[9px] text-[13px] font-semibold transition-all disabled:opacity-40"
+              style={{ background: 'var(--accent)', color: '#fff' }}
+            >
+              {saveTuning.isPending ? 'Saving…' : 'Save capture settings'}
+            </button>
+          </div>
         </div>
       </Section>
 

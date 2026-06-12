@@ -210,3 +210,11 @@ def test_sleep_never_overshoots_the_next_heartbeat():
 def test_sleep_is_at_least_min_tick_even_when_heartbeat_overdue():
     policy = _policy()
     assert policy.next_tick_seconds(1000.0) == 1.0
+
+
+def test_max_idle_tick_ceiling_is_configurable():
+    policy = _policy(max_idle_tick_seconds=4.0)
+    policy.select([_frame()], [HASH_ZERO], now=0.0)
+    for i in range(5):
+        policy.select([_frame()], [HASH_NEAR], now=1.0 + i)
+    assert policy.next_tick_seconds(5.0) == 4.0

@@ -229,3 +229,37 @@ def test_load_config_returns_defaults_when_missing(tmp_home):
 
     result = load_config()
     assert isinstance(result, Config)
+
+
+# ── capture-loop tuning (issue #52) ─────────────────────────────────────────
+
+
+def test_capture_tuning_defaults(tmp_home):
+    cfg = load_config()
+    assert cfg.change_cooldown_seconds == 5.0
+    assert cfg.max_idle_tick_seconds == 16.0
+    assert cfg.similarity_threshold == 0.95
+
+
+def test_capture_tuning_round_trip(tmp_home):
+    cfg = load_config()
+    cfg.change_cooldown_seconds = 10.0
+    cfg.max_idle_tick_seconds = 8.0
+    cfg.similarity_threshold = 0.9
+    save_config(cfg)
+    reloaded = load_config()
+    assert reloaded.change_cooldown_seconds == 10.0
+    assert reloaded.max_idle_tick_seconds == 8.0
+    assert reloaded.similarity_threshold == 0.9
+
+
+@pytest.mark.parametrize("field, value", [
+    ("capture_interval_seconds", 0),
+    ("change_cooldown_seconds", -1.0),
+    ("max_idle_tick_seconds", 0.5),
+    ("similarity_threshold", 0.5),   # boundary: must be strictly above 0.5
+    ("similarity_threshold", 1.01),
+])
+def test_out_of_range_capture_tuning_is_rejected(field, value):
+    with pytest.raises(ValueError):
+        Config(**{field: value})

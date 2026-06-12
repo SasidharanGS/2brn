@@ -3,9 +3,11 @@ import json
 import logging
 import re
 from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
 
 from brn_daemon.db import get_conn
-from brn_daemon.timeutil import utc_iso_to_local_date, utc_now_iso
+from brn_daemon.ocr import is_text_sparse
+from brn_daemon.timeutil import DB_TS_FMT, utc_iso_to_local_date, utc_now_iso
 
 logger = logging.getLogger(__name__)
 
@@ -182,6 +184,59 @@ class InferenceQueue:
             return row[0] if row else None
         except Exception:
             return None
+
+    async def backfill_unclassified(self, *, days: int = 7, grace_minutes: int = 15) -> dict[str, int]:
+        """Re-enqueue captures that have readable OCR text but no activity row.
+
+        A capture loses its classification permanently when inference fails
+        (provider outage) or the queue overflows — nothing retries at capture
+        time, and sessions surface such captures as *unclassified* blocks.
+        This sweep finds them within the last ``days`` days and runs them
+        through the normal inference queue, oldest first. Runs at startup and
+        via POST /activities/backfill.
+
+        Captures younger than ``grace_minutes`` are left alone: they may
+        legitimately still be waiting in the queue, and re-enqueueing them
+        would classify them twice. At most the queue's spare capacity is
+        enqueued per call; ``remaining`` in the result says how many matched
+        but didn't fit — re-run the sweep (or restart) to continue.
+        """
+        import aiosqlite
+        now = datetime.now(UTC)
+        since = (now - timedelta(days=days)).strftime(DB_TS_FMT)
+        until = (now - timedelta(minutes=grace_minutes)).strftime(DB_TS_FMT)
+        spare = max(0, INFERENCE_QUEUE_MAX - self._queue.qsize())
+        # length(trim(...)) >= 20 mirrors is_text_sparse as a coarse SQL
+        # pre-filter; the Python check below stays the authority.
+        candidates_sql = """
+            FROM captures c LEFT JOIN activities a ON a.capture_id = c.id
+            WHERE a.id IS NULL
+              AND length(trim(COALESCE(c.ocr_text, ''))) >= 20
+              AND c.captured_at >= ? AND c.captured_at < ?
+        """
+        async with aiosqlite.connect(self._db_path_fn()) as conn:
+            cur = await conn.execute(f"SELECT COUNT(*) {candidates_sql}", (since, until))
+            row = await cur.fetchone()
+            total = row[0] if row else 0
+            cur = await conn.execute(
+                f"SELECT c.id, c.app_name, c.window_title, c.ocr_text, c.captured_at "
+                f"{candidates_sql} ORDER BY c.captured_at LIMIT ?",
+                (since, until, spare),
+            )
+            rows = await cur.fetchall()
+
+        queued = 0
+        for capture_id, app_name, window_title, ocr_text, captured_at in rows:
+            if is_text_sparse(ocr_text):
+                continue
+            await self.enqueue(capture_id, app_name or "", window_title or "", ocr_text, captured_at)
+            queued += 1
+        if queued:
+            logger.info(
+                "Backfill: queued %d unclassified captures for inference (%d matched in window)",
+                queued, total,
+            )
+        return {"queued": queued, "remaining": total - queued}
 
     async def heal_unembedded(self) -> int:
         """Re-embed activities where chroma_id IS NULL. Called at daemon startup."""

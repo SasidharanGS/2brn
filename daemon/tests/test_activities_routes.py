@@ -1,8 +1,9 @@
 """Tests for GET /activities and PATCH /activities/{id}/override."""
-import pytest
-import aiosqlite
 from unittest.mock import AsyncMock, MagicMock
-from httpx import AsyncClient, ASGITransport
+
+import aiosqlite
+import pytest
+from httpx import ASGITransport, AsyncClient
 
 from brn_daemon.db import get_db_path, init_db
 
@@ -10,10 +11,10 @@ from brn_daemon.db import get_db_path, init_db
 @pytest.fixture
 async def activities_client(tmp_home):
     """FastAPI test client with minimal app_state stubs and seeded activity data."""
-    from brn_daemon.main import create_app, app_state
+    from brn_daemon.blog import BlogGenerator
     from brn_daemon.chat import ChatService
     from brn_daemon.journal import JournalGenerator
-    from brn_daemon.blog import BlogGenerator
+    from brn_daemon.main import app_state, create_app
 
     fake_chat_fn = AsyncMock(return_value='{"summary":"x","tags":[],"task_category":"work","task_category_confidence":0.9,"productivity_state":"productive","productivity_confidence":0.9}')
     fake_stream_fn = AsyncMock()
@@ -120,3 +121,29 @@ async def test_get_activities_returns_empty_for_unknown_date(activities_client):
     resp = await activities_client.get("/activities?date=2000-01-01")
     assert resp.status_code == 200
     assert resp.json() == []
+
+
+async def test_post_backfill_triggers_inference_backfill(activities_client):
+    from brn_daemon.main import app_state
+    app_state["inference_queue"].backfill_unclassified = AsyncMock(
+        return_value={"queued": 3, "remaining": 1}
+    )
+    resp = await activities_client.post("/activities/backfill", json={"days": 3})
+    assert resp.status_code == 200
+    assert resp.json() == {"ok": True, "queued": 3, "remaining": 1}
+    app_state["inference_queue"].backfill_unclassified.assert_awaited_once_with(days=3)
+
+
+async def test_post_backfill_defaults_to_seven_days(activities_client):
+    from brn_daemon.main import app_state
+    app_state["inference_queue"].backfill_unclassified = AsyncMock(
+        return_value={"queued": 0, "remaining": 0}
+    )
+    resp = await activities_client.post("/activities/backfill")
+    assert resp.status_code == 200
+    app_state["inference_queue"].backfill_unclassified.assert_awaited_once_with(days=7)
+
+
+async def test_post_backfill_rejects_out_of_range_days(activities_client):
+    resp = await activities_client.post("/activities/backfill", json={"days": 0})
+    assert resp.status_code == 422

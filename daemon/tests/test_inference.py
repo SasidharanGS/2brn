@@ -10,10 +10,11 @@ from brn_daemon.inference import (
 )
 
 
-async def _insert_capture(conn, captured_at: str = "2026-06-12T10:00:00") -> int:
+async def _insert_capture(conn, captured_at: str = "2026-06-12T10:00:00", ocr_text: str = "") -> int:
     cur = await conn.execute(
-        "INSERT INTO captures (captured_at, app_name, window_title) VALUES (?, 'Code', 'w')",
-        (captured_at,),
+        "INSERT INTO captures (captured_at, app_name, window_title, ocr_text) "
+        "VALUES (?, 'Code', 'w', ?)",
+        (captured_at, ocr_text),
     )
     await conn.commit()
     return cur.lastrowid
@@ -62,6 +63,84 @@ async def test_clone_activity_returns_false_when_source_has_no_activity(tmp_home
     assert cloned is False
     cur = await db.execute("SELECT COUNT(*) FROM activities WHERE capture_id = ?", (target_id,))
     assert (await cur.fetchone())[0] == 0
+
+
+# ── backfill_unclassified ────────────────────────────────────────────────────
+
+READABLE = "plenty of readable text extracted from this screen"
+
+
+def _ts(**delta) -> str:
+    from datetime import UTC, datetime, timedelta
+
+    from brn_daemon.timeutil import DB_TS_FMT
+    return (datetime.now(UTC) - timedelta(**delta)).strftime(DB_TS_FMT)
+
+
+def _queue(tmp_home) -> InferenceQueue:
+    return InferenceQueue(chat_fn=AsyncMock(), db_path_fn=lambda: str(tmp_home / "2brn.db"))
+
+
+async def test_backfill_queues_readable_unclassified_captures(tmp_home, db):
+    eligible = await _insert_capture(db, captured_at=_ts(hours=2), ocr_text=READABLE)
+
+    queue = _queue(tmp_home)
+    result = await queue.backfill_unclassified()
+
+    assert result == {"queued": 1, "remaining": 0}
+    item = queue._queue.get_nowait()
+    assert item[0] == eligible
+    assert item[3] == READABLE
+    assert item[4] == await _captured_at(db, eligible)  # classified at capture time, not now
+
+
+async def _captured_at(conn, capture_id: int) -> str:
+    cur = await conn.execute("SELECT captured_at FROM captures WHERE id = ?", (capture_id,))
+    return (await cur.fetchone())[0]
+
+
+async def test_backfill_skips_sparse_classified_and_recent_captures(tmp_home, db):
+    await _insert_capture(db, captured_at=_ts(hours=2), ocr_text="short")  # sparse
+    classified = await _insert_capture(db, captured_at=_ts(hours=3), ocr_text=READABLE)
+    await db.execute(
+        "INSERT INTO activities (capture_id, started_at, summary) VALUES (?, ?, 'done')",
+        (classified, _ts(hours=3)),
+    )
+    await db.commit()
+    await _insert_capture(db, captured_at=_ts(minutes=2), ocr_text=READABLE)  # inside grace
+    await _insert_capture(db, captured_at=_ts(days=30), ocr_text=READABLE)  # outside window
+
+    queue = _queue(tmp_home)
+    result = await queue.backfill_unclassified()
+
+    assert result == {"queued": 0, "remaining": 0}
+    assert queue.queue_depth == 0
+
+
+async def test_backfill_respects_spare_queue_capacity(tmp_home, db):
+    from brn_daemon.inference import INFERENCE_QUEUE_MAX
+
+    for hour in (5, 4, 3):
+        await _insert_capture(db, captured_at=_ts(hours=hour), ocr_text=READABLE)
+
+    queue = _queue(tmp_home)
+    for _ in range(INFERENCE_QUEUE_MAX - 2):  # leave room for exactly 2
+        queue._queue.put_nowait((0, "", "", "", None))
+
+    result = await queue.backfill_unclassified()
+
+    assert result == {"queued": 2, "remaining": 1}
+
+
+async def test_backfill_enqueues_oldest_first(tmp_home, db):
+    newer = await _insert_capture(db, captured_at=_ts(hours=1), ocr_text=READABLE)
+    older = await _insert_capture(db, captured_at=_ts(hours=6), ocr_text=READABLE)
+
+    queue = _queue(tmp_home)
+    await queue.backfill_unclassified()
+
+    assert queue._queue.get_nowait()[0] == older
+    assert queue._queue.get_nowait()[0] == newer
 
 def test_build_prompt_includes_app_and_ocr():
     prompt = build_inference_prompt(

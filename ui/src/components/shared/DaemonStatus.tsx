@@ -1,14 +1,7 @@
-import { useQuery } from '@tanstack/react-query'
-import { api } from '../../api/client'
-import { queryKeys } from '../../api/queryKeys'
+import { useDaemonStatus } from '../../hooks/useDaemonStatus'
 
 export default function DaemonStatus() {
-  const { data: status } = useQuery({
-    queryKey: queryKeys.status(),
-    queryFn: api.getStatus,
-    refetchInterval: 5_000,
-    retry: false,
-  })
+  const status = useDaemonStatus()
 
   if (!status) {
     return (

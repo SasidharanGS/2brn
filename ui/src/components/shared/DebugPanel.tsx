@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { api } from '../../api/client'
+import { useDebugLogs, useDebugStatus } from '../../hooks/useDebugData'
 import type { LogLine } from '../../api/types'
 
 interface Props {
@@ -101,21 +100,8 @@ export default function DebugPanel({ onClose }: Props) {
     document.addEventListener('mouseup', onMouseUp)
   }, [width])
 
-  // ── Logs query ──────────────────────────────────────────────
-  const { data: logsData } = useQuery({
-    queryKey: ['debug-logs'],
-    queryFn: () => api.getLogs(undefined, 100),
-    refetchInterval: 2000,
-    enabled: tab === 'logs',
-  })
-
-  // ── Status query ─────────────────────────────────────────────
-  const { data: statusData } = useQuery({
-    queryKey: ['debug-status'],
-    queryFn: api.getDebugStatus,
-    refetchInterval: 5000,
-    enabled: tab === 'status',
-  })
+  const logsData   = useDebugLogs(tab === 'logs')
+  const statusData = useDebugStatus(tab === 'status')
 
   // ── Imperatively sync log rows into the DOM ───────────────────
   // React re-rendering destroys all DOM nodes and kills the browser's

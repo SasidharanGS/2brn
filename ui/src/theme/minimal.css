@@ -44,6 +44,30 @@
   --font-sans: 'Inter', 'Helvetica Neue', Helvetica, Arial, sans-serif;
   /* Monospace ONLY for technical readouts (capturing footer, debug logs). */
   --font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+
+  /* ── Typography (Inter; 300 default, 400 for emphasis — never 500+) ── */
+  --text-2xs: 0.65rem;  --text-xs: 0.7rem;   --text-sm: 0.75rem;  --text-base: 0.8rem;
+  --text-md: 0.85rem;   --text-lg: 0.95rem;  --text-xl: 1.05rem;  --text-2xl: 1.4rem;
+  --text-display: clamp(1.4rem, 3vw, 2.2rem);
+  --text-hero:    clamp(1.6rem, 3.2vw, 2.2rem);
+  --tracking-tight: -0.02em; --tracking-name: 0.02em; --tracking-snug: 0.05em;
+  --tracking-wide: 0.1em;    --tracking-wider: 0.15em; --tracking-nav: 0.2em;
+  --tracking-label: 0.25em;
+  --leading-tight: 1.2; --leading-snug: 1.5; --leading-normal: 1.6;
+  --leading-relaxed: 1.7; --leading-loose: 1.75;
+  --measure: 560px; /* reading width for prose */
+
+  /* ── Spacing (whitespace is structural; xl is the signature gap) ── */
+  --space-xs: 0.5rem; --space-sm: 1rem; --space-md: 2rem; --space-lg: 4rem; --space-xl: 8rem;
+
+  /* ── Radius / pills — the ONLY radius in the system is the 3px pill ── */
+  --radius-pill: 3px;
+  --pill-bg: var(--rule);
+
+  /* ── App chrome layout ── */
+  --sidebar-w: 180px;
+  --topbar-h: 52px;
+  --panel-w: 300px;
 }
 
 :root[data-skin='minimal'][data-theme='dark'] {
@@ -63,3 +87,55 @@
 :root[data-skin='minimal'] body::after {
   display: none;
 }
+
+/* Base surface (index.css points body at the modern vars; override per skin). */
+:root[data-skin='minimal'] body {
+  background: var(--bg);
+  color: var(--fg);
+  font-weight: 300;
+}
+
+/* Thin monochrome scrollbars */
+:root[data-skin='minimal'] ::-webkit-scrollbar { width: 8px; height: 8px; }
+:root[data-skin='minimal'] ::-webkit-scrollbar-thumb { background: var(--rule); border-radius: 0; }
+:root[data-skin='minimal'] ::-webkit-scrollbar-track { background: transparent; }
+
+/* ── Chrome hover states (links/buttons go --muted → --fg over 0.2s) ── */
+:root[data-skin='minimal'] .m-nav-link {
+  color: var(--muted);
+  font-weight: 300;
+  transition: color 0.2s ease;
+}
+:root[data-skin='minimal'] .m-nav-link:hover { color: var(--fg); }
+:root[data-skin='minimal'] .m-nav-link.active { color: var(--fg); font-weight: 400; }
+
+:root[data-skin='minimal'] .m-rail-btn {
+  color: var(--muted);
+  border: 1px solid var(--rule);
+  transition: color 0.2s ease, border-color 0.2s ease;
+}
+:root[data-skin='minimal'] .m-rail-btn:hover { color: var(--fg); border-color: var(--muted); }
+:root[data-skin='minimal'] .m-rail-btn.active { color: var(--fg); border-color: var(--muted); }
+
+:root[data-skin='minimal'] .m-ghost {
+  color: var(--muted);
+  border: 1px solid var(--rule);
+  transition: color 0.2s ease, border-color 0.2s ease;
+}
+:root[data-skin='minimal'] .m-ghost:hover { color: var(--fg); border-color: var(--fg); }
+:root[data-skin='minimal'] .m-ghost.accent:hover { color: var(--accent); border-color: var(--accent); }
+
+:root[data-skin='minimal'] .m-quiet {
+  color: var(--muted);
+  transition: color 0.2s ease;
+}
+:root[data-skin='minimal'] .m-quiet:hover { color: var(--fg); }
+
+/* ── Electron window dragging (no separate drag bar in the minimal layout:
+     the 52px top bar and the sidebar wordmark act as grab regions) ── */
+:root[data-skin='minimal'] .m-topbar { -webkit-app-region: drag; }
+:root[data-skin='minimal'] .m-topbar button { -webkit-app-region: no-drag; }
+:root[data-skin='minimal'] .m-wordmark { -webkit-app-region: drag; }
+
+/* macOS: clear the traffic-light buttons that overlay the sidebar's top-left */
+html.macos[data-skin='minimal'] .m-sidebar { padding-top: 44px; }

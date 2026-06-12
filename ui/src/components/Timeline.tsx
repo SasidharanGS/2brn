@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { api } from '../api/client'
 import { queryKeys } from '../api/queryKeys'
 import { categoryChip, stateChip } from '../utils/design'
-import type { ActivityRecord } from '../api/types'
+import type { ActivityRecord, SessionsResponse } from '../api/types'
 import { useAppDate } from '../context/DateContext'
 
 const ALL_CATEGORIES = ['work','research','play','learning','communication','creative','admin','other'] as const
@@ -11,6 +11,99 @@ const ALL_STATES = ['productive','focused','chilling','procrastinating','distrac
 
 type Category = typeof ALL_CATEGORIES[number]
 type State = typeof ALL_STATES[number]
+
+function fmtDur(seconds: number): string {
+  const m = Math.round(seconds / 60)
+  if (m < 1) return '<1m'
+  const h = Math.floor(m / 60)
+  const rem = m % 60
+  if (h === 0) return `${m}m`
+  return rem === 0 ? `${h}h` : `${h}h ${rem}m`
+}
+
+const fmtClock = (ts: number | string) =>
+  new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+
+/** Per-monitor lanes of duration blocks, plus clock-time totals by category. */
+function SessionLanes({ sessions }: { sessions: SessionsResponse }) {
+  const { blocks, totals } = sessions
+  if (blocks.length === 0) return null
+
+  const t0 = Math.min(...blocks.map(b => Date.parse(b.start)))
+  const t1 = Math.max(...blocks.map(b => Date.parse(b.end)))
+  const span = Math.max(t1 - t0, 1)
+  const monitors = [...new Set(blocks.map(b => b.monitor_index))].sort((a, b) => a - b)
+  const catTotals = Object.entries(totals.by_category).sort((a, b) => b[1] - a[1])
+
+  return (
+    <div
+      className="rounded-[12px] border p-4 mb-5"
+      style={{ background: 'var(--bg-surface)', borderColor: 'var(--border)' }}
+    >
+      <div className="flex items-center justify-between mb-3">
+        <span className="text-[10px] uppercase tracking-widest font-medium" style={{ color: 'var(--text-dim)' }}>
+          Blocks
+        </span>
+        <span className="text-[11px] font-mono" style={{ color: 'var(--text-dim)' }}>
+          {fmtDur(totals.observed_seconds)} on screen
+        </span>
+      </div>
+
+      <div className="space-y-1.5">
+        {monitors.map(m => (
+          <div key={m} className="flex items-center gap-2">
+            {monitors.length > 1 && (
+              <span className="text-[10px] font-mono w-6 shrink-0 text-right" style={{ color: 'var(--text-dim)' }}>
+                M{m}
+              </span>
+            )}
+            <div className="relative h-6 flex-1 rounded-[6px] overflow-hidden" style={{ background: 'var(--bg-surface-2)' }}>
+              {blocks.filter(b => b.monitor_index === m).map((b, i) => {
+                const chip = categoryChip(b.task_category)
+                const left = ((Date.parse(b.start) - t0) / span) * 100
+                const width = Math.max(((Date.parse(b.end) - Date.parse(b.start)) / span) * 100, 0.35)
+                const tip = [
+                  `${b.app_name ?? 'unknown'} · ${b.task_category ?? 'other'} · ${fmtDur(b.duration_seconds)}`,
+                  `${fmtClock(b.start)}–${fmtClock(b.end)}`,
+                  b.summary ?? '',
+                ].filter(Boolean).join('\n')
+                return (
+                  <div
+                    key={i}
+                    className="absolute top-0 h-full"
+                    title={tip}
+                    style={{ left: `${left}%`, width: `${width}%`, background: chip.dot, opacity: 0.85 }}
+                  />
+                )
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="flex justify-between mt-1.5 text-[10px] font-mono" style={{ color: 'var(--text-dim)' }}>
+        <span>{fmtClock(t0)}</span>
+        <span>{fmtClock(t1)}</span>
+      </div>
+
+      <div className="flex flex-wrap gap-1.5 mt-3">
+        {catTotals.map(([cat, secs]) => {
+          const chip = categoryChip(cat)
+          return (
+            <span
+              key={cat}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium"
+              style={{ background: chip.bg, color: chip.text }}
+            >
+              <span className="w-1.5 h-1.5 rounded-full" style={{ background: chip.dot }} />
+              {cat} {fmtDur(secs)}
+            </span>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
 
 export default function Timeline() {
   const { selectedDate } = useAppDate()
@@ -35,6 +128,10 @@ export default function Timeline() {
   const { data: captures = [], isLoading: loadCaps } = useQuery({
     queryKey: queryKeys.captures(selectedDate),
     queryFn: () => api.getCaptures(selectedDate),
+  })
+  const { data: sessions } = useQuery({
+    queryKey: queryKeys.sessions(selectedDate),
+    queryFn: () => api.getSessions(selectedDate),
   })
   const loading = loadActs || loadCaps
 
@@ -89,6 +186,9 @@ export default function Timeline() {
           </button>
         )}
       </div>
+
+      {/* Duration blocks (per-monitor lanes + clock-time totals) */}
+      {!loading && sessions && <SessionLanes sessions={sessions} />}
 
       {/* Filter bar */}
       {!loading && activities.length > 0 && (

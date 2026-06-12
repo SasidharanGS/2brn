@@ -81,19 +81,22 @@ export type InsightsPeriod = 'day' | 'week' | 'month'
 export interface InsightsCategoryBucket {
   task_category: string
   count: number
-  pct: number
-  avg_confidence: number
+  seconds: number
+  pct: number  // share of observed block-time
+  avg_confidence: number | null
 }
 
 export interface InsightsStateBucket {
   productivity_state: string
   count: number
+  seconds: number
   pct: number
 }
 
 export interface InsightsAppBucket {
   app_name: string
   count: number
+  seconds: number
   pct: number
 }
 
@@ -128,6 +131,7 @@ export interface InsightsSummary {
   date: string
   range: { start: string; end: string; span_days: number }
   total_captures: number
+  observed_seconds: number
   categories: InsightsCategoryBucket[]
   productivity_states: InsightsStateBucket[]
   top_apps: InsightsAppBucket[]

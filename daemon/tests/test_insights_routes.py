@@ -149,17 +149,118 @@ def test_summary_day_returns_required_shape(seeded_client):
     assert len(data["hourly_heatmap"]) == 24
 
 
-def test_summary_day_categories_have_pct(seeded_client):
+def test_summary_day_categories_use_block_time(seeded_client):
+    """pct is share of observed block-time, not of capture counts.
+
+    Like its fixture-sharing neighbours, assumes TZ=UTC (the CI contract) —
+    the seeded 14:00 UTC rows fall on the next local day in far-east zones.
+    """
     r = seeded_client.get("/insights/summary?period=day&date=2026-05-23")
     data = r.json()
     cats = data["categories"]
     assert cats, "expected at least one category bucket"
-    total = data["total_captures"]
+    observed = data["observed_seconds"]
+    # Blocks: work 09:00–09:05 (300s) + work 10:00–10:03 (180s) + play 14:00–14:02 (120s)
+    assert observed == 600
     for c in cats:
         assert "task_category" in c
         assert "count" in c
-        assert "pct" in c
-        assert c["pct"] == round(c["count"] / total * 100, 1)
+        assert "seconds" in c
+        assert c["pct"] == round(c["seconds"] / observed * 100, 1)
+    by_cat = {c["task_category"]: c for c in cats}
+    assert by_cat["work"]["seconds"] == 480
+    assert by_cat["work"]["pct"] == 80.0
+    assert by_cat["play"]["seconds"] == 120
+    assert by_cat["work"]["count"] == 8  # counts stay sample counts
+
+
+def test_summary_pct_is_time_based_not_count_based(tmp_home):
+    """Three rapid-fire work samples ≠ 3× the time of one play sample.
+
+    Seeds change-triggered work samples 5s apart (their blocks clamp to the
+    next sample) so count-share (75%) and time-share diverge — pinning that
+    the switch to block-time actually changed the semantics.
+    """
+    import asyncio as _asyncio
+    from datetime import timedelta
+
+    from brn_daemon.timeutil import local_day_bounds_utc
+
+    async def _seed():
+        await init_db()
+
+    _asyncio.run(_seed())
+
+    day = "2026-05-23"
+    base = datetime.fromisoformat(local_day_bounds_utc(day)[0]) + timedelta(hours=12)
+    with sqlite3.connect(get_db_path()) as conn:
+        cur = conn.cursor()
+        # Work: 3 samples 5s apart → block of 10s + 60s tail = 70s
+        for offset in (0, 5, 10):
+            _seed_capture_and_activity(
+                cur, started_at=(base + timedelta(seconds=offset)).isoformat(),
+                app_name="Code", summary="coding", state="focused", category="work",
+            )
+        # Play: 1 sample much later → its own 60s block
+        _seed_capture_and_activity(
+            cur, started_at=(base + timedelta(minutes=30)).isoformat(),
+            app_name="Steam", summary="gaming", state="chilling", category="play",
+        )
+        conn.commit()
+
+    app = FastAPI()
+    app.include_router(insights_router)
+    client = TestClient(app)
+
+    data = client.get(f"/insights/summary?period=day&date={day}").json()
+    by_cat = {c["task_category"]: c for c in data["categories"]}
+    assert data["observed_seconds"] == 130
+    assert by_cat["work"]["seconds"] == 70
+    assert by_cat["work"]["pct"] == round(70 / 130 * 100, 1)   # 53.8 — NOT 75.0
+    assert by_cat["play"]["seconds"] == 60
+    assert by_cat["work"]["count"] == 3
+
+
+def test_summary_includes_unclassified_screen_time(tmp_home):
+    """A capture with no activity row surfaces as unclassified time and
+    lowers active_pct below 100."""
+    import asyncio as _asyncio
+    from datetime import timedelta
+
+    from brn_daemon.timeutil import local_day_bounds_utc
+
+    async def _seed():
+        await init_db()
+
+    _asyncio.run(_seed())
+
+    day = "2026-05-23"
+    base = datetime.fromisoformat(local_day_bounds_utc(day)[0]) + timedelta(hours=9)
+    with sqlite3.connect(get_db_path()) as conn:
+        cur = conn.cursor()
+        _seed_capture_and_activity(
+            cur, started_at=base.isoformat(),
+            app_name="Code", summary="coding", state="focused", category="work",
+        )
+        # Activity-less capture (sparse text, e.g. video) 10 min later
+        cur.execute(
+            "INSERT INTO captures (captured_at, app_name, window_title, trigger) "
+            "VALUES (?, 'VLC', 'movie.mkv', 'heartbeat')",
+            ((base + timedelta(minutes=10)).isoformat(),),
+        )
+        conn.commit()
+
+    app = FastAPI()
+    app.include_router(insights_router)
+    client = TestClient(app)
+
+    data = client.get(f"/insights/summary?period=day&date={day}").json()
+    by_cat = {c["task_category"]: c for c in data["categories"]}
+    assert "unclassified" in by_cat
+    assert by_cat["unclassified"]["seconds"] == 60
+    assert by_cat["unclassified"]["avg_confidence"] is None
+    # 60s work + 60s unclassified observed → only half the time is classified
+    assert data["comparison"]["active"]["current_pct"] == 50.0
 
 
 def test_summary_day_top_apps_includes_chrome_and_twitter(seeded_client):

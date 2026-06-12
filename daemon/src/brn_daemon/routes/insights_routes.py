@@ -1,14 +1,24 @@
 from __future__ import annotations
 
+import asyncio
 import re
-from collections import defaultdict
+from collections import Counter, defaultdict
 from collections.abc import Iterable
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 import aiosqlite
 from fastapi import APIRouter, HTTPException, Query
 
+from brn_daemon.config import load_config
 from brn_daemon.db import get_db_path
+from brn_daemon.sessions import (
+    UNCLASSIFIED,
+    Block,
+    SessionPolicy,
+    compute_totals,
+    fetch_samples,
+    sessionize,
+)
 from brn_daemon.timeutil import local_day_bounds_utc, local_range_bounds_utc
 
 router = APIRouter()
@@ -23,7 +33,7 @@ PRODUCTIVE_STATES = ("productive", "focused")
 DISTRACTED_STATES = ("distracted", "procrastinating")
 
 
-def _pct(count: int, total: int) -> float:
+def _pct(count: float, total: float) -> float:
     if total <= 0:
         return 0.0
     return round(count / total * 100, 1)
@@ -197,133 +207,150 @@ def _cluster_summaries(
 # ---------------------------------------------------------------------------
 
 
-async def _query_categories(conn, lo: str, hi: str, total: int) -> list[dict]:
+async def _session_policy() -> SessionPolicy:
+    cfg = await asyncio.get_event_loop().run_in_executor(None, load_config)
+    return SessionPolicy(
+        capture_interval_seconds=cfg.capture_interval_seconds,
+        gap_split_seconds=max(180, 3 * cfg.capture_interval_seconds),
+    )
+
+
+async def _blocks_for_range(conn, lo: str, hi: str, policy: SessionPolicy) -> list[Block]:
+    """Sessionize the range's samples (incl. unclassified screen time)."""
+    samples = await fetch_samples(conn, lo, hi)
+    range_end = min(
+        datetime.fromisoformat(hi),
+        datetime.now(UTC).replace(tzinfo=None),
+    )
+    return sessionize(samples, policy, range_end=range_end)
+
+
+def _state_seconds(blocks: list[Block]) -> dict[str, float]:
+    """Apportion each block's duration to states by their sample share."""
+    out: dict[str, float] = defaultdict(float)
+    for b in blocks:
+        for state, share in b.state_shares.items():
+            out[state] += b.duration_seconds * share
+    return out
+
+
+async def _query_confidence(conn, lo: str, hi: str) -> dict[str, float | None]:
     cur = await conn.execute(
-        """SELECT task_category, COUNT(*) as count,
-                  AVG(task_category_confidence) as avg_confidence
+        """SELECT task_category, AVG(task_category_confidence)
            FROM activities
            WHERE started_at >= ? AND started_at <= ?
-           GROUP BY task_category
-           ORDER BY count DESC""",
+           GROUP BY task_category""",
         (lo, hi),
     )
-    return [
-        {
-            "task_category": r[0],
-            "count": r[1],
-            "avg_confidence": r[2],
-            "pct": _pct(r[1], total),
-        }
-        for r in await cur.fetchall()
-    ]
+    return {r[0]: r[1] for r in await cur.fetchall()}
 
 
-async def _query_states(conn, lo: str, hi: str, total: int) -> list[dict]:
-    cur = await conn.execute(
-        """SELECT productivity_state, COUNT(*) as count
-           FROM activities
-           WHERE started_at >= ? AND started_at <= ?
-           GROUP BY productivity_state
-           ORDER BY count DESC""",
-        (lo, hi),
+def _category_buckets(
+    blocks: list[Block], observed: int, confidence: dict[str, float | None]
+) -> list[dict]:
+    totals = compute_totals(blocks)
+    counts: Counter = Counter()
+    for b in blocks:
+        counts[b.task_category or "other"] += b.sample_count
+    return sorted(
+        (
+            {
+                "task_category": cat,
+                "count": counts[cat],
+                "avg_confidence": confidence.get(cat),
+                "seconds": secs,
+                "pct": _pct(secs, observed),
+            }
+            for cat, secs in totals["by_category"].items()
+        ),
+        key=lambda c: -c["seconds"],
     )
-    return [
-        {
-            "productivity_state": r[0],
-            "count": r[1],
-            "pct": _pct(r[1], total),
-        }
-        for r in await cur.fetchall()
-    ]
 
 
-async def _query_top_apps(conn, lo: str, hi: str, total: int, limit: int = 10) -> list[dict]:
-    cur = await conn.execute(
-        """SELECT
-             COALESCE(a.app_name_override, c.app_name) AS effective_app,
-             COUNT(*) AS count
-           FROM captures c
-           LEFT JOIN activities a ON a.capture_id = c.id
-           WHERE c.captured_at >= ? AND c.captured_at <= ?
-             AND c.app_name IS NOT NULL
-           GROUP BY effective_app
-           ORDER BY count DESC
-           LIMIT ?""",
-        (lo, hi, limit),
+def _state_buckets(blocks: list[Block], observed: int) -> list[dict]:
+    counts: Counter = Counter()
+    for b in blocks:
+        for s in b.state_shares:
+            counts[s] += round(b.sample_count * b.state_shares[s])
+    return sorted(
+        (
+            {
+                "productivity_state": state,
+                "count": counts[state],
+                "seconds": int(secs),
+                "pct": _pct(secs, observed),
+            }
+            for state, secs in _state_seconds(blocks).items()
+        ),
+        key=lambda s: -s["seconds"],
     )
-    return [
-        {"app_name": r[0], "count": r[1], "pct": _pct(r[1], total)}
-        for r in await cur.fetchall()
-    ]
 
 
-async def _query_heatmap(conn, lo: str, hi: str, total: int) -> list[dict]:
-    """Aggregate activities by hour-of-day across the entire range."""
-    cur = await conn.execute(
-        """SELECT CAST(strftime('%H', started_at, 'localtime') AS INTEGER) AS hour,
-                  productivity_state,
-                  COUNT(*) AS count
-           FROM activities
-           WHERE started_at >= ? AND started_at <= ?
-             AND started_at IS NOT NULL
-           GROUP BY hour, productivity_state""",
-        (lo, hi),
+def _app_buckets(blocks: list[Block], observed: int, limit: int = 10) -> list[dict]:
+    totals = compute_totals(blocks)
+    counts: Counter = Counter()
+    for b in blocks:
+        counts[b.app_name or "unknown"] += b.sample_count
+    buckets = sorted(
+        (
+            {
+                "app_name": app,
+                "count": counts[app],
+                "seconds": secs,
+                "pct": _pct(secs, observed),
+            }
+            for app, secs in totals["by_app"].items()
+        ),
+        key=lambda a: -a["seconds"],
     )
-    rows = await cur.fetchall()
+    return buckets[:limit]
 
-    per_hour: dict[int, dict] = {
-        h: {"hour": h, "total_count": 0, "by_state": {}} for h in range(24)
-    }
-    for hour, state, count in rows:
-        if hour is None:
-            continue
-        bucket = per_hour[int(hour)]
-        bucket["total_count"] += int(count)
-        if state:
-            bucket["by_state"][state] = bucket["by_state"].get(state, 0) + int(count)
+
+def _heatmap_from_blocks(blocks: list[Block], observed: int) -> list[dict]:
+    """Apportion block time to local hour-of-day cells across the whole range."""
+    hour_seconds = [0.0] * 24
+    hour_state: list[dict[str, float]] = [defaultdict(float) for _ in range(24)]
+
+    for b in blocks:
+        # Stored timestamps are naive UTC; heatmap hours are the user's local hours.
+        cursor = b.start.replace(tzinfo=UTC).astimezone()
+        end = b.end.replace(tzinfo=UTC).astimezone()
+        while cursor < end:
+            next_hour = cursor.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
+            seg_end = min(end, next_hour)
+            seg = (seg_end - cursor).total_seconds()
+            hour_seconds[cursor.hour] += seg
+            for state, share in b.state_shares.items():
+                hour_state[cursor.hour][state] += seg * share
+            cursor = seg_end
 
     cells = []
     for h in range(24):
-        b = per_hour[h]
-        dominant_state = None
-        if b["by_state"]:
-            dominant_state = max(b["by_state"].items(), key=lambda kv: kv[1])[0]
+        by_state = hour_state[h]
+        dominant_state = max(by_state.items(), key=lambda kv: kv[1])[0] if by_state else None
         cells.append(
             {
                 "hour": h,
-                "pct": _pct(b["total_count"], total),
+                "pct": _pct(hour_seconds[h], observed),
                 "dominant_state": dominant_state,
-                "by_state_pct": {
-                    s: _pct(c, total) for s, c in b["by_state"].items()
-                },
+                "by_state_pct": {s: _pct(v, observed) for s, v in by_state.items()},
             }
         )
     return cells
 
 
-async def _query_state_pcts(conn, lo: str, hi: str, total: int) -> dict[str, float]:
-    """Percentage-of-total-captures for active, productive, distracted states."""
-    cur = await conn.execute(
-        """SELECT productivity_state, COUNT(*)
-           FROM activities
-           WHERE started_at >= ? AND started_at <= ?
-           GROUP BY productivity_state""",
-        (lo, hi),
+def _state_pcts_from_blocks(blocks: list[Block], observed: int) -> dict[str, float]:
+    """Share of observed time that was classified / productive / distracted."""
+    classified = sum(
+        b.duration_seconds for b in blocks if b.task_category != UNCLASSIFIED
     )
-    rows = await cur.fetchall()
-    grand = 0
-    prod = 0
-    distr = 0
-    for state, count in rows:
-        grand += int(count)
-        if state in PRODUCTIVE_STATES:
-            prod += int(count)
-        elif state in DISTRACTED_STATES:
-            distr += int(count)
+    state_secs = _state_seconds(blocks)
+    prod = sum(state_secs.get(s, 0.0) for s in PRODUCTIVE_STATES)
+    distr = sum(state_secs.get(s, 0.0) for s in DISTRACTED_STATES)
     return {
-        "active_pct": _pct(grand, total),
-        "productive_pct": _pct(prod, total),
-        "distracted_pct": _pct(distr, total),
+        "active_pct": _pct(classified, observed),
+        "productive_pct": _pct(prod, observed),
+        "distracted_pct": _pct(distr, observed),
     }
 
 
@@ -430,25 +457,37 @@ async def insights_summary(
     period="week"  → 7 days ending on `date`
     period="month" → 30 days ending on `date`
 
-    All metrics are expressed as percentage of total captures in the period.
+    Time metrics are expressed as percentage of observed block-time in the
+    period (interval union over session blocks — see sessions.py), so an hour
+    with two busy monitors counts once. `count` fields remain sample counts.
     """
     if period not in ("day", "week", "month"):
         raise HTTPException(status_code=400, detail="period must be day|week|month")
 
     lo, hi, span = _period_range(date, period)
-    base_lo, base_hi, n_periods, base_label = _baseline_range(date, period)
+    base_lo, base_hi, _n_periods, base_label = _baseline_range(date, period)
+    policy = await _session_policy()
 
     async with aiosqlite.connect(get_db_path()) as conn:
+        conn.row_factory = aiosqlite.Row
         total = await _query_total_captures(conn, lo, hi)
-        base_total = await _query_total_captures(conn, base_lo, base_hi)
-        per_period_total = base_total // n_periods if n_periods else 0
 
-        categories = await _query_categories(conn, lo, hi, total)
-        states = await _query_states(conn, lo, hi, total)
-        top_apps = await _query_top_apps(conn, lo, hi, total)
-        heatmap = await _query_heatmap(conn, lo, hi, total)
-        current = await _query_state_pcts(conn, lo, hi, total)
-        baseline_raw = await _query_state_pcts(conn, base_lo, base_hi, per_period_total)
+        blocks = await _blocks_for_range(conn, lo, hi, policy)
+        observed = compute_totals(blocks)["observed_seconds"]
+        confidence = await _query_confidence(conn, lo, hi)
+
+        categories = _category_buckets(blocks, observed, confidence)
+        states = _state_buckets(blocks, observed)
+        top_apps = _app_buckets(blocks, observed)
+        heatmap = _heatmap_from_blocks(blocks, observed)
+        current = _state_pcts_from_blocks(blocks, observed)
+
+        # Baseline pcts are normalized to the baseline's own observed time, so
+        # "vs 7-day average" compares like with like even on sparse weeks.
+        base_blocks = await _blocks_for_range(conn, base_lo, base_hi, policy)
+        base_observed = compute_totals(base_blocks)["observed_seconds"]
+        baseline_raw = _state_pcts_from_blocks(base_blocks, base_observed)
+
         recurring = await _query_recurring(conn, lo, hi, total)
 
     comparison = {
@@ -472,6 +511,7 @@ async def insights_summary(
         "date": date,
         "range": {"start": lo, "end": hi, "span_days": span},
         "total_captures": total,
+        "observed_seconds": observed,
         "categories": categories,
         "productivity_states": states,
         "top_apps": top_apps,

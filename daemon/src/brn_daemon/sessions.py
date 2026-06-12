@@ -12,7 +12,7 @@ User category overrides, purges, and backfills reflow automatically.
 """
 
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
 UNCLASSIFIED = "unclassified"
@@ -78,6 +78,10 @@ class Block:
     dominant_state: str | None
     sample_count: int
     summary: str | None
+    # Fraction of this block's samples in each productivity state — lets
+    # consumers apportion the block's duration to states (insights) without
+    # splitting blocks on every state flicker.
+    state_shares: dict[str, float] = field(default_factory=dict)
 
     @property
     def duration_seconds(self) -> int:
@@ -92,6 +96,7 @@ def _parse_ts(value: str | datetime) -> datetime:
 
 def _run_to_block(run: list[dict], end: datetime) -> Block:
     states = Counter(s["productivity_state"] for s in run if s.get("productivity_state"))
+    total_stated = sum(states.values())
     summary = next((s["summary"] for s in reversed(run) if s.get("summary")), None)
     return Block(
         start=run[0]["_ts"],
@@ -102,6 +107,7 @@ def _run_to_block(run: list[dict], end: datetime) -> Block:
         dominant_state=states.most_common(1)[0][0] if states else None,
         sample_count=len(run),
         summary=summary,
+        state_shares={s: c / total_stated for s, c in states.items()} if total_stated else {},
     )
 
 

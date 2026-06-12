@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { api } from '../api/client'
 import { queryKeys } from '../api/queryKeys'
 import { categoryChip, stateChip } from '../utils/design'
+import { fmtDur } from '../utils/time'
 import type { ActivityRecord, SessionsResponse } from '../api/types'
 import { useAppDate } from '../context/DateContext'
 
@@ -11,15 +12,6 @@ const ALL_STATES = ['productive','focused','chilling','procrastinating','distrac
 
 type Category = typeof ALL_CATEGORIES[number]
 type State = typeof ALL_STATES[number]
-
-function fmtDur(seconds: number): string {
-  const m = Math.round(seconds / 60)
-  if (m < 1) return '<1m'
-  const h = Math.floor(m / 60)
-  const rem = m % 60
-  if (h === 0) return `${m}m`
-  return rem === 0 ? `${h}h` : `${h}h ${rem}m`
-}
 
 const fmtClock = (ts: number | string) =>
   new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })

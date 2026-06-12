@@ -1,83 +1,37 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import { Routes, Route, NavLink, useLocation } from 'react-router-dom'
-import Dashboard   from './components/Dashboard'
-import Chat        from './components/Chat'
-import Journal     from './components/Journal'
-import Blog        from './components/Blog'
-import Timeline    from './components/Timeline'
-import Insights    from './components/Insights'
-import Settings    from './components/Settings'
-import Instructions from './components/Instructions'
-import Plugins      from './components/Plugins'
 import DaemonStatus  from './components/shared/DaemonStatus'
 import ErrorBoundary  from './components/shared/ErrorBoundary'
 import StatsBar      from './components/shared/StatsBar'
 import DebugPanel    from './components/shared/DebugPanel'
 import CalendarPanel from './components/shared/CalendarPanel'
 import { DateProvider } from './context/DateContext'
+import { useTheme } from './theme/ThemeContext'
+import { getScreen, type ScreenName } from './theme/registry'
 
-const NAV = [
-  { to: '/',              label: 'Home',         icon: '🏠',  end: true,  hasCalendar: false },
-  { to: '/chat',          label: 'Chat',         icon: '💬',              hasCalendar: true  },
-  { to: '/journal',       label: 'Journal',      icon: '📔',              hasCalendar: true  },
-  { to: '/blog',          label: 'Blog',         icon: '✍',               hasCalendar: true  },
-  { to: '/timeline',      label: 'Timeline',     icon: '🕐',              hasCalendar: true  },
-  { to: '/insights',      label: 'Insights',     icon: '💡',              hasCalendar: true  },
-  { to: '/instructions',  label: 'Instructions', icon: '📋',              hasCalendar: false },
-  { to: '/plugins',       label: 'Plugins',      icon: '🔌',              hasCalendar: false },
-  { to: '/settings',      label: 'Settings',     icon: '⚙️',              hasCalendar: false },
+const NAV: { to: string; label: string; icon: string; screen: ScreenName; end?: boolean; hasCalendar?: boolean }[] = [
+  { to: '/',              label: 'Home',         icon: '🏠',  screen: 'home',         end: true,  hasCalendar: false },
+  { to: '/chat',          label: 'Chat',         icon: '💬',  screen: 'chat',                     hasCalendar: true  },
+  { to: '/journal',       label: 'Journal',      icon: '📔',  screen: 'journal',                  hasCalendar: true  },
+  { to: '/blog',          label: 'Blog',         icon: '✍',   screen: 'blog',                     hasCalendar: true  },
+  { to: '/timeline',      label: 'Timeline',     icon: '🕐',  screen: 'timeline',                 hasCalendar: true  },
+  { to: '/insights',      label: 'Insights',     icon: '💡',  screen: 'insights',                 hasCalendar: true  },
+  { to: '/instructions',  label: 'Instructions', icon: '📋',  screen: 'instructions',             hasCalendar: false },
+  { to: '/plugins',       label: 'Plugins',      icon: '🔌',  screen: 'plugins',                  hasCalendar: false },
+  { to: '/settings',      label: 'Settings',     icon: '⚙️',  screen: 'settings',                 hasCalendar: false },
 ]
-
-type ThemeMode = 'light' | 'system' | 'dark'
-const THEME_KEY = '2brn-theme-mode'
-
-function readPersistedMode(): ThemeMode {
-  try {
-    const v = localStorage.getItem(THEME_KEY)
-    if (v === 'light' || v === 'system' || v === 'dark') return v
-  } catch {}
-  return 'system'
-}
 
 export default function App() {
   const location = useLocation()
+  const { skin } = useTheme()
   const [debugOpen, setDebugOpen]       = useState(false)
   const [calendarOpen, setCalendarOpen] = useState(true)
 
-  const [themeMode, setThemeModeState] = useState<ThemeMode>(readPersistedMode)
-
-  const applyThemeClass = useCallback((osIsDark: boolean, mode: ThemeMode) => {
-    const isDark = mode === 'dark' || (mode === 'system' && osIsDark)
-    document.documentElement.classList.toggle('light', !isDark)
-  }, [])
-
   useEffect(() => {
-    window.electronAPI.getTheme().then(osTheme =>
-      applyThemeClass(osTheme === 'dark', readPersistedMode())
-    )
-    const unsubTheme = window.electronAPI.onThemeChanged(osTheme => {
-      setThemeModeState(current => {
-        applyThemeClass(osTheme === 'dark', current)
-        return current
-      })
-    })
     window.electronAPI.getPlatform().then(platform => {
       document.documentElement.classList.toggle('macos', platform === 'darwin')
     })
-    return () => unsubTheme()
-  }, [applyThemeClass])
-
-  const handleThemeModeChange = useCallback((mode: ThemeMode) => {
-    try { localStorage.setItem(THEME_KEY, mode) } catch {}
-    setThemeModeState(mode)
-    if (mode === 'light') {
-      document.documentElement.classList.add('light')
-    } else if (mode === 'dark') {
-      document.documentElement.classList.remove('light')
-    } else {
-      window.electronAPI.getTheme().then(osTheme => applyThemeClass(osTheme === 'dark', 'system'))
-    }
-  }, [applyThemeClass])
+  }, [])
 
   const calendarApplies = NAV.find(n => n.to === location.pathname || (n.end && location.pathname === '/'))?.hasCalendar ?? false
 
@@ -167,20 +121,15 @@ export default function App() {
 
           {/* ── Content ── */}
           <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
-            <StatsBar themeMode={themeMode} onThemeModeChange={handleThemeModeChange} />
+            <StatsBar />
             <div className="flex flex-1 min-h-0 overflow-hidden">
               <main className="flex-1 overflow-auto">
                 <ErrorBoundary>
                   <Routes>
-                    <Route path="/"              element={<Dashboard />} />
-                    <Route path="/chat"          element={<Chat />} />
-                    <Route path="/journal"       element={<Journal />} />
-                    <Route path="/blog"          element={<Blog />} />
-                    <Route path="/timeline"      element={<Timeline />} />
-                    <Route path="/insights"      element={<Insights />} />
-                    <Route path="/instructions"  element={<Instructions />} />
-                    <Route path="/plugins"       element={<Plugins />} />
-                    <Route path="/settings"      element={<Settings />} />
+                    {NAV.map(({ to, screen }) => {
+                      const Screen = getScreen(skin, screen)
+                      return <Route key={to} path={to} element={<Screen />} />
+                    })}
                   </Routes>
                 </ErrorBoundary>
               </main>

@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api/client'
 import { queryKeys } from '../api/queryKeys'
+import { useTheme, type Skin } from '../theme/ThemeContext'
 
 // ── Primitive design components ──────────────────────────────────────────────
 
@@ -95,6 +96,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 
 export default function Settings() {
   const qc = useQueryClient()
+  const { skin, setSkin } = useTheme()
   type FormState = {
     chatType: string; chatUrl: string; chatModel: string; chatKey: string
     embedType: string; embedUrl: string; embedModel: string; embedKey: string
@@ -334,6 +336,23 @@ export default function Settings() {
           {saveMessage}
         </div>
       )}
+
+      {/* Appearance */}
+      <Section title="Appearance">
+        <Field label="Theme" sublabel="stored locally, applies instantly">
+          <Select
+            value={skin}
+            onChange={e => setSkin(e.target.value as Skin)}
+            options={[
+              { value: 'modern',  label: 'Modern — the original look' },
+              { value: 'minimal', label: 'Minimal — monochrome, text-first' },
+            ]}
+          />
+        </Field>
+        <p className="text-[12px]" style={{ color: 'var(--text-dim)' }}>
+          Screens without a minimal version yet fall back to the modern look while the new skin is built out.
+        </p>
+      </Section>
 
       {/* Capture */}
       <Section title="Capture">

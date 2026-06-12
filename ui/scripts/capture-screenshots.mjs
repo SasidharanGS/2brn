@@ -192,11 +192,7 @@ async function setupMocks(page) {
 
 async function forceTheme(page, theme) {
   await page.evaluate((t) => {
-    if (t === 'light') {
-      document.documentElement.classList.add('light')
-    } else {
-      document.documentElement.classList.remove('light')
-    }
+    document.documentElement.setAttribute('data-theme', t === 'light' ? 'light' : 'dark')
   }, theme)
   await page.waitForTimeout(200)
 }

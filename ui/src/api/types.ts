@@ -190,6 +190,16 @@ export interface SettingsUpdateRequest {
   joplin_db_path?: string
 }
 
+export interface BackfillResponse {
+  ok: boolean
+  queued: number
+  remaining: number
+  // Present only when include_sparse was requested
+  sparse_cloned?: number
+  sparse_queued?: number
+  sparse_deferred?: number
+}
+
 export interface AppExclusion {
   app_name: string
   added_at: string

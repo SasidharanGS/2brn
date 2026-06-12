@@ -1,9 +1,6 @@
-import { useQuery } from '@tanstack/react-query'
-import { api } from '../../api/client'
-import { queryKeys } from '../../api/queryKeys'
 import { stateChip, categoryChip } from '../../utils/design'
 import { fmtDur } from '../../utils/time'
-import { toDateStr } from '../../context/DateContext'
+import { useTopBarStats } from '../../hooks/useTopBarStats'
 import { useTheme, type ThemeMode } from '../../theme/ThemeContext'
 
 const THEME_SEGMENTS: { value: ThemeMode; label: string }[] = [
@@ -14,19 +11,7 @@ const THEME_SEGMENTS: { value: ThemeMode; label: string }[] = [
 
 export default function StatsBar() {
   const { mode: themeMode, setMode: onThemeModeChange } = useTheme()
-  const today = toDateStr(new Date())
-  const { data: insights } = useQuery({
-    queryKey: queryKeys.insightsSummary(today, 'day'),
-    queryFn: () => api.getInsightsSummary(today, 'day'),
-    refetchInterval: 30_000,
-  })
-
-  // All time-based: buckets arrive sorted by block-time; focus% is the
-  // productive share of observed time.
-  const topState    = insights?.productivity_states[0]?.productivity_state ?? null
-  const topCategory = insights?.categories[0]?.task_category ?? null
-  const observed    = insights?.observed_seconds ?? 0
-  const focusPct    = Math.round(insights?.comparison.productive.current_pct ?? 0)
+  const { topState, topCategory, observed, focusPct } = useTopBarStats()
 
   const sc = stateChip(topState)
   const cc = categoryChip(topCategory)

@@ -1,15 +1,19 @@
+import asyncio
 import calendar
 import logging
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 
 import aiosqlite
 
-from brn_daemon.db import get_db_path
+from brn_daemon.db import get_brn_home, get_db_path
 
 logger = logging.getLogger(__name__)
 
 _SQLITE_MAX_VARS = 500  # stay well under SQLite's 999-variable limit
+
+_SCREENSHOT_SUFFIXES = (".jpg", ".jpg.enc")
 
 
 def _batches(lst: list, size: int):
@@ -96,3 +100,50 @@ async def purge_old_captures(months: int = 12, chroma_store=None) -> int:
         len(old_captures), files_deleted, cutoff_str,
     )
     return len(old_captures)
+
+
+def _sweep_orphans_sync(base: Path, referenced: set[str], cutoff_mtime: float) -> int:
+    """Walk the screenshots tree and unlink unreferenced files. Blocking; run off-loop."""
+    deleted = 0
+    if not base.exists():
+        return 0
+    for p in base.rglob("*"):
+        try:
+            if not p.is_file():
+                continue
+            if not p.name.endswith(_SCREENSHOT_SUFFIXES):
+                continue
+            if str(p) in referenced:
+                continue
+            if p.stat().st_mtime >= cutoff_mtime:
+                continue
+            p.unlink()
+            deleted += 1
+        except OSError:
+            logger.exception("Could not sweep %s", p)
+    return deleted
+
+
+async def sweep_orphaned_screenshots(min_age_seconds: int = 3600) -> int:
+    """Delete screenshot files not referenced by any captures row. Best-effort.
+
+    The capture pipeline used to write the screenshot before the dedup filter
+    decided whether to keep the frame, so every skipped tick left a uniquely
+    named file behind that row-driven purge could never reclaim. This sweep
+    cleans that historical debris and any file orphaned by a crash between
+    save and DB insert. Only files older than ``min_age_seconds`` are touched
+    so an in-flight save can never be swept.
+    """
+    async with aiosqlite.connect(get_db_path()) as conn:
+        cur = await conn.execute(
+            "SELECT file_path FROM captures WHERE file_path IS NOT NULL"
+        )
+        referenced = {row[0] for row in await cur.fetchall()}
+
+    base = get_brn_home() / "screenshots"
+    cutoff = time.time() - min_age_seconds
+    loop = asyncio.get_running_loop()
+    deleted = await loop.run_in_executor(None, _sweep_orphans_sync, base, referenced, cutoff)
+    if deleted:
+        logger.info("Swept %d orphaned screenshot files", deleted)
+    return deleted

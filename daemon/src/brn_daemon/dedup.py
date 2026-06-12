@@ -1,6 +1,12 @@
 import imagehash
 from PIL import Image
 
+# Frames larger than this are downscaled before hashing. whash's internal
+# resize-to-power-of-two of a full-resolution frame dominates the cost of every
+# capture tick, and a 64-bit hash extracts no more signal from a 4K frame than
+# from a 256px thumbnail.
+_HASH_MAX_DIMENSION = 256
+
 
 def compute_phash(image: Image.Image) -> str:
     """Compute a perceptual hash of an image, returned as a hex string.
@@ -10,7 +16,17 @@ def compute_phash(image: Image.Image) -> str:
     screen captures (a solid panel vs a gradient), which the is_duplicate
     threshold below is tuned against — DCT pHash collapses those to near-identical
     hashes. The function name is kept for call-site/log stability.
+
+    The image is downscaled to at most _HASH_MAX_DIMENSION on its longest side
+    first — the hash is computed every tick on every monitor, so its cost must
+    not scale with display resolution.
     """
+    if max(image.size) > _HASH_MAX_DIMENSION:
+        scale = _HASH_MAX_DIMENSION / max(image.size)
+        image = image.resize(
+            (max(1, round(image.width * scale)), max(1, round(image.height * scale))),
+            Image.Resampling.BILINEAR,
+        )
     return str(imagehash.whash(image))
 
 

@@ -1,7 +1,8 @@
-import pytest
-from PIL import Image
 import numpy as np
+from PIL import Image
+
 from brn_daemon.dedup import compute_phash, is_duplicate
+
 
 def _solid_image(color: tuple, size=(100, 100)) -> Image.Image:
     arr = np.full((size[1], size[0], 3), color, dtype=np.uint8)
@@ -35,6 +36,33 @@ def test_slightly_different_images_are_not_duplicate():
     h_a = compute_phash(img_a)
     h_b = compute_phash(img_b)
     assert is_duplicate(h_a, h_b, threshold=0.95) is False
+
+def _gradient_image(size: tuple[int, int]) -> Image.Image:
+    """Horizontal 0→252 gradient — strong directional frequency content."""
+    w, h = size
+    arr = np.zeros((h, w, 3), dtype=np.uint8)
+    arr[:, :, :] = np.linspace(0, 252, w, dtype=np.uint8)[None, :, None]
+    return Image.fromarray(arr)
+
+
+def test_full_resolution_frames_with_different_content_stay_distinct():
+    """The pre-hash downscale must not blur away real differences at 4K."""
+    grad = _gradient_image((3840, 2160))
+    solid = _solid_image((128, 128, 128), size=(3840, 2160))
+    assert is_duplicate(compute_phash(grad), compute_phash(solid), threshold=0.95) is False
+
+
+def test_downscale_preserves_perceptual_identity():
+    """A 4K frame and the same content at thumbnail size must hash as duplicates."""
+    full = _gradient_image((3840, 2160))
+    thumb = _gradient_image((256, 144))
+    assert is_duplicate(compute_phash(full), compute_phash(thumb), threshold=0.95) is True
+
+
+def test_identical_full_resolution_frames_hash_identically():
+    img = _gradient_image((3840, 2160))
+    assert compute_phash(img) == compute_phash(img.copy())
+
 
 def test_compute_phash_returns_string():
     img = _solid_image((123, 45, 67))

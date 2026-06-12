@@ -11,8 +11,9 @@ you actually did. Your data stays on your machine.
 ## Features
 
 - 📸 **Screen capture** — multi-monitor screenshots, on a heartbeat *and* on
-  visual change (perceptual-hash dedup), with active-app detection and per-app
-  exclusions
+  visual change (perceptual-hash dedup, change captures rate-limited per
+  monitor so videos don't capture at tick rate), with active-app detection
+  and per-app exclusions
 - 🔍 **OCR + AI inference** — Tesseract extracts text; your AI provider infers an
   activity summary, a task category (`work` / `research` / `play` / `learning` /
   `communication` / `creative` / `admin` / `other`) and a productivity state

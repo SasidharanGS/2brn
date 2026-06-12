@@ -10,7 +10,6 @@ class ActivityRecord(BaseModel):
     id: int
     capture_id: int | None
     started_at: str
-    ended_at: str | None
     summary: str | None
     tags: str | None
     task_category: str | None
@@ -43,7 +42,7 @@ async def get_activities(
     async with aiosqlite.connect(get_db_path()) as conn:
         conn.row_factory = aiosqlite.Row
         cur = await conn.execute(
-            f"SELECT id, capture_id, started_at, ended_at, summary, tags, "
+            f"SELECT id, capture_id, started_at, summary, tags, "
             f"task_category, task_category_confidence, productivity_state, "
             f"productivity_confidence, category_overridden_by_user "
             f"FROM activities {where} ORDER BY started_at",
@@ -54,7 +53,6 @@ async def get_activities(
         ActivityRecord(**{
             **dict(r),
             "started_at": r["started_at"] + "Z" if r["started_at"] and not r["started_at"].endswith("Z") else r["started_at"],
-            "ended_at": r["ended_at"] + "Z" if r["ended_at"] and not r["ended_at"].endswith("Z") else r["ended_at"],
         })
         for r in rows
     ]

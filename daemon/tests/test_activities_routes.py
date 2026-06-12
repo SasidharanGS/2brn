@@ -48,10 +48,10 @@ async def activities_client(tmp_home):
         )
         await conn.execute(
             "INSERT INTO activities "
-            "(id, capture_id, started_at, ended_at, summary, tags, task_category, "
+            "(id, capture_id, started_at, summary, tags, task_category, "
             "task_category_confidence, productivity_state, productivity_confidence, "
             "category_overridden_by_user) "
-            "VALUES (1, 1, '2026-05-28T10:00:00', '2026-05-28T10:30:00', "
+            "VALUES (1, 1, '2026-05-28T10:00:00', "
             "'Browsing GitHub', '[]', 'work', 0.9, 'productive', 0.85, 0)"
         )
         await conn.commit()

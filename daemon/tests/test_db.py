@@ -241,3 +241,37 @@ async def test_init_db_idempotent_with_shared_notes(tmp_home):
     """Calling init_db twice must not raise (IF NOT EXISTS guards)."""
     await init_db()
     await init_db()
+
+
+async def test_init_db_drops_legacy_ended_at_column(tmp_home):
+    """A DB created by an older schema (with activities.ended_at) is migrated."""
+    import aiosqlite
+
+    from brn_daemon.db import get_db_path
+
+    # Build the schema fresh, then re-add the legacy column to simulate an old DB.
+    await init_db()
+    async with aiosqlite.connect(get_db_path()) as conn:
+        await conn.execute("ALTER TABLE activities ADD COLUMN ended_at DATETIME")
+        await conn.commit()
+
+    await init_db()
+
+    async with aiosqlite.connect(get_db_path()) as conn:
+        cur = await conn.execute(
+            "SELECT 1 FROM pragma_table_info('activities') WHERE name = 'ended_at'"
+        )
+        assert await cur.fetchone() is None, "ended_at should have been dropped"
+
+
+async def test_fresh_schema_has_no_ended_at(tmp_home):
+    import aiosqlite
+
+    from brn_daemon.db import get_db_path
+
+    await init_db()
+    async with aiosqlite.connect(get_db_path()) as conn:
+        cur = await conn.execute(
+            "SELECT 1 FROM pragma_table_info('activities') WHERE name = 'ended_at'"
+        )
+        assert await cur.fetchone() is None

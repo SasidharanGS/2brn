@@ -27,6 +27,7 @@ from brn_daemon.capture import (
     get_windows_snapshot,
     save_screenshot,
 )
+from brn_daemon.capture_policy import CapturePolicy, Frame
 from brn_daemon.chat import ChatService
 from brn_daemon.config import (
     BlogScheduleConfig,
@@ -35,7 +36,7 @@ from brn_daemon.config import (
     load_config,
 )
 from brn_daemon.db import get_conn, get_db_path, init_db
-from brn_daemon.dedup import compute_phash, is_duplicate
+from brn_daemon.dedup import compute_phash
 from brn_daemon.embeddings import ChromaStore, EmbeddingService
 from brn_daemon.encryption import load_encryption_state, verify_password
 from brn_daemon.inference import InferenceQueue
@@ -407,38 +408,8 @@ def _save_screenshot_off_loop(
     return loop.run_in_executor(None, save_screenshot_bound)
 
 
-def _select_pending(
-    candidates: list,
-    phashes: list[str],
-    prev_phashes: dict[int, str],
-    is_heartbeat: bool,
-    threshold: float = 0.95,
-) -> list:
-    """Apply the dedup/heartbeat keep policy to one tick's frames.
-
-    Returns the kept tuples (monitor_idx, img, monitor_rect, app_name,
-    window_title, trigger, phash). Updates prev_phashes for kept frames only —
-    a skipped frame must not become the next tick's comparison baseline.
-    """
-    pending = []
-    for (monitor_idx, img, monitor_rect, app_name, window_title), current_phash in zip(
-        candidates, phashes
-    ):
-        prev_phash = prev_phashes.get(monitor_idx)
-        is_change = not is_duplicate(current_phash, prev_phash, threshold=threshold)
-        if not is_heartbeat and not is_change:
-            continue
-        trigger = "heartbeat" if is_heartbeat else "change"
-        prev_phashes[monitor_idx] = current_phash
-        pending.append(
-            (monitor_idx, img, monitor_rect, app_name, window_title, trigger, current_phash)
-        )
-    return pending
-
-
 async def _capture_loop(cfg, inference_queue: InferenceQueue):
-    prev_phashes: dict[int, str] = {}  # monitor_index → last phash
-    last_heartbeat = 0.0
+    policy = CapturePolicy(heartbeat_seconds=cfg.capture_interval_seconds)
     excluded_apps: set[str] = set()
     exclusion_cache_time = 0.0
     EXCLUSION_CACHE_TTL = 30.0
@@ -460,7 +431,6 @@ async def _capture_loop(cfg, inference_queue: InferenceQueue):
                 app_state["exclusions_dirty"] = False
 
             windows = get_windows_snapshot()
-            is_heartbeat = (now - last_heartbeat) >= cfg.capture_interval_seconds
             monitors = capture_all_monitors_with_rects()
 
             loop = asyncio.get_running_loop()
@@ -470,78 +440,67 @@ async def _capture_loop(cfg, inference_queue: InferenceQueue):
                 loop.run_in_executor(None, get_app_for_monitor, monitor_rect, windows)
                 for _, _, monitor_rect in monitors
             ])
-            phase1_candidates = []
-            for (monitor_idx, img, monitor_rect), (app_name, window_title) in zip(monitors, app_results):
-                if app_name in excluded_apps:
-                    continue
-                phase1_candidates.append((monitor_idx, img, monitor_rect, app_name, window_title))
-
-            if not phase1_candidates:
-                if is_heartbeat:
-                    last_heartbeat = now
-                continue
+            frames = [
+                Frame(monitor_index=monitor_idx, image=img, monitor_rect=monitor_rect,
+                      app_name=app_name, window_title=window_title)
+                for (monitor_idx, img, monitor_rect), (app_name, window_title)
+                in zip(monitors, app_results)
+                if app_name not in excluded_apps
+            ]
 
             # Hash every frame (needed for change detection), but decide what to
             # keep BEFORE writing anything to disk — saving first orphaned a
             # uniquely-named file on every skipped tick, which purge (driven by
             # DB rows) could never reclaim.
             phashes = await asyncio.gather(*[
-                loop.run_in_executor(None, compute_phash, item[1])
-                for item in phase1_candidates
+                loop.run_in_executor(None, compute_phash, frame.image)
+                for frame in frames
             ])
 
-            kept = _select_pending(phase1_candidates, phashes, prev_phashes, is_heartbeat)
-
+            kept = policy.select(frames, phashes, now)
             if not kept:
-                if is_heartbeat:
-                    last_heartbeat = now
                 continue
 
             # ── Phase 1b: screenshot save — only for frames we keep ───────────
             file_paths = await asyncio.gather(*[
                 _save_screenshot_off_loop(
-                    loop, item[1], key=app_state.get("screenshot_key"), monitor_index=item[0]
+                    loop, item.frame.image,
+                    key=app_state.get("screenshot_key"),
+                    monitor_index=item.frame.monitor_index,
                 )
                 for item in kept
             ])
-            pending = [
-                (monitor_idx, img, monitor_rect, app_name, window_title, trigger, file_path, current_phash)
-                for (monitor_idx, img, monitor_rect, app_name, window_title, trigger, current_phash), file_path
-                in zip(kept, file_paths)
-            ]
 
             # ── Phase 2: OCR — run all monitors concurrently in thread pool ───
-            ocr_tasks = [
-                loop.run_in_executor(None, extract_text, item[1])  # type: ignore[arg-type]
-                for item in pending
-            ]
-            ocr_results = await asyncio.gather(*ocr_tasks)
+            ocr_results = await asyncio.gather(*[
+                loop.run_in_executor(None, extract_text, item.frame.image)
+                for item in kept
+            ])
 
             # ── Phase 3: DB inserts + inference enqueue ────────────────────────
             async with get_conn() as conn:
-                for item, ocr_text in zip(pending, ocr_results):
-                    monitor_idx, img, monitor_rect, app_name, window_title, trigger, file_path, current_phash = item
+                for item, file_path, ocr_text in zip(kept, file_paths, ocr_results):
+                    frame = item.frame
                     now_iso = utc_now_iso()
                     cur = await conn.execute(
                         "INSERT INTO captures (captured_at, app_name, window_title, file_path, "
                         "ocr_text, phash, trigger, monitor_index) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                        (now_iso, app_name, window_title, str(file_path),
-                         ocr_text, current_phash, trigger, monitor_idx)
+                        (now_iso, frame.app_name, frame.window_title, str(file_path),
+                         ocr_text, item.phash, item.trigger, frame.monitor_index)
                     )
                     await conn.commit()
                     capture_id: int = cur.lastrowid  # type: ignore[assignment]
 
                     if not is_text_sparse(ocr_text):
-                        await inference_queue.enqueue(capture_id, app_name, window_title, ocr_text, now_iso)
+                        await inference_queue.enqueue(
+                            capture_id, frame.app_name, frame.window_title, ocr_text, now_iso
+                        )
                         logger.info("Capture #%d → inference queued", capture_id)
                     else:
                         logger.info("Capture #%d → saved (sparse text, skipping inference)", capture_id)
 
             app_state["last_captured_at"] = datetime.now(UTC).isoformat()
             app_state["capture_count_today"] = app_state.get("capture_count_today", 0) + 1
-
-            if is_heartbeat:
-                last_heartbeat = now
 
         except asyncio.CancelledError:
             break

@@ -130,9 +130,6 @@ export default function Settings() {
             ]}
           />
         </Field>
-        <p className="text-[12px]" style={{ color: 'var(--text-dim)' }}>
-          Screens without a minimal version yet fall back to the modern look while the new skin is built out.
-        </p>
       </Section>
 
       {/* Capture */}

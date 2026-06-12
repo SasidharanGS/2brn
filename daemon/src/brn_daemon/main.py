@@ -44,7 +44,7 @@ from brn_daemon.llm import make_chat_fn
 from brn_daemon.ocr import extract_text, is_text_sparse
 from brn_daemon.plugins import EventBus, EventNames, PluginOrchestrator
 from brn_daemon.providers import make_embed_client
-from brn_daemon.purge import purge_old_captures
+from brn_daemon.purge import purge_old_captures, sweep_orphaned_screenshots
 from brn_daemon.timeutil import utc_now_iso
 
 
@@ -374,6 +374,10 @@ async def _purge_job() -> None:
         months=cfg.purge_months,
         chroma_store=app_state.get("chroma_store"),
     )
+    try:
+        await sweep_orphaned_screenshots()
+    except Exception:
+        logger.exception("Orphan screenshot sweep failed")
 
 
 async def _reset_capture_count_job() -> None:
@@ -389,26 +393,47 @@ async def _start_vault_watcher(vault_watcher, loop) -> None:
     vault_watcher.start(loop)
 
 
-async def _phase1_process_monitor(
+def _save_screenshot_off_loop(
     loop: asyncio.AbstractEventLoop,
     img,
     *,
     key: bytes | None,
     monitor_index: int = 0,
-) -> tuple[str, "Path"]:
-    """Run compute_phash and save_screenshot in the thread executor.
-
-    Returns (phash_str, file_path).
-    Both are CPU/IO-bound and must not block the event loop.
-    """
+):
+    """Schedule save_screenshot (JPEG encode + optional AES + disk write) in the executor."""
     def save_screenshot_bound():
         return save_screenshot(img, key=key, monitor_index=monitor_index)
     save_screenshot_bound.__name__ = "save_screenshot"
+    return loop.run_in_executor(None, save_screenshot_bound)
 
-    phash_fut = loop.run_in_executor(None, compute_phash, img)
-    save_fut = loop.run_in_executor(None, save_screenshot_bound)
-    phash_str, file_path = await asyncio.gather(phash_fut, save_fut)
-    return phash_str, file_path
+
+def _select_pending(
+    candidates: list,
+    phashes: list[str],
+    prev_phashes: dict[int, str],
+    is_heartbeat: bool,
+    threshold: float = 0.95,
+) -> list:
+    """Apply the dedup/heartbeat keep policy to one tick's frames.
+
+    Returns the kept tuples (monitor_idx, img, monitor_rect, app_name,
+    window_title, trigger, phash). Updates prev_phashes for kept frames only —
+    a skipped frame must not become the next tick's comparison baseline.
+    """
+    pending = []
+    for (monitor_idx, img, monitor_rect, app_name, window_title), current_phash in zip(
+        candidates, phashes
+    ):
+        prev_phash = prev_phashes.get(monitor_idx)
+        is_change = not is_duplicate(current_phash, prev_phash, threshold=threshold)
+        if not is_heartbeat and not is_change:
+            continue
+        trigger = "heartbeat" if is_heartbeat else "change"
+        prev_phashes[monitor_idx] = current_phash
+        pending.append(
+            (monitor_idx, img, monitor_rect, app_name, window_title, trigger, current_phash)
+        )
+    return pending
 
 
 async def _capture_loop(cfg, inference_queue: InferenceQueue):
@@ -440,7 +465,7 @@ async def _capture_loop(cfg, inference_queue: InferenceQueue):
 
             loop = asyncio.get_running_loop()
 
-            # ── Phase 1: fan-out phash + screenshot save to executor (CPU/IO-bound) ──
+            # ── Phase 1: app detection + phash (CPU-bound, off-loop) ──────────
             app_results = await asyncio.gather(*[
                 loop.run_in_executor(None, get_app_for_monitor, monitor_rect, windows)
                 for _, _, monitor_rect in monitors
@@ -456,27 +481,34 @@ async def _capture_loop(cfg, inference_queue: InferenceQueue):
                     last_heartbeat = now
                 continue
 
-            phase1_results = await asyncio.gather(*[
-                _phase1_process_monitor(loop, item[1], key=app_state.get("screenshot_key"), monitor_index=item[0])
+            # Hash every frame (needed for change detection), but decide what to
+            # keep BEFORE writing anything to disk — saving first orphaned a
+            # uniquely-named file on every skipped tick, which purge (driven by
+            # DB rows) could never reclaim.
+            phashes = await asyncio.gather(*[
+                loop.run_in_executor(None, compute_phash, item[1])
                 for item in phase1_candidates
             ])
 
-            pending = []
-            for (monitor_idx, img, monitor_rect, app_name, window_title), (current_phash, file_path) in zip(
-                phase1_candidates, phase1_results
-            ):
-                prev_phash = prev_phashes.get(monitor_idx)
-                is_change = not is_duplicate(current_phash, prev_phash, threshold=0.95)
-                if not is_heartbeat and not is_change:
-                    continue
-                trigger = "heartbeat" if is_heartbeat else "change"
-                prev_phashes[monitor_idx] = current_phash
-                pending.append((monitor_idx, img, monitor_rect, app_name, window_title, trigger, file_path, current_phash))
+            kept = _select_pending(phase1_candidates, phashes, prev_phashes, is_heartbeat)
 
-            if not pending:
+            if not kept:
                 if is_heartbeat:
                     last_heartbeat = now
                 continue
+
+            # ── Phase 1b: screenshot save — only for frames we keep ───────────
+            file_paths = await asyncio.gather(*[
+                _save_screenshot_off_loop(
+                    loop, item[1], key=app_state.get("screenshot_key"), monitor_index=item[0]
+                )
+                for item in kept
+            ])
+            pending = [
+                (monitor_idx, img, monitor_rect, app_name, window_title, trigger, file_path, current_phash)
+                for (monitor_idx, img, monitor_rect, app_name, window_title, trigger, current_phash), file_path
+                in zip(kept, file_paths)
+            ]
 
             # ── Phase 2: OCR — run all monitors concurrently in thread pool ───
             ocr_tasks = [

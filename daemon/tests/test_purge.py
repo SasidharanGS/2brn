@@ -1,8 +1,8 @@
-import pytest
+from datetime import UTC, datetime, timedelta
+
 import aiosqlite
-from datetime import datetime, timezone, timedelta
-from pathlib import Path
-from brn_daemon.db import init_db, get_db_path, get_brn_home
+
+from brn_daemon.db import get_brn_home, get_db_path, init_db
 from brn_daemon.purge import purge_old_captures
 
 
@@ -16,8 +16,8 @@ async def test_purge_removes_old_screenshots(tmp_home):
     new_file = screenshots_dir / "new.jpg"
     new_file.write_bytes(b"fake")
 
-    old_date = (datetime.now(timezone.utc) - timedelta(days=200)).isoformat()
-    new_date = datetime.now(timezone.utc).isoformat()
+    old_date = (datetime.now(UTC) - timedelta(days=200)).isoformat()
+    new_date = datetime.now(UTC).isoformat()
 
     async with aiosqlite.connect(get_db_path()) as conn:
         await conn.execute(
@@ -43,7 +43,7 @@ async def test_purge_removes_old_screenshots(tmp_home):
 
 async def test_purge_handles_missing_file_gracefully(tmp_home):
     await init_db()
-    old_date = (datetime.now(timezone.utc) - timedelta(days=200)).isoformat()
+    old_date = (datetime.now(UTC) - timedelta(days=200)).isoformat()
     async with aiosqlite.connect(get_db_path()) as conn:
         await conn.execute(
             "INSERT INTO captures (captured_at, trigger, file_path) VALUES (?, 'heartbeat', ?)",
@@ -56,12 +56,14 @@ async def test_purge_handles_missing_file_gracefully(tmp_home):
 
 async def test_purge_handles_more_than_999_captures(tmp_home, db):
     """Purge must not fail when capture count exceeds SQLite's 999-variable limit."""
-    from datetime import datetime, timezone, timedelta
-    import aiosqlite
-    from brn_daemon.purge import purge_old_captures
-    from brn_daemon.db import get_db_path
+    from datetime import datetime, timedelta
 
-    cutoff = datetime.now(timezone.utc) - timedelta(days=400)
+    import aiosqlite
+
+    from brn_daemon.db import get_db_path
+    from brn_daemon.purge import purge_old_captures
+
+    cutoff = datetime.now(UTC) - timedelta(days=400)
 
     async with aiosqlite.connect(get_db_path()) as conn:
         for i in range(1001):
@@ -79,12 +81,14 @@ async def test_purge_handles_more_than_999_captures(tmp_home, db):
 
 async def test_purge_returns_row_count_not_file_count(tmp_home, db):
     """purge_old_captures must return number of DB rows deleted, not files."""
-    from datetime import datetime, timezone, timedelta
-    import aiosqlite
-    from brn_daemon.purge import purge_old_captures
-    from brn_daemon.db import get_db_path
+    from datetime import datetime, timedelta
 
-    old_ts = (datetime.now(timezone.utc) - timedelta(days=400)).strftime("%Y-%m-%dT%H:%M:%S.%f")
+    import aiosqlite
+
+    from brn_daemon.db import get_db_path
+    from brn_daemon.purge import purge_old_captures
+
+    old_ts = (datetime.now(UTC) - timedelta(days=400)).strftime("%Y-%m-%dT%H:%M:%S.%f")
 
     async with aiosqlite.connect(get_db_path()) as conn:
         await conn.execute(
@@ -96,3 +100,56 @@ async def test_purge_returns_row_count_not_file_count(tmp_home, db):
 
     purged = await purge_old_captures(months=12, chroma_store=None)
     assert purged == 1
+
+
+# ── sweep_orphaned_screenshots ───────────────────────────────────────────────
+
+
+async def test_sweep_deletes_only_old_unreferenced_screenshot_files(tmp_home):
+    import os
+    import time as _time
+
+    from brn_daemon.purge import sweep_orphaned_screenshots
+
+    await init_db()
+    shots = get_brn_home() / "screenshots" / "2026" / "06" / "01"
+    shots.mkdir(parents=True, exist_ok=True)
+
+    referenced = shots / "kept.jpg"
+    referenced.write_bytes(b"fake")
+    old_orphan = shots / "orphan.jpg"
+    old_orphan.write_bytes(b"fake")
+    old_orphan_enc = shots / "orphan.jpg.enc"
+    old_orphan_enc.write_bytes(b"fake")
+    fresh_orphan = shots / "inflight.jpg"
+    fresh_orphan.write_bytes(b"fake")
+    not_a_screenshot = shots / "notes.txt"
+    not_a_screenshot.write_bytes(b"keep me")
+
+    # Age everything except the fresh orphan past the safety window
+    stale = _time.time() - 7200
+    for p in (referenced, old_orphan, old_orphan_enc, not_a_screenshot):
+        os.utime(p, (stale, stale))
+
+    async with aiosqlite.connect(get_db_path()) as conn:
+        await conn.execute(
+            "INSERT INTO captures (captured_at, trigger, file_path) VALUES (?, 'heartbeat', ?)",
+            (datetime.now(UTC).isoformat(), str(referenced)),
+        )
+        await conn.commit()
+
+    deleted = await sweep_orphaned_screenshots(min_age_seconds=3600)
+
+    assert deleted == 2
+    assert referenced.exists()          # in the DB → kept
+    assert not old_orphan.exists()      # old + unreferenced → swept
+    assert not old_orphan_enc.exists()  # encrypted orphan → swept
+    assert fresh_orphan.exists()        # too young → kept (in-flight safety)
+    assert not_a_screenshot.exists()    # wrong suffix → never touched
+
+
+async def test_sweep_handles_missing_screenshots_dir(tmp_home):
+    from brn_daemon.purge import sweep_orphaned_screenshots
+
+    await init_db()
+    assert await sweep_orphaned_screenshots() == 0

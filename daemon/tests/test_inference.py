@@ -1,7 +1,67 @@
 import json
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-from brn_daemon.inference import build_inference_prompt, parse_inference_response, InferenceResult, InferenceQueue
+
+from brn_daemon.inference import (
+    InferenceQueue,
+    InferenceResult,
+    build_inference_prompt,
+    clone_activity,
+    parse_inference_response,
+)
+
+
+async def _insert_capture(conn, captured_at: str = "2026-06-12T10:00:00") -> int:
+    cur = await conn.execute(
+        "INSERT INTO captures (captured_at, app_name, window_title) VALUES (?, 'Code', 'w')",
+        (captured_at,),
+    )
+    await conn.commit()
+    return cur.lastrowid
+
+
+async def test_clone_activity_copies_classification_to_new_capture(tmp_home, db):
+    source_id = await _insert_capture(db)
+    target_id = await _insert_capture(db, captured_at="2026-06-12T10:01:00")
+    await db.execute(
+        """INSERT INTO activities
+           (capture_id, started_at, summary, tags, chroma_id, task_category,
+            task_category_confidence, productivity_state, productivity_confidence,
+            category_overridden_by_user, app_name_override)
+           VALUES (?, '2026-06-12T10:00:00', 'Writing Python', '["coding"]', 'chroma-1',
+                   'work', 0.9, 'focused', 0.8, 1, 'VS Code')""",
+        (source_id,),
+    )
+    await db.commit()
+
+    cloned = await clone_activity(
+        db, source_capture_id=source_id, capture_id=target_id, started_at="2026-06-12T10:01:00"
+    )
+
+    assert cloned is True
+    cur = await db.execute(
+        """SELECT started_at, summary, tags, chroma_id, task_category,
+                  productivity_state, category_overridden_by_user, app_name_override
+           FROM activities WHERE capture_id = ?""",
+        (target_id,),
+    )
+    row = await cur.fetchone()
+    assert row == (
+        "2026-06-12T10:01:00", "Writing Python", '["coding"]', "chroma-1",
+        "work", "focused", 1, "VS Code",
+    )
+
+
+async def test_clone_activity_returns_false_when_source_has_no_activity(tmp_home, db):
+    source_id = await _insert_capture(db)
+    target_id = await _insert_capture(db, captured_at="2026-06-12T10:01:00")
+
+    cloned = await clone_activity(
+        db, source_capture_id=source_id, capture_id=target_id, started_at="2026-06-12T10:01:00"
+    )
+
+    assert cloned is False
+    cur = await db.execute("SELECT COUNT(*) FROM activities WHERE capture_id = ?", (target_id,))
+    assert (await cur.fetchone())[0] == 0
 
 def test_build_prompt_includes_app_and_ocr():
     prompt = build_inference_prompt(
@@ -96,9 +156,9 @@ def test_parse_response_with_null_app_name_override():
 
 async def test_started_at_stored_without_timezone_offset(tmp_home, db):
     """started_at must be stored as naive UTC ISO string (no +00:00 suffix)."""
-    import aiosqlite
     from datetime import datetime
-    from unittest.mock import patch
+
+    import aiosqlite
 
     fake_result = type("R", (), {
         "summary": "test summary",
@@ -139,8 +199,9 @@ async def test_started_at_stored_without_timezone_offset(tmp_home, db):
 async def test_instructions_cache_is_used_on_second_call(tmp_home, db):
     """Second _load_instructions call within TTL must not re-query the DB."""
     import aiosqlite
-    from brn_daemon.inference import InferenceQueue
+
     from brn_daemon.db import get_db_path
+    from brn_daemon.inference import InferenceQueue
 
     async with aiosqlite.connect(get_db_path()) as conn:
         await conn.execute(
@@ -169,8 +230,9 @@ async def test_instructions_cache_is_used_on_second_call(tmp_home, db):
 async def test_invalidate_instructions_cache_forces_reload(tmp_home, db):
     """invalidate_instructions_cache() must cause next load to re-query DB."""
     import aiosqlite
-    from brn_daemon.inference import InferenceQueue
+
     from brn_daemon.db import get_db_path
+    from brn_daemon.inference import InferenceQueue
 
     async with aiosqlite.connect(get_db_path()) as conn:
         await conn.execute(

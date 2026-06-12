@@ -4,6 +4,7 @@ import logging
 import os as _os
 import secrets
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from datetime import date as dt_date
 from pathlib import Path
@@ -27,7 +28,7 @@ from brn_daemon.capture import (
     get_windows_snapshot,
     save_screenshot,
 )
-from brn_daemon.capture_policy import CapturePolicy, Frame
+from brn_daemon.capture_policy import CapturePolicy, Frame, KeptFrame
 from brn_daemon.chat import ChatService
 from brn_daemon.config import (
     BlogScheduleConfig,
@@ -39,7 +40,7 @@ from brn_daemon.db import get_conn, get_db_path, init_db
 from brn_daemon.dedup import compute_phash
 from brn_daemon.embeddings import ChromaStore, EmbeddingService
 from brn_daemon.encryption import load_encryption_state, verify_password
-from brn_daemon.inference import InferenceQueue
+from brn_daemon.inference import InferenceQueue, clone_activity
 from brn_daemon.journal import JournalGenerator
 from brn_daemon.llm import make_chat_fn
 from brn_daemon.ocr import extract_text, is_text_sparse
@@ -408,8 +409,42 @@ def _save_screenshot_off_loop(
     return loop.run_in_executor(None, save_screenshot_bound)
 
 
+@dataclass(frozen=True)
+class _MonitorMemo:
+    """The last freshly-OCR'd capture per monitor — what unchanged heartbeats reuse."""
+
+    capture_id: int
+    ocr_text: str
+
+
+async def _ocr_kept_frames(
+    loop: asyncio.AbstractEventLoop,
+    kept: list[KeptFrame],
+    memos: dict[int, _MonitorMemo],
+) -> list[tuple[str, bool]]:
+    """OCR the kept frames, reusing memoised text for unchanged heartbeat frames.
+
+    Returns one ``(ocr_text, reused)`` pair per frame, in order. An unchanged
+    frame is pixel-similar to the monitor's previous kept frame, so rerunning
+    tesseract could only re-derive the text we already have.
+    """
+    def reusable(item: KeptFrame) -> bool:
+        return item.unchanged and item.frame.monitor_index in memos
+
+    fresh = [(i, item) for i, item in enumerate(kept) if not reusable(item)]
+    fresh_texts = await asyncio.gather(*[
+        loop.run_in_executor(None, extract_text, item.frame.image) for _, item in fresh
+    ])
+    texts: dict[int, str] = {i: text for (i, _), text in zip(fresh, fresh_texts)}
+    return [
+        (texts[i], False) if i in texts else (memos[item.frame.monitor_index].ocr_text, True)
+        for i, item in enumerate(kept)
+    ]
+
+
 async def _capture_loop(cfg, inference_queue: InferenceQueue):
     policy = CapturePolicy(heartbeat_seconds=cfg.capture_interval_seconds)
+    ocr_memos: dict[int, _MonitorMemo] = {}
     excluded_apps: set[str] = set()
     exclusion_cache_time = 0.0
     EXCLUSION_CACHE_TTL = 30.0
@@ -471,15 +506,12 @@ async def _capture_loop(cfg, inference_queue: InferenceQueue):
                 for item in kept
             ])
 
-            # ── Phase 2: OCR — run all monitors concurrently in thread pool ───
-            ocr_results = await asyncio.gather(*[
-                loop.run_in_executor(None, extract_text, item.frame.image)
-                for item in kept
-            ])
+            # ── Phase 2: OCR — reused for unchanged heartbeats, else off-loop ─
+            ocr_results = await _ocr_kept_frames(loop, kept, ocr_memos)
 
             # ── Phase 3: DB inserts + inference enqueue ────────────────────────
             async with get_conn() as conn:
-                for item, file_path, ocr_text in zip(kept, file_paths, ocr_results):
+                for item, file_path, (ocr_text, reused) in zip(kept, file_paths, ocr_results):
                     frame = item.frame
                     now_iso = utc_now_iso()
                     cur = await conn.execute(
@@ -490,6 +522,28 @@ async def _capture_loop(cfg, inference_queue: InferenceQueue):
                     )
                     await conn.commit()
                     capture_id: int = cur.lastrowid  # type: ignore[assignment]
+
+                    if reused:
+                        cloned = await clone_activity(
+                            conn,
+                            source_capture_id=ocr_memos[frame.monitor_index].capture_id,
+                            capture_id=capture_id,
+                            started_at=now_iso,
+                        )
+                        if cloned:
+                            logger.info(
+                                "Capture #%d → unchanged heartbeat — reused OCR + classification",
+                                capture_id,
+                            )
+                            continue
+                        # Source has no activity yet (inference pending, failed, or
+                        # sparse) — fall through to the normal path with the reused
+                        # text, but keep the memo pointing at the original root so
+                        # later heartbeats can still clone its activity once it lands.
+                    else:
+                        ocr_memos[frame.monitor_index] = _MonitorMemo(
+                            capture_id=capture_id, ocr_text=ocr_text
+                        )
 
                     if not is_text_sparse(ocr_text):
                         await inference_queue.enqueue(

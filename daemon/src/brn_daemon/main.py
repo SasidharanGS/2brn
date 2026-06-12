@@ -416,7 +416,7 @@ async def _capture_loop(cfg, inference_queue: InferenceQueue):
 
     while True:
         try:
-            await asyncio.sleep(1)
+            await asyncio.sleep(policy.next_tick_seconds(asyncio.get_running_loop().time()))
             now = asyncio.get_running_loop().time()
 
             if app_state["paused"]:  # type: ignore[typeddict-item]

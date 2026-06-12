@@ -144,3 +144,69 @@ def test_multi_monitor_selection_is_independent():
     policy.select([_frame(1), _frame(2)], [HASH_ZERO, HASH_ZERO], now=0.0)
     kept = policy.select([_frame(1), _frame(2)], [HASH_NEAR, HASH_FAR], now=10.0)
     assert [k.frame.monitor_index for k in kept] == [2]
+
+
+# ── adaptive tick pacing ─────────────────────────────────────────────────────
+
+
+def test_tick_backs_off_exponentially_while_idle():
+    policy = _policy()
+    policy.select([_frame()], [HASH_ZERO], now=0.0)  # change → 1s
+    assert policy.next_tick_seconds(0.0) == 1.0
+    policy.select([_frame()], [HASH_NEAR], now=1.0)
+    assert policy.next_tick_seconds(1.0) == 2.0
+    policy.select([_frame()], [HASH_NEAR], now=3.0)
+    assert policy.next_tick_seconds(3.0) == 4.0
+    policy.select([_frame()], [HASH_NEAR], now=7.0)
+    assert policy.next_tick_seconds(7.0) == 8.0
+
+
+def test_tick_backoff_caps_at_max_idle():
+    policy = _policy()
+    policy.select([_frame()], [HASH_ZERO], now=0.0)
+    for i in range(10):
+        policy.select([_frame()], [HASH_NEAR], now=1.0 + i)
+    assert policy.next_tick_seconds(11.0) == 16.0
+
+
+def test_change_snaps_tick_back_to_min():
+    policy = _policy()
+    policy.select([_frame()], [HASH_ZERO], now=0.0)
+    for i in range(5):
+        policy.select([_frame()], [HASH_NEAR], now=1.0 + i)
+    assert policy.next_tick_seconds(5.0) > 1.0
+    policy.select([_frame()], [HASH_FAR], now=6.0)
+    assert policy.next_tick_seconds(6.0) == 1.0
+
+
+def test_cooldown_suppressed_change_still_resets_tick():
+    """A suppressed change means the screen is active — keep sampling fast so
+    the post-cooldown keep lands promptly."""
+    policy = _policy(change_cooldown_seconds=60.0)
+    policy.select([_frame()], [HASH_ZERO], now=0.0)
+    policy.select([_frame()], [HASH_NEAR], now=1.0)
+    policy.select([_frame()], [HASH_NEAR], now=3.0)
+    assert policy.next_tick_seconds(3.0) == 4.0
+    assert policy.select([_frame()], [HASH_FAR], now=4.0) == []  # suppressed
+    assert policy.next_tick_seconds(4.0) == 1.0
+
+
+def test_idle_backoff_grows_on_empty_ticks_too():
+    """All-excluded ticks are idle ticks: nothing observed, nothing changing."""
+    policy = _policy()
+    policy.select([], [], now=0.0)
+    assert policy.next_tick_seconds(0.0) == 2.0
+
+
+def test_sleep_never_overshoots_the_next_heartbeat():
+    policy = _policy()
+    policy.select([_frame()], [HASH_ZERO], now=100.0)  # heartbeat tick
+    for i in range(6):
+        policy.select([_frame()], [HASH_NEAR], now=101.0 + i)
+    # Backed off to 16s, but the next heartbeat is due at t=160.
+    assert policy.next_tick_seconds(150.0) == 10.0
+
+
+def test_sleep_is_at_least_min_tick_even_when_heartbeat_overdue():
+    policy = _policy()
+    assert policy.next_tick_seconds(1000.0) == 1.0

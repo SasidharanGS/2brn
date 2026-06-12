@@ -131,7 +131,7 @@ async def test_post_backfill_triggers_inference_backfill(activities_client):
     resp = await activities_client.post("/activities/backfill", json={"days": 3})
     assert resp.status_code == 200
     assert resp.json() == {"ok": True, "queued": 3, "remaining": 1}
-    app_state["inference_queue"].backfill_unclassified.assert_awaited_once_with(days=3)
+    app_state["inference_queue"].backfill_unclassified.assert_awaited_once_with(days=3, include_sparse=False)
 
 
 async def test_post_backfill_defaults_to_seven_days(activities_client):
@@ -141,9 +141,24 @@ async def test_post_backfill_defaults_to_seven_days(activities_client):
     )
     resp = await activities_client.post("/activities/backfill")
     assert resp.status_code == 200
-    app_state["inference_queue"].backfill_unclassified.assert_awaited_once_with(days=7)
+    app_state["inference_queue"].backfill_unclassified.assert_awaited_once_with(days=7, include_sparse=False)
 
 
 async def test_post_backfill_rejects_out_of_range_days(activities_client):
     resp = await activities_client.post("/activities/backfill", json={"days": 0})
     assert resp.status_code == 422
+
+
+async def test_post_backfill_forwards_include_sparse(activities_client):
+    from brn_daemon.main import app_state
+    app_state["inference_queue"].backfill_unclassified = AsyncMock(
+        return_value={"queued": 0, "remaining": 0, "sparse_cloned": 5, "sparse_queued": 2, "sparse_deferred": 9}
+    )
+    resp = await activities_client.post(
+        "/activities/backfill", json={"days": 7, "include_sparse": True}
+    )
+    assert resp.status_code == 200
+    assert resp.json()["sparse_cloned"] == 5
+    app_state["inference_queue"].backfill_unclassified.assert_awaited_once_with(
+        days=7, include_sparse=True
+    )

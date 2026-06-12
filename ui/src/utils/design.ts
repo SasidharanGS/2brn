@@ -11,6 +11,9 @@ export const CATEGORY_CHIP: Record<string, { bg: string; text: string; dot: stri
   creative:      { bg: 'rgba(244,114,182,0.12)', text: '#f472b6', dot: '#f472b6' },
   admin:         { bg: 'rgba(148,163,184,0.12)', text: '#94a3b8', dot: '#94a3b8' },
   other:         { bg: 'rgba(100,116,139,0.12)', text: '#64748b', dot: '#64748b' },
+  // Screen time with no classified activity (sparse OCR text, e.g. video) —
+  // deliberately dimmer than every real category.
+  unclassified:  { bg: 'rgba(100,116,139,0.08)', text: '#566073', dot: '#475569' },
 }
 
 export const STATE_CHIP: Record<string, { bg: string; text: string }> = {

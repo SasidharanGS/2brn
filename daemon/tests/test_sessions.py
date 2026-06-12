@@ -228,3 +228,61 @@ async def test_sessions_route_empty_day(sessions_client):
     data = resp.json()
     assert data["blocks"] == []
     assert data["totals"]["observed_seconds"] == 0
+
+
+# ── unclassified screen time (captures with no activity row) ────────────────
+
+
+@pytest.fixture
+async def unclassified_client(tmp_home):
+    from brn_daemon.main import create_app
+
+    await init_db()
+    lo, _hi = local_day_bounds_utc("2026-05-28")
+    base = datetime.fromisoformat(lo) + timedelta(hours=14)
+
+    async with aiosqlite.connect(get_db_path()) as conn:
+        # Two classified minutes of work in Code…
+        for i, offset in enumerate([0, 60], start=1):
+            ts = (base + timedelta(seconds=offset)).isoformat()
+            await conn.execute(
+                "INSERT INTO captures (id, captured_at, app_name, window_title, trigger, monitor_index) "
+                "VALUES (?, ?, 'Code', 'editor', 'heartbeat', 1)",
+                (i, ts),
+            )
+            await conn.execute(
+                "INSERT INTO activities (capture_id, started_at, summary, task_category, "
+                "productivity_state) VALUES (?, ?, 'coding', 'work', 'focused')",
+                (i, ts),
+            )
+        # …then two captures with NO activity row (sparse text — e.g. video)
+        for i, offset in enumerate([120, 180], start=3):
+            ts = (base + timedelta(seconds=offset)).isoformat()
+            await conn.execute(
+                "INSERT INTO captures (id, captured_at, app_name, window_title, trigger, monitor_index) "
+                "VALUES (?, ?, 'VLC', 'movie.mkv', 'heartbeat', 1)",
+                (i, ts),
+            )
+        await conn.commit()
+
+    app = create_app()
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        yield client
+
+
+async def test_activityless_captures_become_unclassified_blocks(unclassified_client):
+    resp = await unclassified_client.get("/sessions?date=2026-05-28")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data["blocks"]) == 2
+    work, unclassified = data["blocks"]
+    assert work["task_category"] == "work"
+    assert unclassified["task_category"] == "unclassified"
+    assert unclassified["app_name"] == "VLC"
+    assert unclassified["summary"] == "movie.mkv"  # window title stands in
+    assert unclassified["dominant_state"] is None
+    assert unclassified["sample_count"] == 2
+    assert "unclassified" in data["totals"]["by_category"]
+    # Observed time covers the classified AND unclassified span
+    assert data["totals"]["observed_seconds"] == 240

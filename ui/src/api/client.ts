@@ -1,6 +1,6 @@
 import type {
   DaemonStatus, CaptureRecord, ActivityRecord, JournalEntry, BlogPost,
-  DailyInsights, InsightsSummary, InsightsPeriod, SessionsResponse,
+  InsightsSummary, InsightsPeriod, SessionsResponse,
   AppSettings, SettingsUpdateRequest, AppExclusion, UserInstruction, LogLine, DebugStatus,
   Plugin, PluginRule, PluginTool, RuleExecution, PluginCreate, PluginUpdate, RuleCreate, RuleUpdate,
 } from './types'
@@ -139,7 +139,6 @@ export const api = {
       return r.json() as Promise<{ ok: boolean; message: string }>
     }),
 
-  getDailyInsights: (date: string) => get<DailyInsights>(`/insights/daily?date=${date}`),
   getInsightsSummary: (date: string, period: InsightsPeriod = 'day') =>
     get<InsightsSummary>(`/insights/summary?date=${date}&period=${period}`),
   getLogs: (level?: string, limit?: number) => {

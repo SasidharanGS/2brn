@@ -59,6 +59,9 @@ async def get_activities(
 
 class BackfillRequest(BaseModel):
     days: int = Field(default=7, ge=1, le=365)
+    # Opt-in: also classify sparse-text captures (videos, images) from their
+    # app/window metadata — spends ~1 LLM call per distinct window title.
+    include_sparse: bool = False
 
 
 @router.post("/activities/backfill")
@@ -73,7 +76,8 @@ async def backfill_activities(body: BackfillRequest | None = None):
     queue = app_state.get("inference_queue")
     if queue is None:
         raise HTTPException(503, "Inference queue is not running")
-    result = await queue.backfill_unclassified(days=(body or BackfillRequest()).days)
+    body = body or BackfillRequest()
+    result = await queue.backfill_unclassified(days=body.days, include_sparse=body.include_sparse)
     return {"ok": True, **result}
 
 

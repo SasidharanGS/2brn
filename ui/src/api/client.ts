@@ -1,7 +1,7 @@
 import type {
   DaemonStatus, CaptureRecord, ActivityRecord, JournalEntry, BlogPost,
   InsightsSummary, InsightsPeriod, SessionsResponse,
-  AppSettings, SettingsUpdateRequest, AppExclusion, UserInstruction, LogLine, DebugStatus,
+  AppSettings, SettingsUpdateRequest, AppExclusion, BackfillResponse, UserInstruction, LogLine, DebugStatus,
   Plugin, PluginRule, PluginTool, RuleExecution, PluginCreate, PluginUpdate, RuleCreate, RuleUpdate,
 } from './types'
 
@@ -120,6 +120,9 @@ export const api = {
   getSettings: () => get<AppSettings>('/settings'),
   updateSettings: (body: SettingsUpdateRequest) => put('/settings', body),
   setPaused: (paused: boolean) => post(`/settings/paused?paused=${paused}`),
+  backfillActivities: (include_sparse: boolean) =>
+    post<BackfillResponse>('/activities/backfill', { include_sparse }),
+  resyncChroma: () => post<{ ok: boolean; message: string }>('/settings/resync-chroma'),
   getExclusions: () => get<AppExclusion[]>('/settings/exclusions'),
   addExclusion: (app_name: string) => post('/settings/exclusions', { app_name }),
   removeExclusion: (app_name: string) => del(`/settings/exclusions/${encodeURIComponent(app_name)}`),

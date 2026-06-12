@@ -10,11 +10,17 @@ from brn_daemon.inference import (
 )
 
 
-async def _insert_capture(conn, captured_at: str = "2026-06-12T10:00:00", ocr_text: str = "") -> int:
+async def _insert_capture(
+    conn,
+    captured_at: str = "2026-06-12T10:00:00",
+    ocr_text: str = "",
+    app_name: str = "Code",
+    window_title: str = "w",
+) -> int:
     cur = await conn.execute(
         "INSERT INTO captures (captured_at, app_name, window_title, ocr_text) "
-        "VALUES (?, 'Code', 'w', ?)",
-        (captured_at, ocr_text),
+        "VALUES (?, ?, ?, ?)",
+        (captured_at, app_name, window_title, ocr_text),
     )
     await conn.commit()
     return cur.lastrowid
@@ -424,3 +430,99 @@ async def test_process_one_uses_capture_time_for_started_at(tmp_home, db):
     cur = await db.execute("SELECT started_at FROM activities WHERE capture_id = ?", (capture_id,))
     started_at = (await cur.fetchone())[0]
     assert started_at == captured_at, f"started_at should equal capture time, got {started_at!r}"
+
+
+# ── backfill_unclassified(include_sparse=True) ───────────────────────────────
+
+
+async def test_sparse_backfill_clones_from_matching_metadata(tmp_home, db):
+    source = await _insert_capture(
+        db, captured_at=_ts(hours=5), ocr_text=READABLE, app_name="VLC", window_title="movie.mp4"
+    )
+    await db.execute(
+        "INSERT INTO activities (capture_id, started_at, summary, task_category) "
+        "VALUES (?, ?, 'Watching a film', 'play')",
+        (source, _ts(hours=5)),
+    )
+    await db.commit()
+    target = await _insert_capture(
+        db, captured_at=_ts(hours=2), ocr_text="x7@", app_name="VLC", window_title="movie.mp4"
+    )
+
+    queue = _queue(tmp_home)
+    result = await queue.backfill_unclassified(include_sparse=True)
+
+    assert result["sparse_cloned"] == 1
+    assert result["sparse_queued"] == 0
+    assert queue.queue_depth == 0  # no LLM call needed
+    cur = await db.execute(
+        "SELECT started_at, summary FROM activities WHERE capture_id = ?", (target,)
+    )
+    row = await cur.fetchone()
+    assert row[0] == await _captured_at(db, target)  # clone keeps the capture's own time
+    assert row[1] == "Watching a film"
+
+
+async def test_sparse_backfill_enqueues_one_representative_per_group(tmp_home, db):
+    oldest = await _insert_capture(
+        db, captured_at=_ts(hours=6), ocr_text="x", app_name="VLC", window_title="movie.mp4"
+    )
+    for hour in (4, 2):
+        await _insert_capture(
+            db, captured_at=_ts(hours=hour), ocr_text="x", app_name="VLC", window_title="movie.mp4"
+        )
+
+    queue = _queue(tmp_home)
+    result = await queue.backfill_unclassified(include_sparse=True)
+
+    assert result["sparse_queued"] == 1
+    assert result["sparse_deferred"] == 2
+    assert queue.queue_depth == 1
+    assert queue._queue.get_nowait()[0] == oldest  # oldest is the representative
+
+
+async def test_sparse_backfill_second_pass_clones_after_representative_lands(tmp_home, db):
+    rep = await _insert_capture(
+        db, captured_at=_ts(hours=6), ocr_text="x", app_name="VLC", window_title="movie.mp4"
+    )
+    for hour in (4, 2):
+        await _insert_capture(
+            db, captured_at=_ts(hours=hour), ocr_text="x", app_name="VLC", window_title="movie.mp4"
+        )
+
+    queue = _queue(tmp_home)
+    await queue.backfill_unclassified(include_sparse=True)  # pass 1: rep enqueued
+    # Simulate the representative's inference landing
+    await db.execute(
+        "INSERT INTO activities (capture_id, started_at, summary, task_category) "
+        "VALUES (?, ?, 'Watching a film', 'play')",
+        (rep, _ts(hours=6)),
+    )
+    await db.commit()
+
+    result = await queue.backfill_unclassified(include_sparse=True)  # pass 2
+
+    assert result["sparse_cloned"] == 2
+    assert result["sparse_queued"] == 0
+    cur = await db.execute("SELECT COUNT(*) FROM activities")
+    assert (await cur.fetchone())[0] == 3  # rep + 2 clones
+
+
+async def test_sparse_backfill_skips_captures_without_metadata(tmp_home, db):
+    await _insert_capture(
+        db, captured_at=_ts(hours=2), ocr_text="x", app_name="", window_title=""
+    )
+
+    queue = _queue(tmp_home)
+    result = await queue.backfill_unclassified(include_sparse=True)
+
+    assert result == {
+        "queued": 0, "remaining": 0,
+        "sparse_cloned": 0, "sparse_queued": 0, "sparse_deferred": 0,
+    }
+
+
+async def test_backfill_default_response_has_no_sparse_keys(tmp_home, db):
+    queue = _queue(tmp_home)
+    result = await queue.backfill_unclassified()
+    assert result == {"queued": 0, "remaining": 0}

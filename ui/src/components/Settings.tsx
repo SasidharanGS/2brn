@@ -112,6 +112,10 @@ export default function Settings() {
   const [tuning, setTuning] = useState<TuningState>({ interval: '', cooldown: '', idleTick: '', threshold: '' })
   const setTuningField = <K extends keyof TuningState>(key: K, value: string) =>
     setTuning(prev => ({ ...prev, [key]: value }))
+  // Maintenance actions
+  const [includeSparse, setIncludeSparse] = useState(false)
+  const [backfillResult, setBackfillResult] = useState('')
+  const [resyncResult, setResyncResult] = useState('')
   const [newApp, setNewApp]       = useState('')
   const [saveMessage, setSaveMessage] = useState('')
   const [daemonOwned, setDaemonOwned] = useState<boolean | null>(null)
@@ -241,6 +245,27 @@ export default function Settings() {
       qc.invalidateQueries({ queryKey: queryKeys.settings() })
     },
     onError: () => flash('Failed to save capture settings (check the values)'),
+  })
+
+  const runBackfill = useMutation({
+    mutationFn: () => api.backfillActivities(includeSparse),
+    onSuccess: (r) => {
+      const parts = [`${r.queued} captures queued for inference`]
+      if (r.remaining > 0) parts.push(`${r.remaining} more matched — run again to continue`)
+      if (r.sparse_cloned !== undefined) {
+        parts.push(`${r.sparse_cloned} cloned from matching window titles`)
+        if (r.sparse_queued) parts.push(`${r.sparse_queued} window titles queued`)
+        if (r.sparse_deferred) parts.push(`${r.sparse_deferred} deferred — run again once inference lands`)
+      }
+      setBackfillResult(parts.join(' · '))
+    },
+    onError: () => setBackfillResult('Backfill failed — is the daemon running?'),
+  })
+
+  const runResync = useMutation({
+    mutationFn: () => api.resyncChroma(),
+    onSuccess: (r) => setResyncResult(r.message || 'Re-sync started in background'),
+    onError: () => setResyncResult('Re-sync failed — is the daemon running?'),
   })
 
   const addExclusion = useMutation({
@@ -617,6 +642,66 @@ export default function Settings() {
             ~/.2brn/
           </code>
         </p>
+      </Section>
+
+      <Section title="Maintenance">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <div className="text-[14px]" style={{ color: 'var(--text)' }}>Re-classify missed captures</div>
+            <div className="text-[12px] mt-0.5" style={{ color: 'var(--text-dim)' }}>
+              Re-runs AI inference for captures that were observed but never classified
+              (provider outages, queue overflows). Uses your LLM provider.
+            </div>
+            <label className="flex items-center gap-2 mt-2 text-[12px] cursor-pointer" style={{ color: 'var(--text-muted)' }}>
+              <input
+                type="checkbox"
+                checked={includeSparse}
+                onChange={e => setIncludeSparse(e.target.checked)}
+              />
+              Include screens without readable text (videos, images — ~1 LLM call per window title)
+            </label>
+          </div>
+          <button
+            onClick={() => {
+              if (window.confirm('Re-run AI inference for unclassified captures? This uses your LLM provider.')) {
+                runBackfill.mutate()
+              }
+            }}
+            disabled={runBackfill.isPending}
+            className="px-4 py-2 rounded-[9px] text-[13px] font-semibold transition-all disabled:opacity-40 shrink-0"
+            style={{ background: 'var(--accent)', color: '#fff' }}
+          >
+            {runBackfill.isPending ? 'Running…' : 'Run'}
+          </button>
+        </div>
+        {backfillResult && (
+          <div className="text-[12px] mt-2" style={{ color: 'var(--text-muted)' }}>{backfillResult}</div>
+        )}
+
+        <div className="mt-4 pt-4 flex items-start justify-between gap-4" style={{ borderTop: '1px solid var(--border-2)' }}>
+          <div>
+            <div className="text-[14px]" style={{ color: 'var(--text)' }}>Re-sync ChromaDB</div>
+            <div className="text-[12px] mt-0.5" style={{ color: 'var(--text-dim)' }}>
+              Re-embeds activities missing from the semantic search index (used by chat).
+              Runs in the background.
+            </div>
+          </div>
+          <button
+            onClick={() => {
+              if (window.confirm('Re-embed activities missing from ChromaDB? This uses your embedding provider.')) {
+                runResync.mutate()
+              }
+            }}
+            disabled={runResync.isPending}
+            className="px-4 py-2 rounded-[9px] text-[13px] font-semibold transition-all disabled:opacity-40 shrink-0"
+            style={{ background: 'var(--accent)', color: '#fff' }}
+          >
+            {runResync.isPending ? 'Running…' : 'Run'}
+          </button>
+        </div>
+        {resyncResult && (
+          <div className="text-[12px] mt-2" style={{ color: 'var(--text-muted)' }}>{resyncResult}</div>
+        )}
       </Section>
 
       <Section title="JOPLIN INTEGRATION">

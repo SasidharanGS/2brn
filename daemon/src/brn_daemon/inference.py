@@ -198,7 +198,9 @@ class InferenceQueue:
         except Exception:
             return None
 
-    async def backfill_unclassified(self, *, days: int = 7, grace_minutes: int = 15) -> dict[str, int]:
+    async def backfill_unclassified(
+        self, *, days: int = 7, grace_minutes: int = 15, include_sparse: bool = False
+    ) -> dict[str, int]:
         """Re-enqueue captures that have readable OCR text but no activity row.
 
         A capture loses its classification permanently when inference fails
@@ -213,6 +215,11 @@ class InferenceQueue:
         would classify them twice. At most the queue's spare capacity is
         enqueued per call; ``remaining`` in the result says how many matched
         but didn't fit — re-run the sweep (or restart) to continue.
+
+        With ``include_sparse`` (opt-in: it spends LLM calls on historical
+        data), sparse-text captures that carry app/window metadata are also
+        classified — see _backfill_sparse for the per-metadata dedup that
+        keeps this to ~1 LLM call per distinct (app, window title).
         """
         import aiosqlite
         now = datetime.now(UTC)
@@ -249,7 +256,76 @@ class InferenceQueue:
                 "Backfill: queued %d unclassified captures for inference (%d matched in window)",
                 queued, total,
             )
-        return {"queued": queued, "remaining": total - queued}
+        result = {"queued": queued, "remaining": total - queued}
+        if include_sparse:
+            result.update(await self._backfill_sparse(since, until))
+        return result
+
+    async def _backfill_sparse(self, since: str, until: str) -> dict[str, int]:
+        """Classify historical sparse-text captures from app/window metadata.
+
+        Metadata-only classification depends only on (app_name, window_title),
+        so activity-less sparse captures are grouped by that pair. A group
+        whose metadata already has a classified capture anywhere in the DB is
+        cloned directly — no LLM call. Otherwise one representative (the
+        oldest) is enqueued for metadata-only inference and the rest are
+        ``sparse_deferred``: a later run finds the landed activity and clones
+        them. Captures with neither app nor title are skipped entirely.
+        """
+        import aiosqlite
+        cloned = 0
+        rep_queued = 0
+        deferred = 0
+        async with aiosqlite.connect(self._db_path_fn()) as conn:
+            cur = await conn.execute(
+                """SELECT c.id, c.captured_at,
+                          COALESCE(c.app_name, '') AS app_name,
+                          COALESCE(c.window_title, '') AS window_title,
+                          COALESCE(c.ocr_text, '') AS ocr_text
+                   FROM captures c LEFT JOIN activities a ON a.capture_id = c.id
+                   WHERE a.id IS NULL
+                     AND length(trim(COALESCE(c.ocr_text, ''))) < 20
+                     AND (COALESCE(c.app_name, '') != '' OR COALESCE(c.window_title, '') != '')
+                     AND c.captured_at >= ? AND c.captured_at < ?
+                   ORDER BY c.captured_at""",
+                (since, until),
+            )
+            rows = await cur.fetchall()
+
+            groups: dict[tuple[str, str], list] = {}
+            for row in rows:
+                groups.setdefault((row[2], row[3]), []).append(row)
+
+            for (app_name, window_title), members in groups.items():
+                cur = await conn.execute(
+                    """SELECT a.capture_id FROM activities a
+                       JOIN captures s ON s.id = a.capture_id
+                       WHERE COALESCE(s.app_name, '') = ? AND COALESCE(s.window_title, '') = ?
+                       ORDER BY a.id DESC LIMIT 1""",
+                    (app_name, window_title),
+                )
+                source = await cur.fetchone()
+                if source is not None:
+                    for capture_id, captured_at, *_ in members:
+                        ok = await clone_activity(
+                            conn, source_capture_id=source[0],
+                            capture_id=capture_id, started_at=captured_at,
+                        )
+                        cloned += 1 if ok else 0
+                    continue
+                if self._queue.qsize() < INFERENCE_QUEUE_MAX:
+                    rep = members[0]
+                    await self.enqueue(rep[0], app_name, window_title, rep[4], rep[1])
+                    rep_queued += 1
+                    deferred += len(members) - 1
+                else:
+                    deferred += len(members)
+        if cloned or rep_queued:
+            logger.info(
+                "Sparse backfill: cloned %d, queued %d representatives, %d deferred to a later run",
+                cloned, rep_queued, deferred,
+            )
+        return {"sparse_cloned": cloned, "sparse_queued": rep_queued, "sparse_deferred": deferred}
 
     async def heal_unembedded(self) -> int:
         """Re-embed activities where chroma_id IS NULL. Called at daemon startup."""

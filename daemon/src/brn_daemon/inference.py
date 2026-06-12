@@ -85,6 +85,39 @@ def parse_inference_response(raw: str) -> InferenceResult:
         return InferenceResult()
 
 
+async def clone_activity(conn, *, source_capture_id: int, capture_id: int, started_at: str) -> bool:
+    """Copy ``source_capture_id``'s activity onto ``capture_id`` without an LLM call.
+
+    Used for unchanged heartbeat captures: the frame is pixel-similar to the
+    previous kept frame, so its classification cannot differ — but the activity
+    row must still exist, because sessions treat activity-less captures as
+    *unclassified* samples and would split otherwise-continuous blocks.
+
+    ``chroma_id`` is copied rather than left NULL: the embedding for this
+    content already exists, and a NULL chroma_id would make the startup
+    heal-pass re-embed every clone. Purge deletes chroma docs by id, which is
+    idempotent across duplicates, and a clone is purged in the same window as
+    its source.
+
+    Returns False when the source capture has no activity (inference pending,
+    failed, or skipped for sparse text) — the caller decides the fallback.
+    """
+    cur = await conn.execute(
+        """INSERT INTO activities
+           (capture_id, started_at, summary, tags, chroma_id, task_category,
+            task_category_confidence, productivity_state, productivity_confidence,
+            category_overridden_by_user, app_name_override)
+           SELECT ?, ?, summary, tags, chroma_id, task_category,
+                  task_category_confidence, productivity_state, productivity_confidence,
+                  category_overridden_by_user, app_name_override
+           FROM activities WHERE capture_id = ?
+           ORDER BY id DESC LIMIT 1""",
+        (capture_id, started_at, source_capture_id),
+    )
+    await conn.commit()
+    return cur.rowcount > 0
+
+
 class InferenceQueue:
     def __init__(self, chat_fn, db_path_fn, embedding_service=None, event_bus=None):
         self._queue: asyncio.Queue = asyncio.Queue(maxsize=INFERENCE_QUEUE_MAX)

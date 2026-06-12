@@ -7,6 +7,7 @@ import {
 import { api } from '../api/client'
 import { queryKeys } from '../api/queryKeys'
 import { CATEGORY_CHIP, STATE_COLORS } from '../utils/design'
+import { fmtDur } from '../utils/time'
 import { useAppDate } from '../context/DateContext'
 import type { InsightsPeriod, HeatmapCell, ComparisonMetric } from '../api/types'
 
@@ -204,9 +205,16 @@ export default function Insights() {
     <div className="page-enter p-7">
 
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-[19px] font-semibold tracking-tight" style={{ color: 'var(--text)' }}>
-          Insights
-        </h1>
+        <div>
+          <h1 className="text-[19px] font-semibold tracking-tight" style={{ color: 'var(--text)' }}>
+            Insights
+          </h1>
+          {summary && summary.observed_seconds > 0 && (
+            <p className="text-[12px] mt-0.5 font-mono" style={{ color: 'var(--text-dim)' }}>
+              {fmtDur(summary.observed_seconds)} on screen
+            </p>
+          )}
+        </div>
         <PeriodToggle value={period} onChange={setPeriod} />
       </div>
 
@@ -325,7 +333,7 @@ export default function Insights() {
             </ResponsiveContainer>
           </div>
 
-          {/* Top apps — % of total captures */}
+          {/* Top apps — share of observed block-time */}
           <div
             className="rounded-[12px] border p-5 lg:col-span-2"
             style={{ background: 'var(--bg-surface)', borderColor: 'var(--border)' }}
@@ -345,8 +353,8 @@ export default function Insights() {
                       style={{ width: `${app.pct}%`, background: 'var(--accent)', opacity: 0.65 }}
                     />
                   </div>
-                  <span className="text-[11px] font-mono w-16 text-right shrink-0" style={{ color: 'var(--text-dim)' }}>
-                    {fmtPct(app.pct)}
+                  <span className="text-[11px] font-mono w-24 text-right shrink-0" style={{ color: 'var(--text-dim)' }}>
+                    {fmtDur(app.seconds)} · {fmtPct(app.pct)}
                   </span>
                 </div>
               ))}

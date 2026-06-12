@@ -7,6 +7,8 @@ import MinimalHome from '../screens/minimal/Home'
 import MinimalChat from '../screens/minimal/Chat'
 import MinimalJournal from '../screens/minimal/Journal'
 import MinimalBlog from '../screens/minimal/Blog'
+import MinimalTimeline from '../screens/minimal/Timeline'
+import MinimalInsights from '../screens/minimal/Insights'
 import Home from '../screens/modern/Home'
 import Chat from '../screens/modern/Chat'
 import Journal from '../screens/modern/Journal'
@@ -42,6 +44,8 @@ const minimal: Partial<Record<ScreenName, ComponentType>> = {
   chat: MinimalChat,
   journal: MinimalJournal,
   blog: MinimalBlog,
+  timeline: MinimalTimeline,
+  insights: MinimalInsights,
 }
 
 export function getScreen(skin: Skin, name: ScreenName): ComponentType {

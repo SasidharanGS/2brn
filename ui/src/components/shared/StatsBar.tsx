@@ -4,8 +4,7 @@ import { queryKeys } from '../../api/queryKeys'
 import { stateChip, categoryChip } from '../../utils/design'
 import { fmtDur } from '../../utils/time'
 import { toDateStr } from '../../context/DateContext'
-
-type ThemeMode = 'light' | 'system' | 'dark'
+import { useTheme, type ThemeMode } from '../../theme/ThemeContext'
 
 const THEME_SEGMENTS: { value: ThemeMode; label: string }[] = [
   { value: 'light',  label: '☀️' },
@@ -13,12 +12,8 @@ const THEME_SEGMENTS: { value: ThemeMode; label: string }[] = [
   { value: 'dark',   label: '🌙' },
 ]
 
-interface Props {
-  themeMode: ThemeMode
-  onThemeModeChange: (mode: ThemeMode) => void
-}
-
-export default function StatsBar({ themeMode, onThemeModeChange }: Props) {
+export default function StatsBar() {
+  const { mode: themeMode, setMode: onThemeModeChange } = useTheme()
   const today = toDateStr(new Date())
   const { data: insights } = useQuery({
     queryKey: queryKeys.insightsSummary(today, 'day'),

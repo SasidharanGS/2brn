@@ -26,6 +26,7 @@
   /* Accent — indigo */
   --accent:        #818cf8;
   --accent-hover:  #a5b4fc;
+  --accent-strong: #a5b4fc;
   --accent-glow:   rgba(129, 140, 248, 0.15);
   --accent-glow-2: rgba(129, 140, 248, 0.08);
 
@@ -60,7 +61,9 @@
 }
 
 /* ── Light theme ──────────────────────────────────────────────────────────── */
-html.light {
+/* Resolved light/dark is applied as data-theme="light|dark" on <html> by
+   ThemeProvider (system mode is resolved in JS against the OS theme). */
+:root[data-theme="light"] {
   color-scheme: light;
 
   /* Backgrounds — warm off-white layering upward */
@@ -82,6 +85,7 @@ html.light {
 
   --accent:        #4f46e5;
   --accent-hover:  #4338ca;
+  --accent-strong: #4338ca;
   --accent-glow:   rgba(79, 70, 229, 0.12);
   --accent-glow-2: rgba(79, 70, 229, 0.06);
 

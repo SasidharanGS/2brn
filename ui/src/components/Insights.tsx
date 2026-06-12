@@ -13,13 +13,13 @@ import type { InsightsPeriod, HeatmapCell, ComparisonMetric } from '../api/types
 
 function useIsLight(): boolean {
   const [isLight, setIsLight] = useState(
-    () => document.documentElement.classList.contains('light')
+    () => document.documentElement.getAttribute('data-theme') === 'light'
   )
   useEffect(() => {
     const obs = new MutationObserver(() => {
-      setIsLight(document.documentElement.classList.contains('light'))
+      setIsLight(document.documentElement.getAttribute('data-theme') === 'light')
     })
-    obs.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] })
+    obs.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
     return () => obs.disconnect()
   }, [])
   return isLight

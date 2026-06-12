@@ -1,0 +1,65 @@
+/* ── Minimal skin tokens ──────────────────────────────────────────────────────
+   The monochrome, text-first design language (design_handoff_2brn_minimal_theme).
+   Two colors (--bg/--fg) + a muted tint and a rule grey; ONE accent (muted red)
+   reserved for live/important cues. State is encoded by the --ink intensity
+   ramp, never by hue. Active only under <html data-skin="minimal">; the modern
+   skin's tokens in index.css are untouched.                                    */
+
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 100 900; /* variable axis — usage restricted to 300/400 by convention */
+  font-display: swap;
+  src: url('/fonts/Inter-Variable.ttf') format('truetype-variations');
+}
+
+:root[data-skin='minimal'] {
+  color-scheme: light;
+
+  --bg: #f5f5f0;     /* warm off-white, not pure white */
+  --fg: #181818;     /* near-black, not pure black */
+  --muted: #aaaaaa;  /* secondary text, labels, links at rest */
+  --rule: #dddddd;   /* every 1px border & divider; pill bg */
+
+  --accent: #a23c2e;        /* muted brick red — live/important only */
+  --accent-strong: #88301f; /* accent hover / pressed */
+
+  /* Intensity ramp — a tint of --fg over --bg. Encodes productivity state by
+     magnitude, not hue; flips automatically in dark mode via the vars. */
+  --ramp-strength: 1;
+  --ink-0: var(--rule);
+  --ink-1: color-mix(in oklab, var(--fg) calc(18% * var(--ramp-strength)), var(--bg));
+  --ink-2: color-mix(in oklab, var(--fg) calc(38% * var(--ramp-strength)), var(--bg));
+  --ink-3: color-mix(in oklab, var(--fg) calc(62% * var(--ramp-strength)), var(--bg));
+  --ink-4: color-mix(in oklab, var(--fg) calc(88% * var(--ramp-strength)), var(--bg));
+
+  /* State → ramp aliases (idle → deep work) */
+  --state-idle: var(--ink-0);
+  --state-low:  var(--ink-1);  /* chilling / distracted / procrastinating */
+  --state-mid:  var(--ink-2);  /* communication / in-meeting */
+  --state-high: var(--ink-3);  /* productive */
+  --state-peak: var(--ink-4);  /* focused / deep work */
+
+  /* Font stack flips with the skin: body reads var(--font-sans) (index.css). */
+  --font-sans: 'Inter', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  /* Monospace ONLY for technical readouts (capturing footer, debug logs). */
+  --font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+}
+
+:root[data-skin='minimal'][data-theme='dark'] {
+  color-scheme: dark;
+
+  --bg: #181818;
+  --fg: #f5f5f0;
+  --muted: #666666;
+  --rule: #2e2e2e;
+
+  /* lifted + slightly warmer so it reads on the dark ground */
+  --accent: #d2705f;
+  --accent-strong: #e08573;
+}
+
+/* No overlays in the minimal language — disable the modern noise texture. */
+:root[data-skin='minimal'] body::after {
+  display: none;
+}

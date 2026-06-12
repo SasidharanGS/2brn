@@ -19,7 +19,6 @@ export interface ActivityRecord {
   id: number
   capture_id: number | null
   started_at: string
-  ended_at: string | null
   summary: string | null
   tags: string | null
   task_category: string | null

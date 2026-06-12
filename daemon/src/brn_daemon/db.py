@@ -65,9 +65,8 @@ async def init_db() -> None:
 
             CREATE TABLE IF NOT EXISTS activities (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                capture_id INTEGER REFERENCES captures(id),
+                capture_id INTEGER REFERENCES captures(id) ON DELETE CASCADE,
                 started_at DATETIME NOT NULL,
-                ended_at DATETIME,
                 summary TEXT,
                 tags TEXT,
                 chroma_id TEXT,
@@ -200,6 +199,9 @@ async def init_db() -> None:
         )
         activities_ddl = (await cur.fetchone() or ("",))[0]
         if activities_ddl and "ON DELETE CASCADE" not in activities_ddl:
+            # Frozen historical migration: reproduces the schema as it was at
+            # the time (incl. ended_at — dropped by a later step below) because
+            # the positional INSERT…SELECT * must match the old column order.
             await conn.executescript("""
                 PRAGMA foreign_keys = OFF;
 
@@ -238,4 +240,15 @@ async def init_db() -> None:
 
                 PRAGMA foreign_keys = ON;
             """)
+            await conn.commit()
+
+        # activities.ended_at was never written by any code path — durations
+        # are derived session blocks (sessions.py), not stored spans. Drop the
+        # column wherever an older schema still carries it (no index or
+        # constraint references it, so DROP COLUMN is safe).
+        cur = await conn.execute(
+            "SELECT 1 FROM pragma_table_info('activities') WHERE name = 'ended_at'"
+        )
+        if await cur.fetchone():
+            await conn.execute("ALTER TABLE activities DROP COLUMN ended_at")
             await conn.commit()

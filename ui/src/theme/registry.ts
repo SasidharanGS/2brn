@@ -3,6 +3,10 @@ import type { Skin } from './ThemeContext'
 import type { ScreenName } from './routes'
 import ModernShell from '../screens/modern/Shell'
 import MinimalShell from '../screens/minimal/Shell'
+import MinimalHome from '../screens/minimal/Home'
+import MinimalChat from '../screens/minimal/Chat'
+import MinimalJournal from '../screens/minimal/Journal'
+import MinimalBlog from '../screens/minimal/Blog'
 import Home from '../screens/modern/Home'
 import Chat from '../screens/modern/Chat'
 import Journal from '../screens/modern/Journal'
@@ -33,7 +37,12 @@ const modern: Record<ScreenName, ComponentType> = {
 }
 
 // Populated screen-by-screen as the minimal skin lands (#61–#63).
-const minimal: Partial<Record<ScreenName, ComponentType>> = {}
+const minimal: Partial<Record<ScreenName, ComponentType>> = {
+  home: MinimalHome,
+  chat: MinimalChat,
+  journal: MinimalJournal,
+  blog: MinimalBlog,
+}
 
 export function getScreen(skin: Skin, name: ScreenName): ComponentType {
   return (skin === 'minimal' ? minimal[name] : undefined) ?? modern[name]

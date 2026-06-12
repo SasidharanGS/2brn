@@ -1,6 +1,6 @@
 import type {
   DaemonStatus, CaptureRecord, ActivityRecord, JournalEntry, BlogPost,
-  DailyInsights, InsightsSummary, InsightsPeriod,
+  DailyInsights, InsightsSummary, InsightsPeriod, SessionsResponse,
   AppSettings, SettingsUpdateRequest, AppExclusion, UserInstruction, LogLine, DebugStatus,
   Plugin, PluginRule, PluginTool, RuleExecution, PluginCreate, PluginUpdate, RuleCreate, RuleUpdate,
 } from './types'
@@ -104,6 +104,7 @@ export const api = {
   },
   overrideActivity: (id: number, task_category: string, productivity_state: string) =>
     patch<ActivityRecord>(`/activities/${id}/override`, { task_category, productivity_state }),
+  getSessions: (date: string) => get<SessionsResponse>(`/sessions?date=${date}`),
   getJournal: (date: string) => get<JournalEntry>(`/journal/${date}`).catch((e: unknown) => {
     if (e instanceof ApiError && e.status === 404) return null
     throw e

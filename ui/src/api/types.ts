@@ -43,6 +43,30 @@ export interface BlogPost {
   edited_by_user: boolean
 }
 
+export interface SessionBlock {
+  start: string
+  end: string
+  duration_seconds: number
+  monitor_index: number
+  app_name: string | null
+  task_category: string | null
+  dominant_state: string | null
+  sample_count: number
+  summary: string | null
+}
+
+export interface SessionsResponse {
+  date: string
+  capture_interval_seconds: number
+  gap_split_seconds: number
+  blocks: SessionBlock[]
+  totals: {
+    observed_seconds: number
+    by_category: Record<string, number>
+    by_app: Record<string, number>
+  }
+}
+
 export interface DailyInsights {
   date: string
   categories: { task_category: string; count: number; avg_confidence: number }[]

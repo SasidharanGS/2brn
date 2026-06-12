@@ -594,6 +594,7 @@ def create_app() -> FastAPI:
         instructions_routes,
         journal_routes,
         plugins_routes,
+        sessions_routes,
         settings_routes,
         status,
     )
@@ -624,6 +625,7 @@ def create_app() -> FastAPI:
     app.include_router(blog_routes.router)
     app.include_router(instructions_routes.router)
     app.include_router(plugins_routes.router)
+    app.include_router(sessions_routes.router)
     app.include_router(connection_info.router)
     app.include_router(ingest.router)
     return app

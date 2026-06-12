@@ -1,14 +1,14 @@
 import type { ComponentType } from 'react'
 import type { Skin } from './ThemeContext'
-import Dashboard from '../components/Dashboard'
-import Chat from '../components/Chat'
-import Journal from '../components/Journal'
-import Blog from '../components/Blog'
-import Timeline from '../components/Timeline'
-import Insights from '../components/Insights'
-import Instructions from '../components/Instructions'
-import Plugins from '../components/Plugins'
-import Settings from '../components/Settings'
+import Home from '../screens/modern/Home'
+import Chat from '../screens/modern/Chat'
+import Journal from '../screens/modern/Journal'
+import Blog from '../screens/modern/Blog'
+import Timeline from '../screens/modern/Timeline'
+import Insights from '../screens/modern/Insights'
+import Instructions from '../screens/modern/Instructions'
+import Plugins from '../screens/modern/Plugins'
+import Settings from '../screens/modern/Settings'
 
 // ── Screen registry ───────────────────────────────────────────────────────────
 // Each skin provides its own presentation components; data/logic is shared.
@@ -20,7 +20,7 @@ export type ScreenName =
   | 'insights' | 'instructions' | 'plugins' | 'settings'
 
 const modern: Record<ScreenName, ComponentType> = {
-  home: Dashboard,
+  home: Home,
   chat: Chat,
   journal: Journal,
   blog: Blog,

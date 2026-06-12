@@ -1,38 +1,18 @@
-import { useEffect, useMemo, useState } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { api } from '../api/client'
-import type { Plugin, PluginRule, PluginTool, RuleExecution } from '../api/types'
-import Toggle from './shared/Toggle'
-import { queryKeys } from '../api/queryKeys'
-
-const PLUGINS_QK = queryKeys.plugins()
-const RULES_QK = queryKeys.pluginRules
-const TOOLS_QK = queryKeys.pluginTools
-const EXEC_QK = queryKeys.ruleExecutions
-
+import { useState } from 'react'
+import type { Plugin, PluginRule } from '../../api/types'
+import Toggle from '../../components/shared/Toggle'
+import {
+  usePluginsList, useNewPluginForm, usePluginDetail,
+  useRuleActions, useRuleEditor, useRuleExecutions,
+} from '../../hooks/usePlugins'
 
 export default function Plugins() {
-  const qc = useQueryClient()
-  const { data: plugins = [], isLoading } = useQuery<Plugin[]>({
-    queryKey: PLUGINS_QK,
-    queryFn: api.listPlugins,
-    refetchInterval: 15_000,
-  })
-
-  const [selectedId, setSelectedId] = useState<number | null>(null)
-  const [showNewPlugin, setShowNewPlugin] = useState(false)
-
-  // Auto-select the first plugin once they load
-  useEffect(() => {
-    if (selectedId === null && plugins.length > 0) {
-      setSelectedId(plugins[0].id)
-    }
-  }, [plugins, selectedId])
-
-  const selected = useMemo(
-    () => plugins.find(p => p.id === selectedId) ?? null,
-    [plugins, selectedId],
-  )
+  const {
+    plugins, isLoading,
+    selectedId, setSelectedId, selected,
+    showNewPlugin, setShowNewPlugin,
+    invalidatePlugins,
+  } = usePluginsList()
 
   return (
     <div className="flex h-full overflow-hidden">
@@ -96,7 +76,7 @@ export default function Plugins() {
             onCreated={(p) => {
               setShowNewPlugin(false)
               setSelectedId(p.id)
-              qc.invalidateQueries({ queryKey: PLUGINS_QK })
+              invalidatePlugins()
             }}
           />
         ) : selected ? (
@@ -166,54 +146,11 @@ function PluginListItem({
 function NewPluginForm({
   onCancel, onCreated,
 }: { onCancel: () => void; onCreated: (p: Plugin) => void }) {
-  const [name, setName] = useState('')
-  const [command, setCommand] = useState('')
-  const [argsText, setArgsText] = useState('')
-  const [envText, setEnvText] = useState('')
-  const [error, setError] = useState<string | null>(null)
-
-  const createMut = useMutation({
-    mutationFn: api.createPlugin,
-  })
-
-  function parseArgs(text: string): string[] {
-    return text.trim().length === 0
-      ? []
-      : text.split('\n').map(s => s.trim()).filter(Boolean)
-  }
-
-  function parseEnv(text: string): Record<string, string> {
-    const out: Record<string, string> = {}
-    text.split('\n').forEach(line => {
-      const trimmed = line.trim()
-      if (!trimmed || trimmed.startsWith('#')) return
-      const eq = trimmed.indexOf('=')
-      if (eq <= 0) return
-      const key = trimmed.slice(0, eq).trim()
-      const value = trimmed.slice(eq + 1).trim()
-      if (key) out[key] = value
-    })
-    return out
-  }
-
-  async function handleSave() {
-    setError(null)
-    if (!name.trim() || !command.trim()) {
-      setError('Name and command are required')
-      return
-    }
-    try {
-      const plugin = await createMut.mutateAsync({
-        name: name.trim(),
-        command: command.trim(),
-        args: parseArgs(argsText),
-        env: parseEnv(envText),
-      })
-      onCreated(plugin)
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to create plugin')
-    }
-  }
+  const {
+    name, setName, command, setCommand,
+    argsText, setArgsText, envText, setEnvText,
+    error, saving, handleSave,
+  } = useNewPluginForm(onCreated)
 
   return (
     <div className="flex-1 overflow-y-auto p-6">
@@ -291,11 +228,11 @@ function NewPluginForm({
           </button>
           <button
             onClick={handleSave}
-            disabled={createMut.isPending}
+            disabled={saving}
             className="text-[12px] px-3 py-1.5 rounded-[7px] font-medium transition-all disabled:opacity-40"
             style={{ background: 'var(--accent-glow)', color: 'var(--accent)', border: '1px solid var(--border-focus)' }}
           >
-            {createMut.isPending ? 'saving…' : 'add plugin'}
+            {saving ? 'saving…' : 'add plugin'}
           </button>
         </div>
       </div>
@@ -309,34 +246,12 @@ function NewPluginForm({
 // ────────────────────────────────────────────────────────────────────────────
 
 function PluginDetail({ plugin, onDeleted }: { plugin: Plugin; onDeleted: () => void }) {
-  const qc = useQueryClient()
-  const { data: rules = [] } = useQuery<PluginRule[]>({
-    queryKey: RULES_QK(plugin.id),
-    queryFn: () => api.listPluginRules(plugin.id),
-  })
-  const { data: tools = [] } = useQuery<PluginTool[]>({
-    queryKey: TOOLS_QK(plugin.id),
-    queryFn: () => api.listPluginTools(plugin.id),
-    retry: 0,
-  })
+  const { rules, tools, togglePluginMut, deletePluginMut, invalidateRules } = usePluginDetail(plugin, onDeleted)
 
   const [showNewRule, setShowNewRule] = useState(false)
   const [editingRuleId, setEditingRuleId] = useState<number | null>(null)
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
-
-  const togglePluginMut = useMutation({
-    mutationFn: () => api.updatePlugin(plugin.id, { enabled: !plugin.enabled }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: PLUGINS_QK }),
-  })
-
-  const deletePluginMut = useMutation({
-    mutationFn: () => api.deletePlugin(plugin.id),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: PLUGINS_QK })
-      onDeleted()
-    },
-  })
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
@@ -468,7 +383,7 @@ function PluginDetail({ plugin, onDeleted }: { plugin: Plugin; onDeleted: () => 
               onCancel={() => setShowNewRule(false)}
               onSaved={() => {
                 setShowNewRule(false)
-                qc.invalidateQueries({ queryKey: RULES_QK(plugin.id) })
+                invalidateRules()
               }}
             />
           )}
@@ -483,7 +398,7 @@ function PluginDetail({ plugin, onDeleted }: { plugin: Plugin; onDeleted: () => 
                 onCancel={() => setEditingRuleId(null)}
                 onSaved={() => {
                   setEditingRuleId(null)
-                  qc.invalidateQueries({ queryKey: RULES_QK(plugin.id) })
+                  invalidateRules()
                 }}
               />
             ) : (
@@ -520,26 +435,9 @@ function PluginDetail({ plugin, onDeleted }: { plugin: Plugin; onDeleted: () => 
 // ────────────────────────────────────────────────────────────────────────────
 
 function RuleCard({ rule, onEdit }: { rule: PluginRule; onEdit: () => void }) {
-  const qc = useQueryClient()
   const [showExec, setShowExec] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
-
-  const toggleMut = useMutation({
-    mutationFn: () => api.updatePluginRule(rule.id, { enabled: !rule.enabled }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: RULES_QK(rule.plugin_id) }),
-  })
-  const reparseMut = useMutation({
-    mutationFn: () => api.reparsePluginRule(rule.id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: RULES_QK(rule.plugin_id) }),
-  })
-  const runMut = useMutation({
-    mutationFn: () => api.runPluginRule(rule.id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: EXEC_QK(rule.id) }),
-  })
-  const deleteMut = useMutation({
-    mutationFn: () => api.deletePluginRule(rule.id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: RULES_QK(rule.plugin_id) }),
-  })
+  const { toggleMut, reparseMut, runMut, deleteMut } = useRuleActions(rule)
 
   const parseBadge = (() => {
     if (rule.parse_status === 'ok') {
@@ -670,43 +568,8 @@ function RuleEditor({
   onCancel: () => void
   onSaved: () => void
 }) {
-  const [title, setTitle] = useState(rule?.title ?? '')
-  const [text, setText] = useState(rule?.rule_text ?? '')
-  const [error, setError] = useState<string | null>(null)
-
-  const createMut = useMutation({
-    mutationFn: () => api.createPluginRule({
-      plugin_id: pluginId,
-      title: title.trim(),
-      rule_text: text.trim(),
-    }),
-  })
-  const updateMut = useMutation({
-    mutationFn: () => api.updatePluginRule(rule!.id, {
-      title: title.trim(),
-      rule_text: text.trim(),
-    }),
-  })
-
-  const saving = createMut.isPending || updateMut.isPending
-
-  async function handleSave() {
-    setError(null)
-    if (!title.trim() || !text.trim()) {
-      setError('Title and rule text are required')
-      return
-    }
-    try {
-      if (mode === 'create') {
-        await createMut.mutateAsync()
-      } else {
-        await updateMut.mutateAsync()
-      }
-      onSaved()
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Save failed')
-    }
-  }
+  const { title, setTitle, text, setText, error, saving, handleSave } =
+    useRuleEditor(mode, pluginId, rule, onSaved)
 
   return (
     <div
@@ -770,11 +633,7 @@ function RuleEditor({
 // ────────────────────────────────────────────────────────────────────────────
 
 function ExecutionHistory({ ruleId }: { ruleId: number }) {
-  const { data: execs = [], isLoading } = useQuery<RuleExecution[]>({
-    queryKey: EXEC_QK(ruleId),
-    queryFn: () => api.listRuleExecutions(ruleId, 10),
-    refetchInterval: 5_000,
-  })
+  const { execs, isLoading } = useRuleExecutions(ruleId)
 
   if (isLoading) {
     return <p className="text-[11px] pl-[44px]" style={{ color: 'var(--text-dim)' }}>Loading history…</p>
@@ -851,5 +710,3 @@ function Hint({ children }: { children: React.ReactNode }) {
     </p>
   )
 }
-
-

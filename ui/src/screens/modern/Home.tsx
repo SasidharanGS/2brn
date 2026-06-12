@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useAskNavigation } from '../../hooks/useAskNavigation'
 
 const TILES = [
   { label: 'Journal',  path: '/journal',  icon: '📔', desc: "Today's narrative" },
@@ -8,14 +9,15 @@ const TILES = [
   { label: 'Settings', path: '/settings', icon: '⚙',  desc: 'Configure 2brn' },
 ]
 
-export default function Dashboard() {
+export default function Home() {
   const [question, setQuestion] = useState('')
   const navigate = useNavigate()
+  const ask = useAskNavigation()
 
   const handleChat = (e: React.FormEvent) => {
     e.preventDefault()
     if (!question.trim()) return
-    navigate('/chat', { state: { initialQuestion: question } })
+    ask(question)
     setQuestion('')
   }
 

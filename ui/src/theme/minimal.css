@@ -139,3 +139,105 @@
 
 /* macOS: clear the traffic-light buttons that overlay the sidebar's top-left */
 html.macos[data-skin='minimal'] .m-sidebar { padding-top: 44px; }
+
+/* ── Screen-level interactive states ── */
+:root[data-skin='minimal'] .m-navcard {
+  border: 1px solid var(--rule);
+  transition: border-color 0.2s ease;
+}
+:root[data-skin='minimal'] .m-navcard:hover { border-color: var(--fg); }
+
+/* inline button that fills --fg on hover (ask box, composer send) */
+:root[data-skin='minimal'] .m-fill-btn {
+  background: none;
+  color: var(--muted);
+  transition: color 0.2s ease, background 0.2s ease;
+}
+:root[data-skin='minimal'] .m-fill-btn:hover { background: var(--fg); color: var(--bg); }
+
+/* suggested-prompt pill (1px rule, the 3px pill radius) */
+:root[data-skin='minimal'] .m-pill-btn {
+  background: none;
+  color: var(--muted);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-pill);
+  transition: color 0.2s ease, border-color 0.2s ease;
+}
+:root[data-skin='minimal'] .m-pill-btn:hover { color: var(--fg); border-color: var(--muted); }
+
+/* ── Markdown prose (journal / blog / chat replies) ──
+   Hierarchy comes from size + spacing + tracking, weights 300/400 only.
+   Heading treatment differs per document kind:
+   - journal: h1 is the "journal — date" micro-label
+   - blog:    h1 is the post title (xl, 400)
+   h2+ always render as section micro-labels.                              */
+:root[data-skin='minimal'] .m-prose {
+  font-size: var(--text-lg);
+  color: var(--fg);
+  font-weight: 300;
+  line-height: var(--leading-loose);
+}
+/* pre-wrap on paragraphs only — on the container it would render markdown's
+   inter-element newlines as large vertical gaps */
+:root[data-skin='minimal'] .m-prose p { margin: 0 0 var(--space-lg); white-space: pre-wrap; }
+:root[data-skin='minimal'] .m-prose p:last-child { margin-bottom: 0; }
+:root[data-skin='minimal'] .m-prose strong,
+:root[data-skin='minimal'] .m-prose b { font-weight: 400; }
+:root[data-skin='minimal'] .m-prose em { font-style: italic; }
+:root[data-skin='minimal'] .m-prose a { color: var(--muted); text-decoration: none; transition: color 0.2s ease; }
+:root[data-skin='minimal'] .m-prose a:hover { color: var(--fg); }
+:root[data-skin='minimal'] .m-prose code {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+}
+:root[data-skin='minimal'] .m-prose h2,
+:root[data-skin='minimal'] .m-prose h3,
+:root[data-skin='minimal'] .m-prose h4 {
+  font-size: var(--text-2xs);
+  letter-spacing: var(--tracking-label);
+  color: var(--muted);
+  font-weight: 300;
+  margin: 0 0 var(--space-sm);
+}
+:root[data-skin='minimal'] .m-prose ul,
+:root[data-skin='minimal'] .m-prose ol {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 var(--space-lg);
+}
+:root[data-skin='minimal'] .m-prose li {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-sm);
+  font-size: var(--text-base);
+  line-height: var(--leading-normal);
+}
+:root[data-skin='minimal'] .m-prose li::before {
+  content: '—';
+  color: var(--muted);
+}
+:root[data-skin='minimal'] .m-prose--journal h1 {
+  font-size: var(--text-2xs);
+  letter-spacing: var(--tracking-wider);
+  color: var(--muted);
+  font-weight: 300;
+  margin: 0 0 var(--space-md);
+}
+:root[data-skin='minimal'] .m-prose--blog h1 {
+  font-size: var(--text-xl);
+  color: var(--fg);
+  font-weight: 400;
+  letter-spacing: var(--tracking-tight);
+  line-height: var(--leading-tight);
+  margin: 0 0 var(--space-lg);
+}
+:root[data-skin='minimal'] .m-prose--chat { font-size: var(--text-lg); }
+:root[data-skin='minimal'] .m-prose--chat h1,
+:root[data-skin='minimal'] .m-prose--chat h2 {
+  font-size: var(--text-lg);
+  color: var(--fg);
+  font-weight: 400;
+  letter-spacing: 0;
+  margin: 0 0 var(--space-sm);
+}

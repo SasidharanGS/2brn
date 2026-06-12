@@ -1,15 +1,12 @@
 import { useState, useMemo, useEffect } from 'react'
-import { useQuery } from '@tanstack/react-query'
 import {
   BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, Tooltip, ResponsiveContainer, Legend,
 } from 'recharts'
-import { api } from '../api/client'
-import { queryKeys } from '../api/queryKeys'
-import { CATEGORY_CHIP, STATE_COLORS } from '../utils/design'
-import { fmtDur } from '../utils/time'
-import { useAppDate } from '../context/DateContext'
-import type { InsightsPeriod, HeatmapCell, ComparisonMetric } from '../api/types'
+import { CATEGORY_CHIP, STATE_COLORS } from '../../utils/design'
+import { fmtDur } from '../../utils/time'
+import { useInsightsData, fmtPct, deltaPct } from '../../hooks/useInsightsData'
+import type { InsightsPeriod, HeatmapCell, ComparisonMetric } from '../../api/types'
 
 function useIsLight(): boolean {
   const [isLight, setIsLight] = useState(
@@ -52,15 +49,6 @@ function useTooltipStyle() {
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
-
-function fmtPct(p: number): string {
-  return `${p.toFixed(1)}%`
-}
-
-function deltaPct(current: number, baseline: number): number | null {
-  if (baseline <= 0) return current > 0 ? null : 0
-  return Math.round(((current - baseline) / baseline) * 100)
-}
 
 function deltaColor(pct: number | null, positiveGood: boolean): string {
   if (pct === null || pct === 0) return 'var(--text-dim)'
@@ -187,19 +175,13 @@ function ComparisonRow({
 // ── Main ───────────────────────────────────────────────────────────────────
 
 export default function Insights() {
-  const { selectedDate } = useAppDate()
+  const { selectedDate, period, setPeriod, summary, isLoading, isError } = useInsightsData()
   const TT = useTooltipStyle()
-  const [period, setPeriod] = useState<InsightsPeriod>('day')
 
   // Explicit tooltip-active state for each chart (Electron Chromium quirk).
   const [barActive,  setBarActive]  = useState(false)
   const [pieActive,  setPieActive]  = useState(false)
   const [pieSegment, setPieSegment] = useState(-1)
-
-  const { data: summary, isLoading, isError } = useQuery({
-    queryKey: queryKeys.insightsSummary(selectedDate, period),
-    queryFn: () => api.getInsightsSummary(selectedDate, period),
-  })
 
   return (
     <div className="page-enter p-7">

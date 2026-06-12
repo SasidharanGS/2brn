@@ -1,66 +1,13 @@
-import { useState, useEffect } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { api } from '../api/client'
-import { queryKeys } from '../api/queryKeys'
-import MarkdownRenderer from './shared/MarkdownRenderer'
-import { useAppDate } from '../context/DateContext'
-import Btn from './shared/Btn'
+import MarkdownRenderer from '../../components/shared/MarkdownRenderer'
+import Btn from '../../components/shared/Btn'
+import { useJournalEntry } from '../../hooks/useJournalEntry'
 
 export default function Journal() {
-  const { selectedDate } = useAppDate()
-  const [editing, setEditing]               = useState(false)
-  const [editContent, setEditContent]       = useState('')
-  const [scheduleEditing, setScheduleEditing] = useState(false)
-  const [scheduleTime, setScheduleTime]     = useState('21:00')
-  const qc = useQueryClient()
-
-  const { data: settings } = useQuery({ queryKey: queryKeys.settings(), queryFn: api.getSettings })
-
-  const serverTime = settings?.journal_schedule
-    ? `${String(settings.journal_schedule.hour).padStart(2,'0')}:${String(settings.journal_schedule.minute).padStart(2,'0')}`
-    : '21:00'
-
-  useEffect(() => {
-    setScheduleTime(serverTime)
-  }, [serverTime]) // eslint-disable-line
-
-  // Reset edit state whenever the date changes (calendar navigation)
-  useEffect(() => {
-    setEditing(false)
-    setEditContent('')
-  }, [selectedDate])
-
-  const saveSchedule = useMutation({
-    mutationFn: () => {
-      const [h, m] = scheduleTime.split(':').map(Number)
-      if (!scheduleTime || isNaN(h) || isNaN(m)) return Promise.reject(new Error('Invalid time'))
-      return api.updateSettings({ journal_schedule: { hour: h, minute: m } })
-    },
-    onSuccess: () => {
-      setScheduleEditing(false)
-      qc.invalidateQueries({ queryKey: queryKeys.settings() })
-    },
-  })
-
-  const { data: entry, isError: entryError } = useQuery({
-    queryKey: queryKeys.journal(selectedDate),
-    queryFn:  () => api.getJournal(selectedDate),
-    throwOnError: false,
-    retry: false,
-  })
-
-  const generateMutation = useMutation({
-    mutationFn: () => api.generateJournal(selectedDate),
-    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.journal(selectedDate) }),
-  })
-
-  const saveMutation = useMutation({
-    mutationFn: (content: string) => api.updateJournal(selectedDate, content),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: queryKeys.journal(selectedDate) })
-      setEditing(false)
-    },
-  })
+  const {
+    selectedDate, entry, entryError,
+    editing, setEditing, editContent, setEditContent,
+    generate, save, schedule,
+  } = useJournalEntry()
 
   return (
     <div className="page-enter p-7 max-w-[760px] mx-auto">
@@ -82,25 +29,25 @@ export default function Journal() {
         </div>
 
         {/* Schedule control */}
-        {scheduleEditing ? (
+        {schedule.editing ? (
           <div className="flex items-center gap-2">
             <input
               type="time"
-              value={scheduleTime}
-              onChange={e => setScheduleTime(e.target.value)}
+              value={schedule.time}
+              onChange={e => schedule.setTime(e.target.value)}
               className="rounded-[7px] border px-2 py-1 text-[13px] outline-none"
               style={{ background: 'var(--bg-surface-2)', borderColor: 'var(--border)', color: 'var(--text)' }}
             />
             <button
-              onClick={() => saveSchedule.mutate()}
-              disabled={saveSchedule.isPending}
+              onClick={() => schedule.save.mutate()}
+              disabled={schedule.save.isPending}
               className="px-3 py-1 rounded-[9px] text-[12px] font-medium transition-all disabled:opacity-40"
               style={{ background: 'var(--accent)', color: '#fff', border: 'none' }}
             >
-              {saveSchedule.isPending ? 'Saving…' : 'Update'}
+              {schedule.save.isPending ? 'Saving…' : 'Update'}
             </button>
             <button
-              onClick={() => { setScheduleEditing(false); setScheduleTime(serverTime) }}
+              onClick={() => { schedule.setEditing(false); schedule.setTime(schedule.serverTime) }}
               className="px-3 py-1 rounded-[9px] text-[12px] font-medium transition-all"
               style={{ background: 'var(--bg-surface-2)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}
             >
@@ -110,10 +57,10 @@ export default function Journal() {
         ) : (
           <div className="flex items-center gap-2">
             <span className="text-[12px]" style={{ color: 'var(--text-dim)' }}>
-              Daily at <span className="font-medium" style={{ color: 'var(--text)' }}>{serverTime}</span>
+              Daily at <span className="font-medium" style={{ color: 'var(--text)' }}>{schedule.serverTime}</span>
             </span>
             <button
-              onClick={() => setScheduleEditing(true)}
+              onClick={() => schedule.setEditing(true)}
               className="px-3 py-1 rounded-[9px] text-[12px] font-medium transition-all"
               style={{ background: 'var(--bg-surface-2)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}
             >
@@ -124,13 +71,13 @@ export default function Journal() {
       </div>
 
       {/* Error banners */}
-      {generateMutation.isError && (
+      {generate.isError && (
         <div className="mb-4 px-4 py-3 rounded-[9px] text-[13px] border"
           style={{ background: 'var(--red-bg)', color: 'var(--red)', borderColor: 'rgba(248,113,113,0.2)' }}>
           Failed to generate journal entry.
         </div>
       )}
-      {saveMutation.isError && (
+      {save.isError && (
         <div className="mb-4 px-4 py-3 rounded-[9px] text-[13px] border"
           style={{ background: 'var(--red-bg)', color: 'var(--red)', borderColor: 'rgba(248,113,113,0.2)' }}>
           Failed to save changes.
@@ -157,8 +104,8 @@ export default function Journal() {
           <p className="text-[14px] mb-5" style={{ color: 'var(--text-muted)' }}>
             No journal entry for {selectedDate}
           </p>
-          <Btn variant="primary" onClick={() => generateMutation.mutate()} disabled={generateMutation.isPending}>
-            {generateMutation.isPending ? 'Generating…' : 'Generate Entry'}
+          <Btn variant="primary" onClick={() => generate.mutate()} disabled={generate.isPending}>
+            {generate.isPending ? 'Generating…' : 'Generate Entry'}
           </Btn>
         </div>
 
@@ -178,8 +125,8 @@ export default function Journal() {
           />
           <div className="flex justify-end gap-2">
             <Btn onClick={() => setEditing(false)}>Cancel</Btn>
-            <Btn variant="primary" onClick={() => saveMutation.mutate(editContent)} disabled={saveMutation.isPending}>
-              {saveMutation.isPending ? 'Saving…' : 'Save'}
+            <Btn variant="primary" onClick={() => save.mutate(editContent)} disabled={save.isPending}>
+              {save.isPending ? 'Saving…' : 'Save'}
             </Btn>
           </div>
         </div>
@@ -193,8 +140,8 @@ export default function Journal() {
           <div className="flex gap-2 mt-6 pt-4 border-t" style={{ borderColor: 'var(--border)' }}>
             <Btn onClick={() => { setEditing(true); setEditContent(entry.content ?? '') }}>Edit</Btn>
             {!entry.edited_by_user && (
-              <Btn onClick={() => generateMutation.mutate()} disabled={generateMutation.isPending}>
-                {generateMutation.isPending ? 'Regenerating…' : 'Regenerate'}
+              <Btn onClick={() => generate.mutate()} disabled={generate.isPending}>
+                {generate.isPending ? 'Regenerating…' : 'Regenerate'}
               </Btn>
             )}
           </div>

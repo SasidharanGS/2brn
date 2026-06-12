@@ -67,9 +67,6 @@ docs/superpowers/plans/
 
 ui/release/
 
-# Generated screenshots
-docs/screenshots/
-
 # Git worktrees
 .worktrees/
 worktrees/

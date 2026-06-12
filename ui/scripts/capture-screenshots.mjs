@@ -22,6 +22,7 @@ const SECTIONS = [
 ]
 
 const THEMES = ['dark', 'light']
+const SKINS = ['modern', 'minimal']
 
 const STUB_STATUS = {
   status: 'capturing',
@@ -31,9 +32,9 @@ const STUB_STATUS = {
 }
 
 const STUB_ACTIVITIES = [
-  { id: 1, capture_id: 1, started_at: new Date(Date.now() - 3600000).toISOString(), ended_at: new Date().toISOString(), summary: 'Working on the 2brn UI', tags: 'coding,react', task_category: 'coding', task_category_confidence: 0.95, productivity_state: 'deep_work', productivity_confidence: 0.9, category_overridden_by_user: false },
+  { id: 1, capture_id: 1, started_at: new Date(Date.now() - 3600000).toISOString(), ended_at: new Date().toISOString(), summary: 'Working on the 2brn UI', tags: 'coding,react', task_category: 'work', task_category_confidence: 0.95, productivity_state: 'deep_work', productivity_confidence: 0.9, category_overridden_by_user: false },
   { id: 2, capture_id: 2, started_at: new Date(Date.now() - 7200000).toISOString(), ended_at: new Date(Date.now() - 3600000).toISOString(), summary: 'Reading documentation', tags: 'research', task_category: 'research', task_category_confidence: 0.85, productivity_state: 'productive', productivity_confidence: 0.8, category_overridden_by_user: false },
-  { id: 3, capture_id: 3, started_at: new Date(Date.now() - 10800000).toISOString(), ended_at: new Date(Date.now() - 7200000).toISOString(), summary: 'Writing tests for daemon module', tags: 'testing,python', task_category: 'coding', task_category_confidence: 0.92, productivity_state: 'deep_work', productivity_confidence: 0.88, category_overridden_by_user: false },
+  { id: 3, capture_id: 3, started_at: new Date(Date.now() - 10800000).toISOString(), ended_at: new Date(Date.now() - 7200000).toISOString(), summary: 'Writing tests for daemon module', tags: 'testing,python', task_category: 'work', task_category_confidence: 0.92, productivity_state: 'deep_work', productivity_confidence: 0.88, category_overridden_by_user: false },
 ]
 
 const STUB_CAPTURES = [
@@ -82,6 +83,7 @@ const STUB_INSIGHTS_SUMMARY = {
   date: TODAY,
   range: { start: TODAY, end: TODAY, span_days: 1 },
   total_captures: 42,
+  observed_seconds: 23400,
   categories: [
     { task_category: 'coding', count: 28, pct: 66.7, avg_confidence: 0.92 },
     { task_category: 'research', count: 8, pct: 19.0, avg_confidence: 0.85 },
@@ -95,17 +97,19 @@ const STUB_INSIGHTS_SUMMARY = {
     { productivity_state: 'idle', count: 2, pct: 4.8 },
   ],
   top_apps: [
-    { app_name: 'Visual Studio Code', count: 24, pct: 57.1 },
-    { app_name: 'Terminal', count: 10, pct: 23.8 },
-    { app_name: 'Safari', count: 6, pct: 14.3 },
-    { app_name: 'Slack', count: 2, pct: 4.8 },
+    { app_name: 'Visual Studio Code', count: 24, seconds: 13380, pct: 57.1 },
+    { app_name: 'Terminal', count: 10, seconds: 5580, pct: 23.8 },
+    { app_name: 'Safari', count: 6, seconds: 3360, pct: 14.3 },
+    { app_name: 'Slack', count: 2, seconds: 1080, pct: 4.8 },
   ],
-  hourly_heatmap: Array.from({ length: 24 }, (_, hour) => ({
-    hour,
-    pct: hour >= 9 && hour <= 18 ? Math.random() * 0.8 + 0.2 : Math.random() * 0.1,
-    dominant_state: hour >= 9 && hour <= 18 ? 'deep_work' : null,
-    by_state_pct: { deep_work: 0.6, productive: 0.3, distracted: 0.1 },
-  })),
+  // Deterministic so re-captures stay pixel-comparable
+  hourly_heatmap: [0, 0, 0, 0, 0, 0, 0, 8, 22, 64, 58, 41, 17, 33, 52, 71, 47, 24, 9, 0, 4, 2, 0, 0]
+    .map((pct, hour) => ({
+      hour,
+      pct,
+      dominant_state: pct > 0 ? 'deep_work' : null,
+      by_state_pct: { deep_work: 0.6, productive: 0.3, distracted: 0.1 },
+    })),
   comparison: {
     baseline_label: '7-day average',
     active: { current_pct: 85.7, baseline_pct: 78.2 },
@@ -113,9 +117,9 @@ const STUB_INSIGHTS_SUMMARY = {
     distracted: { current_pct: 9.5, baseline_pct: 18.3 },
   },
   recurring_activities: [
-    { canonical_summary: 'Writing TypeScript code in VS Code', pct: 45.2, session_count: 19, variant_count: 3 },
-    { canonical_summary: 'Running terminal commands', pct: 23.8, session_count: 10, variant_count: 2 },
-    { canonical_summary: 'Browsing documentation', pct: 14.3, session_count: 6, variant_count: 4 },
+    { canonical_summary: 'Writing TypeScript code in VS Code', pct: 45.2, occurrences: 19, variant_count: 3, approx_seconds: 1500 },
+    { canonical_summary: 'Running terminal commands', pct: 23.8, occurrences: 10, variant_count: 2, approx_seconds: 600 },
+    { canonical_summary: 'Browsing documentation', pct: 14.3, occurrences: 6, variant_count: 4, approx_seconds: 900 },
   ],
 }
 
@@ -125,6 +129,9 @@ const STUB_SETTINGS = {
   has_chat_key: true,
   has_embed_key: true,
   capture_interval_seconds: 60,
+  change_cooldown_seconds: 10,
+  max_idle_tick_seconds: 300,
+  similarity_threshold: 0.92,
   purge_months: 3,
   paused: false,
   blog_mirror_enabled: false,
@@ -142,6 +149,24 @@ const STUB_DEBUG_STATUS = {
   last_error: null,
 }
 
+const STUB_SESSIONS = {
+  blocks: [
+    { start: `${TODAY}T07:53:00`, end: `${TODAY}T09:10:00`, monitor_index: 0, app_name: 'Visual Studio Code', task_category: 'work', duration_seconds: 4620, summary: 'Writing tests for daemon module' },
+    { start: `${TODAY}T09:15:00`, end: `${TODAY}T09:50:00`, monitor_index: 0, app_name: 'Safari', task_category: 'research', duration_seconds: 2100, summary: 'Reading documentation' },
+    { start: `${TODAY}T09:55:00`, end: `${TODAY}T11:20:00`, monitor_index: 0, app_name: 'Visual Studio Code', task_category: 'work', duration_seconds: 5100, summary: 'Working on the 2brn UI' },
+  ],
+  totals: { observed_seconds: 11820, by_category: { work: 9720, research: 2100 } },
+}
+
+const STUB_LOGS = {
+  lines: [
+    { ts: '09:53:04', level: 'INFO', msg: 'capture #42 saved' },
+    { ts: '09:53:05', level: 'INFO', msg: 'ocr ok — 1240 chars' },
+    { ts: '09:53:07', level: 'INFO', msg: 'inference → deep_work / work' },
+    { ts: '09:53:08', level: 'INFO', msg: 'embedded — chroma upsert ok' },
+  ],
+}
+
 function stubResponse(url) {
   const p = new URL(url).pathname
   if (p === '/status') return STUB_STATUS
@@ -157,22 +182,27 @@ function stubResponse(url) {
   if (p.startsWith('/instructions')) return []
   if (p.startsWith('/plugins')) return []
   if (p.startsWith('/plugin-rules')) return []
-  if (p.startsWith('/logs')) return { lines: [] }
+  if (p.startsWith('/sessions')) return STUB_SESSIONS
+  if (p.startsWith('/logs')) return STUB_LOGS
   if (p.startsWith('/debug/status')) return STUB_DEBUG_STATUS
   return {}
 }
 
-async function setupMocks(page) {
-  // Mock window.electronAPI — must be set before page load
-  await page.addInitScript(() => {
+async function setupMocks(page, skin) {
+  // Mock window.electronAPI + pin the skin — must be set before page load
+  await page.addInitScript((s) => {
+    localStorage.setItem('2brn-skin', s)
     window.electronAPI = {
       getDaemonPort: () => Promise.resolve(7842),
       getApiToken: () => Promise.resolve('mock-token'),
       getPlatform: () => Promise.resolve('darwin'),
       getTheme: () => Promise.resolve('dark'),
       onThemeChanged: () => () => {},
+      onDaemonStatus: () => () => {},
+      isDaemonOwned: () => Promise.resolve(true),
+      restartDaemon: () => Promise.resolve({ ok: true }),
     }
-  })
+  }, skin)
 
   // Intercept all daemon API calls (127.0.0.1:7842)
   await page.route('http://127.0.0.1:7842/**', async (route) => {
@@ -203,12 +233,13 @@ async function capture(page, filePath) {
   console.log('  saved:', path.relative(process.cwd(), filePath))
 }
 
-async function isCalendarOpen(page) {
-  return page.evaluate(() => {
-    const btn = Array.from(document.querySelectorAll('button')).find(b => b.textContent?.includes('calendar'))
-    if (!btn) return false
-    return btn.style.background.includes('var(--accent') || getComputedStyle(btn).color.includes('var(--accent')
-  })
+/** Find the calendar / debug toggle for the active skin. */
+function chromeButton(page, skin, kind) {
+  // modern: "\u25c8 calendar" / "\u2b21 debug" sidebar buttons; minimal: plain rail labels
+  const label = skin === 'modern'
+    ? (kind === 'calendar' ? '\u25c8 calendar' : '\u2b21 debug')
+    : kind
+  return page.locator('button', { hasText: label }).first()
 }
 
 async function run() {
@@ -217,72 +248,71 @@ async function run() {
   const browser = await chromium.launch({ headless: true })
   const gallery = []
 
-  for (const theme of THEMES) {
-    console.log(`\n=== Theme: ${theme} ===`)
+  for (const skin of SKINS) {
+    for (const theme of THEMES) {
+      console.log(`\n=== ${skin} / ${theme} ===`)
 
-    // New context + page per theme so init scripts apply cleanly
-    const context = await browser.newContext({ viewport: { width: 1280, height: 800 } })
-    const page = await context.newPage()
-    await setupMocks(page)
+      // New context + page per skin/theme so init scripts apply cleanly
+      const context = await browser.newContext({ viewport: { width: 1280, height: 800 } })
+      const page = await context.newPage()
+      page.on('pageerror', err => console.error(`  [pageerror ${skin}/${theme}]`, String(err).slice(0, 200)))
+      await setupMocks(page, skin)
 
-    for (const section of SECTIONS) {
-      console.log(`\n[${theme}] ${section.name}`)
+      const suffix = `${skin}-${theme}`
 
-      await page.goto(`${BASE_URL}/#${section.route}`, { waitUntil: 'networkidle' })
-      await forceTheme(page, theme)
+      for (const section of SECTIONS) {
+        console.log(`\n[${suffix}] ${section.name}`)
 
-      if (section.hasCalendar) {
-        const calBtn = page.getByText('◈ calendar')
+        await page.goto(`${BASE_URL}/#${section.route}`, { waitUntil: 'networkidle' })
+        await forceTheme(page, theme)
 
-        // Ensure calendar is CLOSED for the default screenshot
-        const open = await page.evaluate(() => {
-          const btns = Array.from(document.querySelectorAll('button'))
-          const btn = btns.find(b => b.textContent?.trim() === '◈ calendar')
-          if (!btn) return false
-          return btn.style.background !== ''
-        })
-        if (open) {
+        if (section.hasCalendar) {
+          const calBtn = chromeButton(page, skin, 'calendar')
+
+          // Each goto reloads the shell, so the calendar starts at the skin's
+          // default: open on modern, closed on minimal.
+          if (skin === 'modern') {
+            await calBtn.click()
+            await page.waitForTimeout(300)
+          }
+
+          const defaultFile = path.join(OUT_DIR, `${section.name}--default--${suffix}.png`)
+          await capture(page, defaultFile)
+          gallery.push({ file: path.basename(defaultFile), section: section.name, variant: 'default', skin, theme })
+
           await calBtn.click()
-          await page.waitForTimeout(300)
+          await page.waitForTimeout(400)
+
+          const calFile = path.join(OUT_DIR, `${section.name}--calendar-open--${suffix}.png`)
+          await capture(page, calFile)
+          gallery.push({ file: path.basename(calFile), section: section.name, variant: 'calendar-open', skin, theme })
+
+          await calBtn.click()
+          await page.waitForTimeout(200)
+
+        } else {
+          const defaultFile = path.join(OUT_DIR, `${section.name}--default--${suffix}.png`)
+          await capture(page, defaultFile)
+          gallery.push({ file: path.basename(defaultFile), section: section.name, variant: 'default', skin, theme })
         }
 
-        const defaultFile = path.join(OUT_DIR, `${section.name}--default--${theme}.png`)
-        await capture(page, defaultFile)
-        gallery.push({ file: path.basename(defaultFile), section: section.name, variant: 'default', theme })
+        // Debug panel variant — only on home
+        if (section.name === 'home') {
+          const dbgBtn = chromeButton(page, skin, 'debug')
+          await dbgBtn.click()
+          await page.waitForTimeout(400)
 
-        // Now open calendar
-        await calBtn.click()
-        await page.waitForTimeout(400)
+          const dbgFile = path.join(OUT_DIR, `home--debug-panel--${suffix}.png`)
+          await capture(page, dbgFile)
+          gallery.push({ file: path.basename(dbgFile), section: 'home', variant: 'debug-panel', skin, theme })
 
-        const calFile = path.join(OUT_DIR, `${section.name}--calendar-open--${theme}.png`)
-        await capture(page, calFile)
-        gallery.push({ file: path.basename(calFile), section: section.name, variant: 'calendar-open', theme })
-
-        // Close again
-        await calBtn.click()
-        await page.waitForTimeout(200)
-
-      } else {
-        const defaultFile = path.join(OUT_DIR, `${section.name}--default--${theme}.png`)
-        await capture(page, defaultFile)
-        gallery.push({ file: path.basename(defaultFile), section: section.name, variant: 'default', theme })
+          await dbgBtn.click()
+          await page.waitForTimeout(200)
+        }
       }
 
-      // Debug panel variant — only on home
-      if (section.name === 'home') {
-        const dbgBtn = page.getByRole('button', { name: '⬡ debug' })
-        await dbgBtn.click()
-        await page.waitForTimeout(400)
-
-        const dbgFile = path.join(OUT_DIR, `home--debug-panel--${theme}.png`)
-        await capture(page, dbgFile)
-        gallery.push({ file: path.basename(dbgFile), section: 'home', variant: 'debug-panel', theme })
-
-        await dbgBtn.click()
-        await page.waitForTimeout(200)
-      }    }
-
-    await context.close()
+      await context.close()
+    }
   }
 
   await browser.close()
@@ -302,7 +332,7 @@ async function generateGallery(items) {
         <a href="${i.file}" target="_blank">
           <img src="${i.file}" alt="${i.file}" loading="lazy" style="width:100%;border-radius:8px;border:1px solid #2a2a3a;display:block;transition:opacity .2s" onmouseover="this.style.opacity='.8'" onmouseout="this.style.opacity='1'">
         </a>
-        <figcaption style="font-size:11px;color:#666;margin-top:6px;font-family:monospace">${i.variant} · ${i.theme}</figcaption>
+        <figcaption style="font-size:11px;color:#666;margin-top:6px;font-family:monospace">${i.variant} · ${i.skin} · ${i.theme}</figcaption>
       </figure>`).join('\n')
 
     return `

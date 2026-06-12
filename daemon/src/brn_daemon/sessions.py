@@ -15,6 +15,45 @@ from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
+UNCLASSIFIED = "unclassified"
+
+# Classified samples: one per inferred activity, with the capture's app/monitor.
+_CLASSIFIED_SQL = """
+    SELECT a.started_at, a.summary, a.task_category, a.productivity_state,
+           COALESCE(a.app_name_override, c.app_name) AS app_name,
+           COALESCE(c.monitor_index, 0) AS monitor_index
+    FROM activities a
+    LEFT JOIN captures c ON a.capture_id = c.id
+    WHERE a.started_at >= ? AND a.started_at <= ?
+"""
+
+# Unclassified samples: captures with no activity row — sparse OCR text (video,
+# images, games), inference still pending, or a provider outage. The screen was
+# observed; it just couldn't be classified. Window title stands in as summary.
+_UNCLASSIFIED_SQL = """
+    SELECT c.captured_at AS started_at, c.window_title AS summary,
+           ? AS task_category, NULL AS productivity_state,
+           c.app_name, COALESCE(c.monitor_index, 0) AS monitor_index
+    FROM captures c
+    LEFT JOIN activities a ON a.capture_id = c.id
+    WHERE a.id IS NULL AND c.captured_at >= ? AND c.captured_at <= ?
+"""
+
+
+async def fetch_samples(conn, lo: str, hi: str, include_unclassified: bool = True) -> list[dict]:
+    """Load the sample stream for [lo, hi] from an aiosqlite connection.
+
+    ``conn.row_factory`` must be ``aiosqlite.Row``. With ``include_unclassified``
+    the stream also carries one sample per activity-less capture, categorised
+    as ``unclassified`` so the sessionizer splits them into their own blocks.
+    """
+    cur = await conn.execute(_CLASSIFIED_SQL, (lo, hi))
+    samples = [dict(r) for r in await cur.fetchall()]
+    if include_unclassified:
+        cur = await conn.execute(_UNCLASSIFIED_SQL, (UNCLASSIFIED, lo, hi))
+        samples.extend(dict(r) for r in await cur.fetchall())
+    return samples
+
 
 @dataclass(frozen=True)
 class SessionPolicy:

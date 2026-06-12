@@ -8,20 +8,10 @@ from fastapi import APIRouter, HTTPException, Query
 
 from brn_daemon.config import load_config
 from brn_daemon.db import get_db_path
-from brn_daemon.sessions import SessionPolicy, compute_totals, sessionize
+from brn_daemon.sessions import SessionPolicy, compute_totals, fetch_samples, sessionize
 from brn_daemon.timeutil import local_day_bounds_utc
 
 router = APIRouter()
-
-_SAMPLES_SQL = """
-    SELECT a.started_at, a.summary, a.task_category, a.productivity_state,
-           COALESCE(a.app_name_override, c.app_name) AS app_name,
-           COALESCE(c.monitor_index, 0) AS monitor_index
-    FROM activities a
-    LEFT JOIN captures c ON a.capture_id = c.id
-    WHERE a.started_at >= ? AND a.started_at <= ?
-    ORDER BY a.started_at
-"""
 
 
 def _iso_z(dt: datetime) -> str:
@@ -45,8 +35,7 @@ async def get_sessions(date: str = Query(..., description="Local day, YYYY-MM-DD
 
     async with aiosqlite.connect(get_db_path()) as conn:
         conn.row_factory = aiosqlite.Row
-        cur = await conn.execute(_SAMPLES_SQL, (lo, hi))
-        samples = [dict(r) for r in await cur.fetchall()]
+        samples = await fetch_samples(conn, lo, hi)
 
     # Blocks never extend past the day or, for today, past the present moment.
     range_end = min(

@@ -6,7 +6,7 @@ choice to infer what you were doing, and gives you a chat interface, an
 auto-written journal and blog, and productivity insights — all grounded in what
 you actually did. Your data stays on your machine.
 
-![2brn home](docs/screenshots/home--default--dark.png)
+![2brn home](docs/screenshots/home--default--modern-dark.png)
 
 ## Features
 
@@ -42,16 +42,20 @@ you actually did. Your data stays on your machine.
   same semantic index as your screen activity, so chat can draw on both
 - 🔐 **Screenshot encryption** — optional AES-256-GCM at-rest encryption for
   screenshots, keyed by a password held in the OS keychain
+- 🎨 **Themes** — two switchable skins (Settings → Appearance): **modern**
+  (the original indigo look) and **minimal** (a monochrome, text-first design
+  where state is encoded by intensity instead of color), each in light, dark,
+  and system mode — see [`docs/theming.md`](docs/theming.md)
 - 🖥️ **Cross-platform** — macOS, Windows, Linux via Electron + Python
 
 ## Screenshots
 
 | | |
 |---|---|
-| **Chat** ![chat](docs/screenshots/chat--default--dark.png) | **Timeline** ![timeline](docs/screenshots/timeline--default--dark.png) |
-| **Insights** ![insights](docs/screenshots/insights--default--dark.png) | **Plugins** ![plugins](docs/screenshots/plugins--default--dark.png) |
+| **Chat** ![chat](docs/screenshots/chat--default--modern-dark.png) | **Timeline** ![timeline](docs/screenshots/timeline--default--modern-dark.png) |
+| **Insights (minimal)** ![insights](docs/screenshots/insights--default--minimal-light.png) | **Journal (minimal)** ![journal](docs/screenshots/journal--default--minimal-dark.png) |
 
-> The full set (every page, light & dark) lives in
+> The full set (every page, both skins, light & dark) lives in
 > [`docs/screenshots/`](docs/screenshots/) — open `index.html` for the gallery.
 > Regenerate it with `pnpm screenshots` from `ui/`.
 

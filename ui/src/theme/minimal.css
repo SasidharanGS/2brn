@@ -23,7 +23,9 @@
 
   --bg: #f5f5f0;     /* warm off-white, not pure white */
   --fg: #181818;     /* near-black, not pure black */
-  --muted: #aaaaaa;  /* secondary text, labels, links at rest */
+  --muted: #8c8c85;  /* secondary text, labels, links at rest — darkened from
+                        #aaaaaa, which read washed-out on the warm off-white bg
+                        (~2.3:1); the dark-theme --muted below is unchanged */
   --rule: #dddddd;   /* every 1px border & divider; pill bg */
 
   --accent: #a23c2e;        /* muted brick red — live/important only */

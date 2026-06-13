@@ -1,5 +1,8 @@
 import { useState, useMemo, useEffect } from 'react'
 import { useLocation } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
+import { api } from '../api/client'
+import { queryKeys } from '../api/queryKeys'
 import { useAppDate, toDateStr } from '../context/DateContext'
 
 // Routes where the calendar panel is shown
@@ -43,6 +46,18 @@ export function useCalendarPanel() {
 
   // Is the calendar active on the current route?
   const isActive = CALENDAR_ROUTES.some(r => location.pathname === r)
+
+  // Days-with-data accent dots: which days in the visible month have activity.
+  const viewMonthStr = `${viewYear}-${String(viewMonth + 1).padStart(2, '0')}`
+  const { data: dataDates = [] } = useQuery({
+    queryKey: queryKeys.activityDates(viewMonthStr),
+    queryFn: () => api.getActivityDates(viewMonthStr),
+    enabled: isActive,
+  })
+  const dataDays = useMemo(
+    () => new Set(dataDates.map(d => Number(d.slice(8, 10)))),
+    [dataDates],
+  )
 
   const daysInMonth = getDaysInMonth(viewYear, viewMonth)
   const firstDay = getFirstDayOfMonth(viewYear, viewMonth)
@@ -98,6 +113,7 @@ export function useCalendarPanel() {
     prevMonth, nextMonth, selectDay, goToToday,
     selectedDate, today, todayDate,
     selDay, isSelectedInView, isAtCurrentMonth,
+    dataDays,
     chatDateOverridden, setChatDateOverridden,
   }
 }

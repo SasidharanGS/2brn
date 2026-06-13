@@ -109,6 +109,30 @@ async def test_patch_override_rejects_invalid_state(activities_client):
     assert resp.status_code == 400
 
 
+async def test_activity_dates_returns_distinct_days_in_month(activities_client):
+    # The fixture seeds one activity on 2026-05-28; add another May day + an April day.
+    async with aiosqlite.connect(get_db_path()) as conn:
+        await conn.execute(
+            "INSERT INTO activities (id, capture_id, started_at, summary, tags, task_category, "
+            "task_category_confidence, productivity_state, productivity_confidence, category_overridden_by_user) "
+            "VALUES (2, NULL, '2026-05-12T09:00:00', 'a', '[]', 'work', 0.9, 'productive', 0.8, 0)"
+        )
+        await conn.execute(
+            "INSERT INTO activities (id, capture_id, started_at, summary, tags, task_category, "
+            "task_category_confidence, productivity_state, productivity_confidence, category_overridden_by_user) "
+            "VALUES (3, NULL, '2026-04-30T09:00:00', 'b', '[]', 'work', 0.9, 'productive', 0.8, 0)"
+        )
+        await conn.commit()
+    resp = await activities_client.get("/activities/dates?month=2026-05")
+    assert resp.status_code == 200
+    assert resp.json() == ["2026-05-12", "2026-05-28"]  # April excluded; distinct + sorted
+
+
+async def test_activity_dates_rejects_malformed_month(activities_client):
+    resp = await activities_client.get("/activities/dates?month=2026")
+    assert resp.status_code == 400
+
+
 async def test_patch_override_unknown_activity_returns_404(activities_client):
     resp = await activities_client.patch(
         "/activities/99999/override",

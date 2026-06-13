@@ -3,6 +3,7 @@ export const queryKeys = {
   insightsSummary: (date: string, period: string) =>
     ['insights', 'summary', period, date] as const,
   activities: (date: string) => ['activities', date] as const,
+  activityDates: (month: string) => ['activity-dates', month] as const,
   sessions: (date: string) => ['sessions', date] as const,
   captures: (date: string) => ['captures', date] as const,
   journal: (date: string) => ['journal', date] as const,

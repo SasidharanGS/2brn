@@ -102,6 +102,8 @@ export const api = {
     )
     return get<ActivityRecord[]>(`/activities?${q}`)
   },
+  /** Distinct dates (YYYY-MM-DD) with activity in `month` (YYYY-MM) — calendar dots. */
+  getActivityDates: (month: string) => get<string[]>(`/activities/dates?month=${month}`),
   overrideActivity: (id: number, task_category: string, productivity_state: string) =>
     patch<ActivityRecord>(`/activities/${id}/override`, { task_category, productivity_state }),
   getSessions: (date: string) => get<SessionsResponse>(`/sessions?date=${date}`),

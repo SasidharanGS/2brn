@@ -1,3 +1,5 @@
+import re
+
 import aiosqlite
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -56,6 +58,30 @@ async def get_activities(
         })
         for r in rows
     ]
+
+@router.get("/activities/dates", response_model=list[str])
+async def get_activity_dates(month: str = Query(..., description="YYYY-MM")):
+    """Return the distinct dates (YYYY-MM-DD) in `month` that have activity data.
+
+    Backs the calendar's days-with-data dots. A single indexed range scan +
+    GROUP BY — cheap enough to call on every month change.
+    """
+    if not re.fullmatch(r"\d{4}-\d{2}", month):
+        raise HTTPException(400, "month must be formatted YYYY-MM")
+    # String range bounds (started_at is 'YYYY-MM-DDThh:mm:ss') so the
+    # idx_activities_started_at index is used; '-31T23:59…' is a safe upper bound
+    # for any month under lexicographic comparison.
+    lo = f"{month}-01T00:00:00"
+    hi = f"{month}-31T23:59:59.999999"
+    async with aiosqlite.connect(get_db_path()) as conn:
+        cur = await conn.execute(
+            "SELECT DISTINCT substr(started_at, 1, 10) AS d FROM activities "
+            "WHERE started_at >= ? AND started_at <= ? ORDER BY d",
+            (lo, hi),
+        )
+        rows = await cur.fetchall()
+    return [r[0] for r in rows]
+
 
 class BackfillRequest(BaseModel):
     days: int = Field(default=7, ge=1, le=365)

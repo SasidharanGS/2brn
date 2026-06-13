@@ -97,3 +97,38 @@ async def test_rag_distance_cutoff_filters_high_distance_docs():
     assert DISTANCE_CUTOFF < 0.95  # sanity
     assert "far doc" not in fake_stream.last_prompt
     assert "close doc" in fake_stream.last_prompt
+
+
+async def test_chat_category_filter_single_vs_multi():
+    """One category scopes the activity query with $eq; several use $in."""
+    async def fake_embed(text):
+        return [0.1] * 384
+
+    async def fake_stream(messages):
+        yield "ok"
+
+    embed_client = MagicMock()
+    embed_client.embed = fake_embed
+
+    store = MagicMock()
+    store.query = AsyncMock(return_value={"documents": [[]], "metadatas": [[]], "distances": [[]]})
+    store.query_notes = AsyncMock(return_value={"documents": [[]], "metadatas": [[]], "distances": [[]]})
+
+    svc = ChatService(chat_fn=MagicMock(), stream_fn=fake_stream, embed_client=embed_client, chroma_store=store)
+
+    # several categories → $in
+    async for _ in svc.chat("q", categories=["work", "research"]):
+        pass
+    assert store.query.call_args.kwargs["where"]["task_category"] == {"$in": ["work", "research"]}
+
+    # a single category → $eq (preserves the original single-filter semantics)
+    store.query.reset_mock()
+    async for _ in svc.chat("q", categories=["work"]):
+        pass
+    assert store.query.call_args.kwargs["where"]["task_category"] == {"$eq": "work"}
+
+    # no categories → no task_category constraint at all
+    store.query.reset_mock()
+    async for _ in svc.chat("q"):
+        pass
+    assert store.query.call_args.kwargs["where"] is None

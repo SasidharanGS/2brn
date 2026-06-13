@@ -2,7 +2,7 @@ import MarkdownRenderer from '../../components/shared/MarkdownRenderer'
 import { useChatSession, CHAT_CATEGORIES } from '../../hooks/useChatSession'
 
 export default function Chat() {
-  const { messages, input, setInput, loading, categoryFilter, setCategoryFilter, send, bottomRef } = useChatSession()
+  const { messages, input, setInput, loading, categories, setCategories, send, bottomRef } = useChatSession()
 
   return (
     <div className="flex flex-col h-full">
@@ -13,17 +13,17 @@ export default function Chat() {
         style={{ borderColor: 'var(--border)', background: 'var(--bg-surface)' }}
       >
         <select
-          value={categoryFilter}
-          onChange={e => setCategoryFilter(e.target.value)}
+          value={categories[0] ?? ''}
+          onChange={e => setCategories(e.target.value ? [e.target.value] : [])}
           className="rounded-[7px] px-2.5 py-1.5 text-[12px] border outline-none"
           style={{ background: 'var(--bg-input)', borderColor: 'var(--border-2)', color: 'var(--text)' }}
         >
           <option value="">All categories</option>
           {CHAT_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
         </select>
-        {categoryFilter && (
+        {categories.length > 0 && (
           <button
-            onClick={() => setCategoryFilter('')}
+            onClick={() => setCategories([])}
             className="text-[12px] px-2.5 py-1 rounded-[7px] transition-colors"
             style={{ color: 'var(--text-dim)' }}
           >

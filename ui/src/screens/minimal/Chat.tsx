@@ -1,7 +1,7 @@
 import { useChatSession, CHAT_CATEGORIES } from '../../hooks/useChatSession'
 import Icon from './Icon'
 import Prose from './Prose'
-import { Label, lineInput } from './primitives'
+import { Label } from './primitives'
 
 const SUGGESTED_PROMPTS = [
   'what did i work on this morning?',
@@ -9,27 +9,49 @@ const SUGGESTED_PROMPTS = [
   'summarise my day so far',
 ]
 
+/** Multi-select category chip — accent fill + × when selected. Background is
+    intentionally NOT transitioned so the selection snaps instantly. */
+function CatPill({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button" onClick={onClick}
+      onMouseEnter={e => { if (!active) { e.currentTarget.style.color = 'var(--fg)'; e.currentTarget.style.borderColor = 'var(--muted)' } }}
+      onMouseLeave={e => { if (!active) { e.currentTarget.style.color = 'var(--muted)'; e.currentTarget.style.borderColor = 'var(--rule)' } }}
+      style={{
+        display: 'inline-flex', alignItems: 'center', gap: 6,
+        background: active ? 'var(--accent)' : 'none',
+        color: active ? 'var(--bg)' : 'var(--muted)',
+        border: `1px solid ${active ? 'var(--accent)' : 'var(--rule)'}`,
+        borderRadius: 'var(--radius-pill)', padding: '4px 11px', cursor: 'pointer',
+        fontSize: 'var(--text-2xs)', letterSpacing: 'var(--tracking-snug)',
+        fontWeight: active ? 400 : 300, fontFamily: 'var(--font-sans)',
+        transition: 'color 0.18s ease, border-color 0.18s ease',
+      }}
+    >
+      {label}
+      {active && <span aria-hidden="true" style={{ fontSize: 'var(--text-xs)', lineHeight: 1, opacity: 0.85 }}>×</span>}
+    </button>
+  )
+}
+
 export default function Chat() {
-  const { messages, input, setInput, loading, categoryFilter, setCategoryFilter, send, bottomRef } = useChatSession()
+  const { messages, input, setInput, loading, categories, setCategories, toggleCategory, send, bottomRef } = useChatSession()
 
   return (
     <div style={{
       display: 'flex', flexDirection: 'column', height: '100%',
       padding: 'var(--space-lg)', boxSizing: 'border-box',
     }}>
-      {/* Category filter */}
+      {/* Category filter — multi-select pills */}
       <div style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 'var(--space-xs)',
         paddingBottom: 'var(--space-md)', borderBottom: '1px solid var(--rule)', flex: '0 0 auto',
       }}>
-        <select
-          value={categoryFilter}
-          onChange={e => setCategoryFilter(e.target.value)}
-          style={{ ...lineInput, width: 'auto', cursor: 'pointer', appearance: 'none', borderRadius: 0, paddingRight: 'var(--space-md)' }}
-        >
-          <option value="">all categories</option>
-          {CHAT_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-        </select>
+        <Label style={{ marginRight: 'var(--space-xs)' }}>filter</Label>
+        <CatPill label="all categories" active={categories.length === 0} onClick={() => setCategories([])} />
+        {CHAT_CATEGORIES.map(c => (
+          <CatPill key={c} label={c} active={categories.includes(c)} onClick={() => toggleCategory(c)} />
+        ))}
       </div>
 
       {/* Message stream */}

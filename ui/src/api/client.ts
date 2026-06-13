@@ -188,11 +188,11 @@ export const api = {
   listRuleExecutions: (id: number, limit = 50) =>
     get<RuleExecution[]>(`/plugin-rules/${id}/executions?limit=${limit}`),
 
-  chatStream: async function* (question: string, date_filter?: string, category_filter?: string, signal?: AbortSignal) {
+  chatStream: async function* (question: string, date_filter?: string, categories?: string[], signal?: AbortSignal) {
     const res = await authedFetch('/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ question, date_filter, category_filter }),
+      body: JSON.stringify({ question, date_filter, category_filters: categories }),
       signal,
     })
     if (!res.ok) throw new ApiError(res.status, `POST /chat failed: ${res.status}`)

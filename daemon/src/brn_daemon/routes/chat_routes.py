@@ -13,6 +13,8 @@ router = APIRouter()
 class ChatRequest(BaseModel):
     question: str
     date_filter: str | None = None
+    # multi-select category scope; category_filter (singular) kept for back-compat
+    category_filters: list[str] | None = None
     category_filter: str | None = None
 
 @router.post("/chat")
@@ -24,12 +26,14 @@ async def chat_endpoint(body: ChatRequest):
             yield "data: " + json.dumps({"chunk": "Chat service unavailable."}) + "\n\n"
         return StreamingResponse(error_stream(), media_type="text/event-stream")
 
+    categories = body.category_filters or ([body.category_filter] if body.category_filter else None)
+
     async def event_stream():
         try:
             async for chunk in service.chat(
                 question=body.question,
                 date_filter=body.date_filter,
-                category_filter=body.category_filter,
+                categories=categories,
             ):
                 yield "data: " + json.dumps({"chunk": chunk}) + "\n\n"
             yield "data: [DONE]\n\n"

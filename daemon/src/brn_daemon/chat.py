@@ -50,7 +50,7 @@ class ChatService:
         self,
         question: str,
         date_filter: str | None = None,
-        category_filter: str | None = None,
+        categories: list[str] | None = None,
         n_results: int = 10,
     ) -> AsyncIterator[str]:
         # 1. Embed the query
@@ -62,11 +62,15 @@ class ChatService:
             return
 
         # 2. Build ChromaDB where filter for activity memories
-        where = {}
+        where: dict[str, object] = {}
         if date_filter:
             where["date"] = {"$eq": date_filter}
-        if category_filter:
-            where["task_category"] = {"$eq": category_filter}
+        if categories:
+            # one category → exact match; several → any-of (preserves the
+            # single-category behaviour while supporting multi-select filters)
+            where["task_category"] = (
+                {"$eq": categories[0]} if len(categories) == 1 else {"$in": categories}
+            )
 
         # 3. Semantic search in activity_memories
         try:

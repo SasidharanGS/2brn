@@ -20,7 +20,7 @@ export function useChatSession() {
   const [messages, setMessages]             = useState<ChatMessage[]>([])
   const [input, setInput]                   = useState(initialQuestion)
   const [loading, setLoading]               = useState(false)
-  const [categoryFilter, setCategoryFilter] = useState('')
+  const [categories, setCategories]         = useState<string[]>([])
   const bottomRef   = useRef<HTMLDivElement>(null)
   const hasAutoSent = useRef(false)
   const abortRef    = useRef<AbortController | null>(null)
@@ -39,6 +39,9 @@ export function useChatSession() {
 
   // The effective date filter: empty string if user cleared it, otherwise the shared date
   const dateFilter = chatDateOverridden ? '' : selectedDate
+
+  const toggleCategory = (c: string) =>
+    setCategories(prev => (prev.includes(c) ? prev.filter(x => x !== c) : [...prev, c]))
 
   useEffect(() => {
     if (initialQuestion && !hasAutoSent.current) {
@@ -87,7 +90,7 @@ export function useChatSession() {
     }
 
     try {
-      for await (const chunk of api.chatStream(question, dateFilter || undefined, categoryFilter || undefined, controller.signal)) {
+      for await (const chunk of api.chatStream(question, dateFilter || undefined, categories.length ? categories : undefined, controller.signal)) {
         streamAccRef.current += chunk
         scheduleFlush()
       }
@@ -107,5 +110,5 @@ export function useChatSession() {
     }
   }
 
-  return { messages, input, setInput, loading, categoryFilter, setCategoryFilter, send, bottomRef }
+  return { messages, input, setInput, loading, categories, setCategories, toggleCategory, send, bottomRef }
 }

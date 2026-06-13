@@ -25,6 +25,7 @@ export default function CalendarPanel({ onClose }: { onClose: () => void }) {
     prevMonth, nextMonth, selectDay, goToToday,
     selectedDate, today, todayDate,
     selDay, isSelectedInView, isAtCurrentMonth,
+    dataDays,
     chatDateOverridden, setChatDateOverridden,
   } = useCalendarPanel()
 
@@ -96,7 +97,7 @@ export default function CalendarPanel({ onClose }: { onClose: () => void }) {
               }}
             >
               {d}
-              {isToday && !selected && (
+              {dataDays.has(d) && !selected && (
                 <span style={{
                   position: 'absolute', bottom: 3, width: 3, height: 3,
                   borderRadius: '50%', background: 'var(--accent)',

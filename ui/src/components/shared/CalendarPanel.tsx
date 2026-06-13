@@ -13,6 +13,7 @@ export default function CalendarPanel() {
     prevMonth, nextMonth, selectDay, goToToday,
     selectedDate, today, todayDate,
     selDay, isSelectedInView, isAtCurrentMonth,
+    dataDays,
     chatDateOverridden, setChatDateOverridden,
   } = useCalendarPanel()
 
@@ -126,8 +127,8 @@ export default function CalendarPanel() {
                 }}
               >
                 {day}
-                {/* Today dot */}
-                {isToday && !isSelected && (
+                {/* Days-with-data dot */}
+                {dataDays.has(day) && !isSelected && (
                   <span
                     className="absolute bottom-0.5 left-1/2 w-1 h-1 rounded-full"
                     style={{ background: 'var(--accent)', transform: 'translateX(-50%)' }}

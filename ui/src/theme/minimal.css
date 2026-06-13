@@ -16,6 +16,11 @@
 :root[data-skin='minimal'] {
   color-scheme: light;
 
+  /* Bigger, fluid base. Every type token below is in rem, so scaling the root
+     scales the whole minimal UI proportionally with the viewport. Scoped to the
+     skin so the modern skin keeps its fixed 15px (index.css). */
+  font-size: clamp(15.5px, 0.42vw + 11.9px, 19px);
+
   --bg: #f5f5f0;     /* warm off-white, not pure white */
   --fg: #181818;     /* near-black, not pure black */
   --muted: #aaaaaa;  /* secondary text, labels, links at rest */
@@ -49,7 +54,7 @@
   --text-2xs: 0.65rem;  --text-xs: 0.7rem;   --text-sm: 0.75rem;  --text-base: 0.8rem;
   --text-md: 0.85rem;   --text-lg: 0.95rem;  --text-xl: 1.05rem;  --text-2xl: 1.4rem;
   --text-display: clamp(1.4rem, 3vw, 2.2rem);
-  --text-hero:    clamp(1.6rem, 3.2vw, 2.2rem);
+  --text-hero:    clamp(2rem, 2.6vw, 2.9rem);
   --tracking-tight: -0.02em; --tracking-name: 0.02em; --tracking-snug: 0.05em;
   --tracking-wide: 0.1em;    --tracking-wider: 0.15em; --tracking-nav: 0.2em;
   --tracking-label: 0.25em;
@@ -65,9 +70,9 @@
   --pill-bg: var(--rule);
 
   /* ── App chrome layout ── */
-  --sidebar-w: 180px;
-  --topbar-h: 52px;
-  --panel-w: 300px;
+  --sidebar-w: clamp(168px, 13vw, 208px);
+  --topbar-h: 56px;
+  --panel-w: clamp(264px, 22vw, 320px);
 }
 
 :root[data-skin='minimal'][data-theme='dark'] {
@@ -93,6 +98,14 @@
   background: var(--bg);
   color: var(--fg);
   font-weight: 300;
+  /* inherit the fluid root size instead of index.css's fixed 15px */
+  font-size: 1rem;
+}
+
+/* Focus ring — a thin accent outline (index.css uses 2px + a radius). */
+:root[data-skin='minimal'] *:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 2px;
 }
 
 /* Thin monochrome scrollbars */
@@ -108,6 +121,24 @@
 }
 :root[data-skin='minimal'] .m-nav-link:hover { color: var(--fg); }
 :root[data-skin='minimal'] .m-nav-link.active { color: var(--fg); font-weight: 400; }
+
+/* Sidebar nav active = accent text + a 2px×15px accent bar on the left edge
+   (animates height 0→15px). Scoped to .m-sidebar so the Plugins list — which
+   reuses .m-nav-link — keeps its neutral --fg selected state. */
+:root[data-skin='minimal'] .m-sidebar .m-nav-link { position: relative; }
+:root[data-skin='minimal'] .m-sidebar .m-nav-link.active { color: var(--accent); }
+:root[data-skin='minimal'] .m-sidebar .m-nav-link::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 2px;
+  height: 0;
+  background: var(--accent);
+  transition: height 0.2s ease;
+}
+:root[data-skin='minimal'] .m-sidebar .m-nav-link.active::before { height: 15px; }
 
 :root[data-skin='minimal'] .m-rail-btn {
   color: var(--muted);
@@ -145,9 +176,20 @@ html.macos[data-skin='minimal'] .m-sidebar { padding-top: 44px; }
   border: 1px solid var(--rule);
   transition: border-color 0.2s ease;
 }
-:root[data-skin='minimal'] .m-navcard:hover { border-color: var(--fg); }
+:root[data-skin='minimal'] .m-navcard:hover { border-color: var(--accent); }
 
-/* inline button that fills --fg on hover (ask box, composer send) */
+/* Home ask box — the row's border turns accent on focus; the solid accent
+   "ask" button darkens to --accent-strong on hover. */
+:root[data-skin='minimal'] .m-ask-form { transition: border-color 0.2s ease; }
+:root[data-skin='minimal'] .m-ask-form:focus-within { border-color: var(--accent); }
+:root[data-skin='minimal'] .m-ask-btn {
+  background: var(--accent);
+  color: var(--bg);
+  transition: background 0.2s ease;
+}
+:root[data-skin='minimal'] .m-ask-btn:hover { background: var(--accent-strong); }
+
+/* inline button that fills --fg on hover (chat composer send) */
 :root[data-skin='minimal'] .m-fill-btn {
   background: none;
   color: var(--muted);
@@ -240,4 +282,41 @@ html.macos[data-skin='minimal'] .m-sidebar { padding-top: 44px; }
   font-weight: 400;
   letter-spacing: 0;
   margin: 0 0 var(--space-sm);
+}
+
+/* ── Responsive: 2-up grids, panel hiding, icon rail ──────────────────────────
+   Desktop-first. Navigation stays usable at every width (icon rail, not hidden).
+   Inline padding/gap on the sidebar + nav items needs !important to override. */
+:root[data-skin='minimal'] .m-grid2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-sm);
+}
+
+/* ≤1024: right-side panels would crowd the content — drop them, keep full measure. */
+@media (max-width: 1024px) {
+  :root[data-skin='minimal'] .m-panel { display: none !important; }
+}
+
+/* ≤820: two-up grids stack before the sidebar collapses, so cards keep their width. */
+@media (max-width: 820px) {
+  :root[data-skin='minimal'] .m-grid2 { grid-template-columns: 1fr; }
+}
+
+/* ≤640: sidebar collapses to a 60px icon rail — labels, wordmark accent, and the
+   capturing label hide; nav + rail icons center. */
+@media (max-width: 640px) {
+  :root[data-skin='minimal'] { --sidebar-w: 60px; }
+  :root[data-skin='minimal'] .m-sidebar { align-items: center; padding-left: 6px !important; padding-right: 6px !important; }
+  :root[data-skin='minimal'] .m-navlabel,
+  :root[data-skin='minimal'] .m-rail-label,
+  :root[data-skin='minimal'] .m-cap-label,
+  :root[data-skin='minimal'] .m-wm-accent { display: none !important; }
+  :root[data-skin='minimal'] .m-sidebar .m-nav-link { justify-content: center; padding-left: 0 !important; gap: 0 !important; }
+  :root[data-skin='minimal'] .m-rail-btn { justify-content: center; gap: 0 !important; }
+}
+
+/* ≤560: hide the secondary status items (top, focused). */
+@media (max-width: 560px) {
+  :root[data-skin='minimal'] .m-status-extra { display: none !important; }
 }

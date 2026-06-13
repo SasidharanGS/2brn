@@ -36,7 +36,7 @@ export default function CalendarPanel({ onClose }: { onClose: () => void }) {
         .toLowerCase()
 
   return (
-    <aside style={{
+    <aside className="m-panel" style={{
       width: 'var(--panel-w)', flex: '0 0 auto', borderLeft: '1px solid var(--rule)',
       padding: 'var(--space-md)', display: 'flex', flexDirection: 'column',
       gap: 'var(--space-md)', boxSizing: 'border-box', overflowY: 'auto',

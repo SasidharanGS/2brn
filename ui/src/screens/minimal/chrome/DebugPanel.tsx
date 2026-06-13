@@ -32,7 +32,7 @@ export default function DebugPanel({ onClose }: { onClose: () => void }) {
   }, [logsData])
 
   return (
-    <aside style={{
+    <aside className="m-panel" style={{
       width: 'var(--panel-w)', flex: '0 0 auto', borderLeft: '1px solid var(--rule)',
       display: 'flex', flexDirection: 'column', boxSizing: 'border-box', overflow: 'hidden',
     }}>

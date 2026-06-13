@@ -86,7 +86,7 @@ export function GhostButton({ children, onClick, accent, disabled, type = 'butto
   )
 }
 
-/** Segmented control (day/week/month…). Active segment = fg block / bg text. */
+/** Segmented control (day/week/month…). Active segment = accent fill / bg text. */
 export function Segmented<T extends string>({ value, options, onChange }: {
   value: T; options: readonly T[]; onChange: (v: T) => void
 }) {
@@ -98,11 +98,12 @@ export function Segmented<T extends string>({ value, options, onChange }: {
           <button
             key={o} type="button" onClick={() => onChange(o)}
             style={{
-              background: active ? 'var(--fg)' : 'none',
+              background: active ? 'var(--accent)' : 'none',
               color: active ? 'var(--bg)' : 'var(--muted)',
               border: 'none', padding: '4px 12px', cursor: 'pointer',
               fontSize: 'var(--text-2xs)', letterSpacing: 'var(--tracking-wide)',
-              fontWeight: 300, fontFamily: 'var(--font-sans)', transition: 'color 0.2s ease',
+              fontWeight: active ? 400 : 300, fontFamily: 'var(--font-sans)',
+              transition: 'color 0.2s ease, background 0.2s ease',
             }}
           >
             {o}
@@ -163,15 +164,16 @@ export const lineInput: CSSProperties = {
   fontWeight: 300, fontFamily: 'var(--font-sans)', outline: 'none', width: '100%',
 }
 
-/** Minimal switch — on = --ink-3 track, square-ish, controlled. */
+/** Minimal switch — on = accent track + accent border, controlled. */
 export function Switch({ on, onToggle, disabled }: { on: boolean; onToggle: () => void; disabled?: boolean }) {
   return (
     <button
       type="button" onClick={onToggle} aria-pressed={on} disabled={disabled}
       style={{
-        width: 34, height: 18, borderRadius: 9, border: '1px solid var(--rule)',
-        background: on ? 'var(--ink-3)' : 'var(--bg)', position: 'relative',
-        cursor: disabled ? 'default' : 'pointer', transition: 'background 0.2s ease',
+        width: 34, height: 18, borderRadius: 9,
+        border: `1px solid ${on ? 'var(--accent)' : 'var(--rule)'}`,
+        background: on ? 'var(--accent)' : 'var(--bg)', position: 'relative',
+        cursor: disabled ? 'default' : 'pointer', transition: 'background 0.2s ease, border-color 0.2s ease',
         flex: '0 0 auto', padding: 0, opacity: disabled ? 0.5 : 1,
       }}
     >

@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { ActivityRecord } from '../../api/types'
+import type { ActivityRecord, SessionsResponse } from '../../api/types'
 import { useTimelineFeed, ALL_CATEGORIES, ALL_STATES } from '../../hooks/useTimelineFeed'
+import { fmtDur } from '../../utils/time'
+import { groupActivitiesByHour } from '../../utils/timeline'
 import { stateInk, inkVar } from './minimalDesign'
 import PageHeader from './PageHeader'
 import Icon from './Icon'
@@ -10,6 +12,61 @@ import { Label, Pill, StateLabel, GhostButton, EmptyState } from './primitives'
 // The signature interaction is the clickable hour rail (left): each tick is one
 // hour; click scroll-jumps the feed to that hour, hover reveals the time, and a
 // scroll-spy highlights the hour currently at the top of the feed.
+
+/** A graduated-grey tint of --fg over --bg — for the category bar segments.
+    NOT the --ink state ramp (that encodes productivity); this is a neutral
+    monochrome scale that only separates one category band from the next. */
+function bandTint(rank: number, total: number): string {
+  const pct = Math.round(70 - (rank / Math.max(total - 1, 1)) * 48) // 70%→22%
+  return `color-mix(in oklab, var(--fg) ${pct}%, var(--bg))`
+}
+
+/** Monochrome "time spent per category" indicator — one stacked bar segmented by
+    category (graduated greys, 1px gaps) with a swatch/label/duration legend. The
+    minimal-skin counterpart to the modern SessionLanes totals. */
+function CategoryBar({ sessions }: { sessions: SessionsResponse }) {
+  const { observed_seconds, by_category } = sessions.totals
+  const cats = Object.entries(by_category).filter(([, s]) => s > 0).sort((a, b) => b[1] - a[1])
+  if (cats.length === 0 || observed_seconds <= 0) return null
+  const tint = (i: number) => bandTint(i, cats.length)
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-sm)' }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 'var(--space-sm)' }}>
+        <Label>by category</Label>
+        <span style={{
+          fontSize: 'var(--text-2xs)', letterSpacing: 'var(--tracking-snug)',
+          color: 'var(--muted)', fontWeight: 300, fontFamily: 'var(--font-mono)',
+        }}>
+          {fmtDur(observed_seconds)} on screen
+        </span>
+      </div>
+
+      <div style={{ display: 'flex', height: 10, border: '1px solid var(--rule)', gap: 1, background: 'var(--rule)' }}>
+        {cats.map(([cat, secs], i) => (
+          <div
+            key={cat}
+            title={`${cat} · ${fmtDur(secs)}`}
+            style={{ flex: `${Math.max(secs, 1)} 0 0`, background: tint(i), minWidth: 2 }}
+          />
+        ))}
+      </div>
+
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-sm)' }}>
+        {cats.map(([cat, secs], i) => (
+          <span key={cat} style={{
+            display: 'inline-flex', alignItems: 'center', gap: 6,
+            fontSize: 'var(--text-2xs)', letterSpacing: 'var(--tracking-snug)',
+            color: 'var(--muted)', fontWeight: 300, whiteSpace: 'nowrap',
+          }}>
+            <span aria-hidden="true" style={{ width: 7, height: 7, background: tint(i), flex: '0 0 auto' }} />
+            {cat} <span style={{ color: 'var(--fg)' }}>{fmtDur(secs)}</span>
+          </span>
+        ))}
+      </div>
+    </div>
+  )
+}
 
 function FilterPill({ label, active, present, dot, level, onClick }: {
   label: string; active: boolean; present: boolean; dot?: boolean; level?: number; onClick: () => void
@@ -128,7 +185,7 @@ function ActivityRow({ act, selected, onToggle }: {
 
 export default function Timeline() {
   const {
-    selectedDate, activities, captures, loading,
+    selectedDate, activities, captures, sessions, loading,
     filtered, presentCategories, presentStates,
     selected, setSelected,
     categoryFilter, setCategoryFilter,
@@ -142,23 +199,9 @@ export default function Timeline() {
   const scrollRef = useRef<HTMLDivElement>(null)
   const hourRefs = useRef<Record<number, HTMLElement | null>>({})
 
-  // Group the filtered feed by local hour, ascending (chronological). The shared
-  // hook sorts newest-first; the timeline reads top-to-bottom morning→evening, so
-  // we re-sort locally without touching the hook (modern timeline is unaffected).
-  const { byHour, activeHours, railHours } = useMemo(() => {
-    const m = new Map<number, ActivityRecord[]>()
-    for (const a of filtered) {
-      const h = new Date(a.started_at).getHours()
-      const bucket = m.get(h)
-      if (bucket) bucket.push(a)
-      else m.set(h, [a])
-    }
-    for (const bucket of m.values()) bucket.sort((a, b) => a.started_at.localeCompare(b.started_at))
-    const hours = [...m.keys()].sort((x, y) => x - y)
-    const rail: number[] = []
-    if (hours.length) for (let h = hours[0]; h <= hours[hours.length - 1]; h++) rail.push(h)
-    return { byHour: m, activeHours: hours, railHours: rail }
-  }, [filtered])
+  // Group the filtered feed by local hour, newest-first, via the shared util so
+  // both skins stay in identical order (latest entry on top).
+  const { byHour, activeHours, railHours } = useMemo(() => groupActivitiesByHour(filtered), [filtered])
 
   const hourLevel = (h: number) => {
     const bucket = byHour.get(h)
@@ -167,9 +210,9 @@ export default function Timeline() {
 
   const goToHour = (h: number) => {
     let target = h
-    if (!byHour.has(h)) {
-      const after = activeHours.filter(x => x >= h)
-      target = after.length ? after[0] : activeHours[activeHours.length - 1]
+    if (!byHour.has(h) && activeHours.length) {
+      // nearest active hour by absolute distance (order-independent)
+      target = activeHours.reduce((best, cur) => (Math.abs(cur - h) < Math.abs(best - h) ? cur : best), activeHours[0])
     }
     const el = hourRefs.current[target]
     const sc = scrollRef.current
@@ -179,15 +222,21 @@ export default function Timeline() {
     setActiveHour(target)
   }
 
-  // Scroll-spy: highlight the hour group currently at the top of the feed.
+  // Scroll-spy: highlight the hour group whose heading is at the top of the feed —
+  // the bottom-most section whose top has scrolled past (max offsetTop ≤ scrollTop),
+  // independent of activeHours ordering.
   useEffect(() => {
     const sc = scrollRef.current
     if (!sc) return
     const onScroll = () => {
       let cur: number | null = activeHours[0] ?? null
+      let bestTop = -Infinity
       for (const h of activeHours) {
         const el = hourRefs.current[h]
-        if (el && el.offsetTop - 20 <= sc.scrollTop) cur = h
+        if (el && el.offsetTop - 20 <= sc.scrollTop && el.offsetTop > bestTop) {
+          bestTop = el.offsetTop
+          cur = h
+        }
       }
       setActiveHour(cur)
     }
@@ -211,6 +260,12 @@ export default function Timeline() {
           subtitle={subtitle}
           right={hasFilters ? <GhostButton onClick={clearFilters}>clear filters</GhostButton> : undefined}
         />
+
+        {!loading && sessions && (
+          <div style={{ marginBottom: 'var(--space-md)' }}>
+            <CategoryBar sessions={sessions} />
+          </div>
+        )}
 
         {!loading && activities.length > 0 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)', marginBottom: 'var(--space-lg)' }}>

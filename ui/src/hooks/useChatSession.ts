@@ -12,6 +12,13 @@ export interface ChatMessage {
 
 export const CHAT_CATEGORIES = ['work','research','play','learning','communication','creative','admin','other']
 
+/** Empty-state example queries, shared so every skin offers the same prompts. */
+export const SUGGESTED_PROMPTS = [
+  'what did i work on this morning?',
+  'how focused was i today?',
+  'summarise my day so far',
+]
+
 /** Chat data + streaming logic, shared by every skin's Chat presentation. */
 export function useChatSession() {
   const location = useLocation()

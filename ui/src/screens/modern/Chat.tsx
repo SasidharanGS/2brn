@@ -1,5 +1,5 @@
 import MarkdownRenderer from '../../components/shared/MarkdownRenderer'
-import { useChatSession, CHAT_CATEGORIES } from '../../hooks/useChatSession'
+import { useChatSession, CHAT_CATEGORIES, SUGGESTED_PROMPTS } from '../../hooks/useChatSession'
 import { categoryChip } from '../../utils/design'
 
 export default function Chat() {
@@ -14,8 +14,20 @@ export default function Chat() {
         style={{ borderColor: 'var(--border)', background: 'var(--bg-surface)' }}
       >
         <span className="text-[10px] uppercase tracking-widest self-center mr-1 font-medium" style={{ color: 'var(--text-dim)' }}>
-          Category
+          Filter
         </span>
+        {/* "all categories" = no filter; clears any selection (parity with minimal). */}
+        <button
+          onClick={() => setCategories([])}
+          className="px-2.5 py-1 rounded-full text-[11px] font-medium transition-all duration-100"
+          style={{
+            background: categories.length === 0 ? 'var(--accent-glow)' : 'var(--bg-surface-2)',
+            color: categories.length === 0 ? 'var(--accent)' : 'var(--text-muted)',
+            border: categories.length === 0 ? '1px solid rgba(129,140,248,0.35)' : '1px solid var(--border)',
+          }}
+        >
+          all categories
+        </button>
         {CHAT_CATEGORIES.map(cat => {
           const chip = categoryChip(cat)
           const active = categories.includes(cat)
@@ -35,15 +47,6 @@ export default function Chat() {
             </button>
           )
         })}
-        {categories.length > 0 && (
-          <button
-            onClick={() => setCategories([])}
-            className="text-[11px] px-2.5 py-1 rounded-full transition-colors"
-            style={{ color: 'var(--text-dim)' }}
-          >
-            Clear
-          </button>
-        )}
       </div>
 
       {/* Messages */}
@@ -53,6 +56,19 @@ export default function Chat() {
             <div className="text-5xl mb-4 opacity-15">💬</div>
             <div className="text-[14px]" style={{ color: 'var(--text-dim)' }}>
               Ask anything about your past activity
+            </div>
+            {/* Suggested prompts (parity with minimal) */}
+            <div className="flex flex-wrap gap-2 justify-center mt-5 max-w-md">
+              {SUGGESTED_PROMPTS.map(p => (
+                <button
+                  key={p}
+                  onClick={() => send(p)}
+                  className="px-3 py-1.5 rounded-full text-[12px] transition-all"
+                  style={{ background: 'var(--bg-surface-2)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}
+                >
+                  {p}
+                </button>
+              ))}
             </div>
           </div>
         )}

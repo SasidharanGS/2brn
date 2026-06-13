@@ -1,13 +1,7 @@
-import { useChatSession, CHAT_CATEGORIES } from '../../hooks/useChatSession'
+import { useChatSession, CHAT_CATEGORIES, SUGGESTED_PROMPTS } from '../../hooks/useChatSession'
 import Icon from './Icon'
 import Prose from './Prose'
 import { Label } from './primitives'
-
-const SUGGESTED_PROMPTS = [
-  'what did i work on this morning?',
-  'how focused was i today?',
-  'summarise my day so far',
-]
 
 /** Multi-select category chip — accent fill + × when selected. Background is
     intentionally NOT transitioned so the selection snaps instantly. */

@@ -20,7 +20,7 @@ function RailButton({ icon, label, active, onClick }: {
         fontWeight: 300, fontFamily: 'var(--font-sans)',
       }}
     >
-      <Icon name={icon} size={13} />{label}
+      <Icon name={icon} size={13} /><span className="m-rail-label">{label}</span>
     </button>
   )
 }
@@ -54,17 +54,17 @@ export default function Sidebar({ calendarApplies, calendarOpen, onToggleCalenda
           color: 'var(--fg)', padding: 'var(--space-xs) 0 var(--space-md)',
         }}
       >
-        2<span style={{ color: 'var(--accent)' }}>brn</span>
+        2<span className="m-wm-accent" style={{ color: 'var(--accent)' }}>brn</span>
       </div>
 
-      <nav style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+      <nav style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
         {ROUTES.map(({ to, screen, end }) => (
           <NavLink
             key={to} to={to} end={end}
             className={({ isActive }) => `m-nav-link${isActive ? ' active' : ''}`}
             style={{
               display: 'flex', alignItems: 'center', gap: 'var(--space-sm)',
-              padding: '5px 0', textDecoration: 'none',
+              padding: '7px 0 7px 12px', textDecoration: 'none',
               fontSize: 'var(--text-sm)', letterSpacing: 'var(--tracking-wide)',
               fontFamily: 'var(--font-sans)',
             }}
@@ -72,7 +72,7 @@ export default function Sidebar({ calendarApplies, calendarOpen, onToggleCalenda
             {({ isActive }) => (
               <>
                 <Icon name={screen as IconName} size={15} strokeWidth={isActive ? 1.7 : 1.5} />
-                {screen}
+                <span className="m-navlabel">{screen}</span>
               </>
             )}
           </NavLink>
@@ -84,12 +84,16 @@ export default function Sidebar({ calendarApplies, calendarOpen, onToggleCalenda
           <RailButton icon="calendar" label="calendar" active={calendarOpen} onClick={onToggleCalendar} />
         )}
         <RailButton icon="dot" label="debug" active={debugOpen} onClick={onToggleDebug} />
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingTop: 'var(--space-sm)' }}>
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 8,
+          paddingTop: 'var(--space-sm)', marginTop: 'var(--space-xs)',
+          borderTop: '1px solid var(--rule)',
+        }}>
           <span style={{
             width: 6, height: 6, borderRadius: '50%', flex: '0 0 auto',
             background: capturing ? 'var(--accent)' : 'var(--muted)',
           }} />
-          <span style={{
+          <span className="m-cap-label" style={{
             fontSize: 'var(--text-2xs)', letterSpacing: 'var(--tracking-wide)',
             color: 'var(--muted)', fontWeight: 300, fontFamily: 'var(--font-mono)',
           }}>

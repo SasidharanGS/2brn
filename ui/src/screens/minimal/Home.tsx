@@ -61,6 +61,7 @@ export default function Home() {
 
         <form
           onSubmit={e => { e.preventDefault(); if (!question.trim()) return; ask(question); setQuestion('') }}
+          className="m-ask-form"
           style={{ display: 'flex', gap: 0, border: '1px solid var(--rule)', marginTop: 'var(--space-lg)' }}
         >
           <input
@@ -74,11 +75,11 @@ export default function Home() {
             }}
           />
           <button
-            type="submit" className="m-fill-btn"
+            type="submit" className="m-ask-btn"
             style={{
-              border: 'none', borderLeft: '1px solid var(--rule)', padding: '0 var(--space-md)',
+              border: 'none', padding: '0 var(--space-lg)',
               cursor: 'pointer', fontSize: 'var(--text-2xs)', letterSpacing: 'var(--tracking-wide)',
-              fontWeight: 300, fontFamily: 'var(--font-sans)',
+              fontWeight: 400, fontFamily: 'var(--font-sans)',
             }}
           >
             ask
@@ -87,10 +88,7 @@ export default function Home() {
 
         <div style={{ marginTop: 'var(--space-xl)' }}>
           <Label>navigate</Label>
-          <div style={{
-            display: 'grid', gridTemplateColumns: '1fr 1fr',
-            gap: 'var(--space-sm)', marginTop: 'var(--space-sm)',
-          }}>
+          <div className="m-grid2" style={{ marginTop: 'var(--space-sm)' }}>
             {NAV_CARDS.map(card => (
               <NavCard key={card.to} {...card} onClick={() => navigate(card.to)} />
             ))}

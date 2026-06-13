@@ -22,10 +22,10 @@ function ThemeControl() {
           <button
             key={m} type="button" onClick={() => setMode(m)} title={m}
             style={{
-              background: active ? 'var(--fg)' : 'none',
+              background: active ? 'var(--accent)' : 'none',
               color: active ? 'var(--bg)' : 'var(--muted)',
               border: 'none', padding: '5px 9px', cursor: 'pointer',
-              display: 'flex', alignItems: 'center', transition: 'color 0.2s ease',
+              display: 'flex', alignItems: 'center', transition: 'color 0.2s ease, background 0.2s ease',
             }}
           >
             <Icon name={icon} size={15} />
@@ -69,12 +69,16 @@ export default function TopBar() {
         padding: '0 var(--space-md)', gap: 'var(--space-md)', flex: '0 0 auto',
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-md)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-md)', minWidth: 0, overflow: 'hidden' }}>
         <StatusItem label="now" value={topState ?? '—'} live />
-        {sep}
-        <StatusItem label="top" value={topCategory ?? '—'} />
-        {sep}
-        <StatusItem label="focused" value={`${focusPct}%`} />
+        <span className="m-status-extra" style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--space-md)' }}>
+          {sep}
+          <StatusItem label="top" value={topCategory ?? '—'} />
+        </span>
+        <span className="m-status-extra" style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--space-md)' }}>
+          {sep}
+          <StatusItem label="focused" value={`${focusPct}%`} />
+        </span>
       </div>
       <ThemeControl />
     </header>

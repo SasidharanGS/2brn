@@ -93,7 +93,7 @@ export default function Insights() {
 
       ) : (
         <>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-sm)' }}>
+          <div className="m-grid2">
             {/* time by category — vertical bars; tallest = ink-4 */}
             <Card label="time by category">
               <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: 'var(--space-md)', height: 200 }}>
@@ -214,7 +214,7 @@ export default function Insights() {
             </div>
           </Card>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-sm)', marginTop: 'var(--space-sm)' }}>
+          <div className="m-grid2" style={{ marginTop: 'var(--space-sm)' }}>
             <Card label={`vs ${summary.comparison.baseline_label.toLowerCase()}`}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-sm)' }}>
                 <ComparisonRow label="active"     metric={summary.comparison.active}     positiveGood={true} />

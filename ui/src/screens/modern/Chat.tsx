@@ -1,30 +1,44 @@
 import MarkdownRenderer from '../../components/shared/MarkdownRenderer'
 import { useChatSession, CHAT_CATEGORIES } from '../../hooks/useChatSession'
+import { categoryChip } from '../../utils/design'
 
 export default function Chat() {
-  const { messages, input, setInput, loading, categories, setCategories, send, bottomRef } = useChatSession()
+  const { messages, input, setInput, loading, categories, toggleCategory, setCategories, send, bottomRef } = useChatSession()
 
   return (
     <div className="flex flex-col h-full">
 
-      {/* Filter bar */}
+      {/* Filter bar — multi-select category chips (parity with the minimal skin) */}
       <div
-        className="flex items-center gap-2 px-5 py-2.5 border-b shrink-0 flex-wrap"
+        className="flex items-center gap-1.5 px-5 py-2.5 border-b shrink-0 flex-wrap"
         style={{ borderColor: 'var(--border)', background: 'var(--bg-surface)' }}
       >
-        <select
-          value={categories[0] ?? ''}
-          onChange={e => setCategories(e.target.value ? [e.target.value] : [])}
-          className="rounded-[7px] px-2.5 py-1.5 text-[12px] border outline-none"
-          style={{ background: 'var(--bg-input)', borderColor: 'var(--border-2)', color: 'var(--text)' }}
-        >
-          <option value="">All categories</option>
-          {CHAT_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-        </select>
+        <span className="text-[10px] uppercase tracking-widest self-center mr-1 font-medium" style={{ color: 'var(--text-dim)' }}>
+          Category
+        </span>
+        {CHAT_CATEGORIES.map(cat => {
+          const chip = categoryChip(cat)
+          const active = categories.includes(cat)
+          return (
+            <button
+              key={cat}
+              onClick={() => toggleCategory(cat)}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium transition-all duration-100"
+              style={{
+                background: active ? chip.bg : 'var(--bg-surface-2)',
+                color: active ? chip.text : 'var(--text-muted)',
+                border: active ? `1px solid ${chip.text}40` : '1px solid var(--border)',
+              }}
+            >
+              <span className="w-1.5 h-1.5 rounded-full" style={{ background: chip.dot }} />
+              {cat}
+            </button>
+          )
+        })}
         {categories.length > 0 && (
           <button
             onClick={() => setCategories([])}
-            className="text-[12px] px-2.5 py-1 rounded-[7px] transition-colors"
+            className="text-[11px] px-2.5 py-1 rounded-full transition-colors"
             style={{ color: 'var(--text-dim)' }}
           >
             Clear

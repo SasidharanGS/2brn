@@ -201,6 +201,23 @@
 }
 .k-seg-btn[data-active='true'] { background: var(--k-accent); color: var(--k-on-accent); }
 
+/* Form field label + the OK/save banner */
+.k-field-label {
+  display: block; color: var(--k-muted); font-family: var(--k-font);
+  font-size: var(--k-field-label-size); font-weight: var(--k-field-label-weight);
+  letter-spacing: var(--k-field-label-tracking); text-transform: var(--k-field-label-transform);
+  margin-bottom: 6px;
+}
+.k-field-hint {
+  color: var(--k-muted); font-family: var(--k-font); font-size: var(--k-text-meta);
+  line-height: 1.5; margin-top: 6px; text-transform: var(--k-text-transform);
+}
+.k-ok-banner {
+  border-radius: var(--k-radius-sm); padding: var(--k-space-sm) var(--k-space-md);
+  font-size: var(--k-text-sm); background: var(--k-ok-bg); color: var(--k-ok-fg);
+  border: 1px solid var(--k-ok-border); text-transform: var(--k-text-transform);
+}
+
 /* Inline notice / warning banner */
 .k-notice {
   border-radius: var(--k-radius-sm);

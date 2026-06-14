@@ -92,6 +92,13 @@
   --k-notice-border: var(--border-focus);
   --k-seg-bg: var(--bg-surface);
   --k-seg-transform: capitalize;
+  --k-field-label-size: 13px;
+  --k-field-label-weight: 500;
+  --k-field-label-tracking: 0;
+  --k-field-label-transform: none;
+  --k-ok-bg: var(--green-bg);
+  --k-ok-fg: var(--green);
+  --k-ok-border: rgba(52, 211, 153, 0.2);
 
   /* chat chrome */
   --k-chat-pad: 0;
@@ -182,6 +189,13 @@
   --k-notice-border: var(--muted);
   --k-seg-bg: transparent;
   --k-seg-transform: lowercase;
+  --k-field-label-size: var(--text-2xs);
+  --k-field-label-weight: 300;
+  --k-field-label-tracking: var(--tracking-label);
+  --k-field-label-transform: lowercase;
+  --k-ok-bg: transparent;
+  --k-ok-fg: var(--fg);
+  --k-ok-border: var(--rule);
 
   /* chat chrome — airier, centered reading column, divider rules (no bg bars) */
   --k-chat-pad: var(--space-lg);

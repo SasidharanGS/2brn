@@ -1,4 +1,4 @@
-import type { CSSProperties, ReactNode } from 'react'
+import type { CSSProperties, ReactNode, InputHTMLAttributes, SelectHTMLAttributes } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { useKit } from './KitProvider'
 import Icon, { ICON_EMOJI, type IconName } from './Icon'
@@ -327,6 +327,57 @@ export function PromptPill({ children, onClick }: { children: ReactNode; onClick
 /** Inline notice / warning banner. */
 export function Notice({ children }: { children: ReactNode }) {
   return <div className="k-notice">{children}</div>
+}
+
+/** Titled settings section (a card with a section label). */
+export function Section({ title, children, style }: { title: ReactNode; children: ReactNode; style?: CSSProperties }) {
+  return (
+    <section style={{
+      background: 'var(--k-surface)', border: '1px solid var(--k-rule)', borderRadius: 'var(--k-radius)',
+      padding: 'var(--k-space-md)', display: 'flex', flexDirection: 'column', gap: 'var(--k-space-md)', ...style,
+    }}>
+      <SectionLabel>{title}</SectionLabel>
+      {children}
+    </section>
+  )
+}
+
+/** Labelled form field: label on top, optional hint below the control. */
+export function Field({ label, hint, children }: { label: ReactNode; hint?: ReactNode; children: ReactNode }) {
+  return (
+    <div>
+      <label className="k-field-label">{label}</label>
+      {children}
+      {hint && <div className="k-field-hint">{hint}</div>}
+    </div>
+  )
+}
+
+/** Label + hint on the left, a control (switch/button) on the right. */
+export function SettingRow({ label, hint, children }: { label: ReactNode; hint?: ReactNode; children: ReactNode }) {
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 'var(--k-space-md)', alignItems: 'start' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <div style={{ fontSize: 'var(--k-text-body)', color: 'var(--k-fg)', textTransform: 'var(--k-text-transform)' as CSSProperties['textTransform'] }}>{label}</div>
+        {hint && <div className="k-field-hint" style={{ marginTop: 0 }}>{hint}</div>}
+      </div>
+      {children}
+    </div>
+  )
+}
+
+/** Token-driven text input (full-bordered modern / bottom-rule minimal). */
+export function Input(props: InputHTMLAttributes<HTMLInputElement>) {
+  return <input {...props} className={`k-input ${props.className ?? ''}`} style={{ width: '100%', fontSize: 'var(--k-text-sm)', ...props.style }} />
+}
+
+/** Token-driven select. */
+export function Select({ options, ...rest }: SelectHTMLAttributes<HTMLSelectElement> & { options: { value: string; label: string }[] }) {
+  return (
+    <select {...rest} className={`k-input ${rest.className ?? ''}`} style={{ width: '100%', fontSize: 'var(--k-text-sm)', cursor: 'pointer', ...rest.style }}>
+      {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+    </select>
+  )
 }
 
 /** Segmented control — display casing follows the skin (Day/day). */

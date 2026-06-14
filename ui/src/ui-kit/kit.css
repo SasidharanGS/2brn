@@ -191,6 +191,18 @@
   border-color: var(--k-accent); font-weight: var(--k-emphasis-weight);
 }
 
+/* Inline notice / warning banner */
+.k-notice {
+  border-radius: var(--k-radius-sm);
+  padding: var(--k-space-md);
+  font-size: var(--k-text-meta);
+  color: var(--k-muted);
+  line-height: 1.6;
+  background: var(--k-notice-bg);
+  border: 1px solid var(--k-notice-border);
+  text-transform: var(--k-text-transform);
+}
+
 /* Modern chat bubble */
 .k-bubble {
   max-width: 78%; border-radius: var(--k-radius); padding: 12px 16px;

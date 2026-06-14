@@ -82,6 +82,11 @@
   --k-control-pad: 0.25rem 0.5rem;
   --k-danger: var(--red);
   --k-danger-bg: var(--red-bg);
+  --k-quiet-bg: var(--bg-surface-2);
+  --k-switch-off-bg: var(--bg-surface-3);
+  --k-switch-off-border: var(--border-2);
+  --k-switch-knob-on: var(--toggle-knob);
+  --k-switch-knob-off: var(--toggle-knob);
 }
 
 :root[data-skin='minimal'] {
@@ -153,4 +158,9 @@
   --k-control-pad: 6px 0;
   --k-danger: var(--accent);
   --k-danger-bg: transparent;
+  --k-quiet-bg: transparent;
+  --k-switch-off-bg: var(--bg);
+  --k-switch-off-border: var(--rule);
+  --k-switch-knob-on: var(--bg);
+  --k-switch-knob-off: var(--fg);
 }

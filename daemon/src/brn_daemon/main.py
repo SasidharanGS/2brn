@@ -3,6 +3,7 @@ import json
 import logging
 import os as _os
 import secrets
+import time
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from datetime import date as dt_date
@@ -47,6 +48,7 @@ from brn_daemon.llm import make_chat_fn
 from brn_daemon.plugins import EventBus, EventNames, PluginOrchestrator
 from brn_daemon.providers import make_embed_client
 from brn_daemon.purge import purge_old_captures, sweep_orphaned_screenshots
+from brn_daemon.repository import device_id_for_token, touch_device
 
 
 class JsonFormatter(logging.Formatter):
@@ -431,19 +433,58 @@ async def _capture_loop(ctx: AppContext, cfg, inference_queue: InferenceQueue):
             logger.exception("Capture loop error")
 
 
+async def _touch_device_throttled(ctx, device_id: int) -> None:
+    """Refresh a device's ``last_seen_at`` at most once a minute (best-effort)."""
+    now = time.monotonic()
+    if now - ctx.device_seen.get(device_id, 0.0) < 60:
+        return
+    ctx.device_seen[device_id] = now
+    try:
+        await touch_device(device_id)
+    except Exception:
+        logger.debug("Could not update last_seen_at for device %s", device_id, exc_info=True)
+
+
 async def _require_api_token(request: Request, call_next):
-    """Reject requests lacking the loopback bearer token.
+    """Authenticate every non-public request.
+
+    The *master* token (``~/.2brn/api_token``, shared with the desktop UI) is
+    accepted **only on loopback** — the desktop talks only to 127.0.0.1, so the
+    master key never needs to be valid over the LAN. LAN callers (paired phones)
+    must present a *device* token, which is independently revocable. Device-
+    management endpoints (``/devices*``) require the master token on loopback, so
+    a phone can't enumerate or revoke devices.
 
     Inert until a token is loaded into the app context, so the test harness
     (which doesn't run the lifespan) is unaffected. The liveness probe and CORS
     preflight pass through unauthenticated.
     """
-    expected = request.app.state.context.api_token
-    if expected and request.method != "OPTIONS" and request.url.path not in PUBLIC_PATHS:
-        header = request.headers.get("authorization", "")
-        token = header[7:].strip() if header[:7].lower() == "bearer " else ""
-        if not (token and secrets.compare_digest(token, expected)):
-            return JSONResponse({"detail": "Unauthorized"}, status_code=401)
+    ctx = request.app.state.context
+    expected = ctx.api_token
+    path = request.url.path
+    if not expected or request.method == "OPTIONS" or path in PUBLIC_PATHS:
+        return await call_next(request)
+
+    header = request.headers.get("authorization", "")
+    token = header[7:].strip() if header[:7].lower() == "bearer " else ""
+    client = request.client
+    is_loopback = client is not None and client.host in ("127.0.0.1", "::1")
+
+    is_master = bool(token) and is_loopback and secrets.compare_digest(token, expected)
+    authorized = is_master
+    if not authorized and token:
+        device_id = await device_id_for_token(token)
+        if device_id is not None:
+            authorized = True
+            await _touch_device_throttled(ctx, device_id)
+
+    if not authorized:
+        return JSONResponse({"detail": "Unauthorized"}, status_code=401)
+
+    # Device management is desktop-only: loopback + the master token.
+    if (path == "/devices" or path.startswith("/devices/")) and not is_master:
+        return JSONResponse({"detail": "Forbidden"}, status_code=403)
+
     return await call_next(request)
 
 
@@ -455,6 +496,7 @@ def create_app() -> FastAPI:
         chat_routes,
         connection_info,
         debug_routes,
+        devices,
         ingest,
         insights_routes,
         instructions_routes,
@@ -499,6 +541,7 @@ def create_app() -> FastAPI:
     app.include_router(sessions_routes.router)
     app.include_router(connection_info.router)
     app.include_router(ingest.router)
+    app.include_router(devices.router)
     return app
 
 

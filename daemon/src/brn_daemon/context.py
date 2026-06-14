@@ -47,6 +47,10 @@ class AppContext:
     # concurrent duplicate generation for the same day.
     journal_generating: set[str] = field(default_factory=set)
     blog_generating: set[str] = field(default_factory=set)
+    # device_id → last monotonic time we wrote its last_seen_at, so the auth
+    # middleware throttles that write to at most once a minute per device
+    # instead of once per (possibly polling) request.
+    device_seen: dict[int, float] = field(default_factory=dict)
 
     # ── Long-lived services (populated during lifespan) ────────────────────
     journal_generator: JournalGenerator | None = None

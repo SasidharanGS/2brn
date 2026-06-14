@@ -2,16 +2,20 @@
 
 Run on the desktop (same machine as the daemon):
 
-    uv run python -m brn_daemon.pair
+    uv run python -m brn_daemon.pair [--name "My phone"]
 
-Shows the LAN URL + token (for manual entry) and, if the optional ``qrcode``
-package is installed, a scannable QR encoding the ``twobrn://pair`` deep link.
+Mints a fresh **per-device** token (never the master loopback token), then shows
+the LAN URL + token (for manual entry) and, if the optional ``qrcode`` package is
+installed, a scannable QR encoding the ``twobrn://pair`` deep link. Revoke a
+device later from the desktop app (Connect a device) or by deleting its row.
 """
+import asyncio
 import sys
 from urllib.parse import quote
 
-from brn_daemon.auth import load_or_create_token
 from brn_daemon.config import load_config
+from brn_daemon.db import init_db
+from brn_daemon.repository import create_device
 from brn_daemon.routes.connection_info import DAEMON_PORT, _lan_ipv4_addresses
 
 
@@ -20,27 +24,40 @@ def build_pairing_url(base_url: str, token: str) -> str:
     return f"twobrn://pair?u={quote(base_url, safe='')}&t={quote(token, safe='')}"
 
 
+def _name_from_argv(argv: list[str]) -> str:
+    if "--name" in argv:
+        i = argv.index("--name")
+        if i + 1 < len(argv):
+            return argv[i + 1]
+    return "phone"
+
+
+async def _mint_device_token(name: str) -> str:
+    await init_db()
+    _id, token = await create_device(name)
+    return token
+
+
 def main() -> int:
     cfg = load_config()
-    token = load_or_create_token()
     ips = _lan_ipv4_addresses()
 
-    if not token:
-        print("Could not read/create ~/.2brn/api_token. Start the daemon once, then retry.")
-        return 1
     if not ips:
         print("No LAN IP found. Connect to Wi-Fi or Ethernet and try again.")
         return 1
     if not cfg.lan_access:
         print('⚠  LAN access is OFF — the phone cannot reach the daemon yet.')
         print('   Set {"lan_access": true} in ~/.2brn/config.json (or Settings →')
-        print("   Connect a phone), then restart the daemon and rerun this.\n")
+        print("   Connect a device), then restart the daemon and rerun this.\n")
 
+    name = _name_from_argv(sys.argv[1:])
+    token = asyncio.run(_mint_device_token(name))
     base_url = f"http://{ips[0]}:{DAEMON_PORT}"
     url = build_pairing_url(base_url, token)
 
     print("2brn — pair a phone")
     print("===================")
+    print(f"Device: {name}")
     print(f"URL   : {base_url}")
     print(f"Token : {token}")
     if len(ips) > 1:

@@ -17,7 +17,7 @@ async def test_init_db_creates_all_tables(tmp_home):
     assert tables == {
         "activities", "app_exclusions", "captures", "journals", "blog_posts",
         "user_instructions", "plugins", "plugin_rules", "plugin_rule_executions",
-        "shared_notes",
+        "shared_notes", "devices",
     }
 
 async def test_init_db_idempotent(tmp_home):

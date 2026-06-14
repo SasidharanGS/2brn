@@ -6,8 +6,11 @@ from httpx import AsyncClient, ASGITransport
 
 @pytest.fixture
 async def journal_client(tmp_home):
-    """FastAPI test client with minimal app_state stubs for journal routes."""
-    from brn_daemon.main import create_app, app_state
+    """FastAPI test client with minimal context stubs for journal routes.
+
+    The populated :class:`AppContext` is attached as ``client.ctx``.
+    """
+    from brn_daemon.main import create_app
     from brn_daemon.chat import ChatService
 
     fake_chat_fn = AsyncMock(return_value='{"summary":"x","tags":[],"task_category":"work","task_category_confidence":0.9,"productivity_state":"productive","productivity_confidence":0.9}')
@@ -18,32 +21,33 @@ async def journal_client(tmp_home):
     fake_chroma.query = AsyncMock(return_value={"documents": [[]], "metadatas": [[]], "distances": [[]]})
     fake_chroma.query_notes = AsyncMock(return_value={"documents": [[]], "metadatas": [[]], "distances": [[]]})
 
-    app_state["chat_service"] = ChatService(
+    from brn_daemon.journal import JournalGenerator
+    from brn_daemon.blog import BlogGenerator
+
+    app = create_app()
+    ctx = app.state.context
+    ctx.chat_service = ChatService(
         chat_fn=fake_chat_fn,
         stream_fn=fake_stream_fn,
         embed_client=fake_embed_client,
         chroma_store=fake_chroma,
     )
-    app_state["_embed_client_ref"] = fake_embed_client
-    app_state["inference_queue"] = MagicMock()
-    app_state["inference_queue"]._chat_fn = fake_chat_fn
-    app_state["inference_queue"]._embedding_service = MagicMock()
-    app_state["plugin_orchestrator"] = MagicMock()
-    app_state["plugin_orchestrator"].chat_fn = fake_chat_fn
-    app_state["chroma_store"] = fake_chroma
-
-    # Journal generator stub
-    from brn_daemon.journal import JournalGenerator
-    from brn_daemon.blog import BlogGenerator
-    app_state["journal_generator"] = JournalGenerator(chat_fn=fake_chat_fn)
-    app_state["blog_generator"] = BlogGenerator(chat_fn=fake_chat_fn)
+    ctx.embed_client = fake_embed_client
+    ctx.inference_queue = MagicMock()
+    ctx.inference_queue._chat_fn = fake_chat_fn
+    ctx.inference_queue._embedding_service = MagicMock()
+    ctx.plugin_orchestrator = MagicMock()
+    ctx.plugin_orchestrator.chat_fn = fake_chat_fn
+    ctx.chroma_store = fake_chroma
+    ctx.journal_generator = JournalGenerator(chat_fn=fake_chat_fn)
+    ctx.blog_generator = BlogGenerator(chat_fn=fake_chat_fn)
 
     # Init the DB
     from brn_daemon.db import init_db
     await init_db()
 
-    app = create_app()
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        client.ctx = ctx
         yield client
 
 
@@ -86,19 +90,17 @@ async def test_put_journal_upserts_on_conflict(journal_client):
 
 
 async def test_generate_journal_returns_503_when_no_generator(journal_client):
-    """If journal_generator is not in app_state, must return 503."""
-    from brn_daemon.main import app_state
-    app_state.pop("journal_generator", None)
+    """If the journal generator is unset on the context, must return 503."""
+    journal_client.ctx.journal_generator = None
     resp = await journal_client.post("/journal/2026-05-28/generate")
     assert resp.status_code == 503
 
 
 async def test_generate_journal_returns_409_when_already_generating(journal_client):
     """Second concurrent generate for the same date must return 409."""
-    from brn_daemon.main import app_state
-    app_state.setdefault("journal_generating", set()).add("2026-05-28")
+    journal_client.ctx.journal_generating.add("2026-05-28")
     try:
         resp = await journal_client.post("/journal/2026-05-28/generate")
         assert resp.status_code == 409
     finally:
-        app_state.get("journal_generating", set()).discard("2026-05-28")
+        journal_client.ctx.journal_generating.discard("2026-05-28")

@@ -43,7 +43,7 @@ async def test_put_journal_sets_generated_at(tmp_home):
     from brn_daemon.chat import ChatService
     from brn_daemon.db import get_db_path, init_db
     from brn_daemon.journal import JournalGenerator
-    from brn_daemon.main import app_state, create_app
+    from brn_daemon.main import create_app
 
     fake_chat_fn = AsyncMock(return_value="{}")
     fake_embed_client = MagicMock()
@@ -51,19 +51,22 @@ async def test_put_journal_sets_generated_at(tmp_home):
     fake_chroma = MagicMock()
     fake_chroma.query = AsyncMock(return_value={"documents": [[]], "metadatas": [[]], "distances": [[]]})
     fake_chroma.query_notes = AsyncMock(return_value={"documents": [[]], "metadatas": [[]], "distances": [[]]})
-    app_state["chat_service"] = ChatService(
+
+    app = create_app()
+    ctx = app.state.context
+    ctx.chat_service = ChatService(
         chat_fn=fake_chat_fn, stream_fn=AsyncMock(),
         embed_client=fake_embed_client, chroma_store=fake_chroma,
     )
-    app_state["_embed_client_ref"] = fake_embed_client
-    app_state["inference_queue"] = MagicMock()
-    app_state["inference_queue"]._chat_fn = fake_chat_fn
-    app_state["inference_queue"]._embedding_service = MagicMock()
-    app_state["journal_generator"] = JournalGenerator(chat_fn=fake_chat_fn)
-    app_state["blog_generator"] = BlogGenerator(chat_fn=fake_chat_fn)
-    app_state["plugin_orchestrator"] = MagicMock()
-    app_state["plugin_orchestrator"].chat_fn = fake_chat_fn
-    app_state["chroma_store"] = fake_chroma
+    ctx.embed_client = fake_embed_client
+    ctx.inference_queue = MagicMock()
+    ctx.inference_queue._chat_fn = fake_chat_fn
+    ctx.inference_queue._embedding_service = MagicMock()
+    ctx.journal_generator = JournalGenerator(chat_fn=fake_chat_fn)
+    ctx.blog_generator = BlogGenerator(chat_fn=fake_chat_fn)
+    ctx.plugin_orchestrator = MagicMock()
+    ctx.plugin_orchestrator.chat_fn = fake_chat_fn
+    ctx.chroma_store = fake_chroma
 
     await init_db()
     async with aiosqlite.connect(get_db_path()) as conn:
@@ -73,7 +76,6 @@ async def test_put_journal_sets_generated_at(tmp_home):
         )
         await conn.commit()
 
-    app = create_app()
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as client:
         resp = await client.put("/journal/2026-01-15", json={"content": "new text"})
         assert resp.status_code == 200

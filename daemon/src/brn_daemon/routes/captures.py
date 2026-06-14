@@ -2,10 +2,11 @@ import asyncio
 from pathlib import Path
 
 import aiosqlite
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
 from pydantic import BaseModel
 
+from brn_daemon.context import AppContext, get_context
 from brn_daemon.db import get_db_path
 from brn_daemon.encryption import ENCRYPTED_EXT, decrypt_bytes
 from brn_daemon.timeutil import local_day_bounds_utc
@@ -47,7 +48,7 @@ async def get_captures(date: str = Query(..., description="YYYY-MM-DD")):
 
 
 @router.get("/captures/{capture_id}/image")
-async def get_capture_image(capture_id: int) -> Response:
+async def get_capture_image(capture_id: int, ctx: AppContext = Depends(get_context)) -> Response:
     """Stream the JPEG bytes for a capture. Decrypts on the fly when the file is encrypted."""
     async with aiosqlite.connect(get_db_path()) as conn:
         cur = await conn.execute(
@@ -68,8 +69,7 @@ async def get_capture_image(capture_id: int) -> Response:
         return Response(raw, media_type="image/jpeg")
 
     # Encrypted — need the in-memory key.
-    from brn_daemon.main import app_state
-    key = app_state.get("screenshot_key")
+    key = ctx.screenshot_key
     if key is None:
         raise HTTPException(503, "Image is encrypted but no screenshot password is loaded")
     try:

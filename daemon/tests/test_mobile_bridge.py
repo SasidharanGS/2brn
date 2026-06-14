@@ -16,17 +16,14 @@ from brn_daemon.db import init_db
 @pytest.fixture
 async def client(tmp_home):
     await init_db()
-    from brn_daemon.main import app_state, create_app
+    from brn_daemon.main import create_app
 
-    # Start from a known state: no embed client / chroma store unless a test wires
-    # them (app_state is a shared module global across the suite).
-    app_state["_embed_client_ref"] = None
-    app_state["chroma_store"] = None
+    # Each app gets its own AppContext, so there's no cross-test leakage to reset:
+    # embed_client / chroma_store default to None until a test wires them via client.ctx.
     app = create_app()
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        c.ctx = app.state.context
         yield c
-    app_state["_embed_client_ref"] = None
-    app_state["chroma_store"] = None
 
 
 # ── config ────────────────────────────────────────────────────────────────────
@@ -125,14 +122,12 @@ async def test_delete_missing_note_404(client):
 
 
 async def test_ingest_note_embeds_when_clients_present(client):
-    from brn_daemon.main import app_state
-
     fake_embed = MagicMock()
     fake_embed.embed = AsyncMock(return_value=[0.1, 0.2, 0.3])
     fake_chroma = MagicMock()
     fake_chroma.add_note = AsyncMock()
-    app_state["_embed_client_ref"] = fake_embed
-    app_state["chroma_store"] = fake_chroma
+    client.ctx.embed_client = fake_embed
+    client.ctx.chroma_store = fake_chroma
 
     resp = await client.post("/ingest/note", json={"text": "embed me", "title": "T"})
     assert resp.status_code == 200
@@ -204,16 +199,14 @@ async def test_delete_note_removes_from_listing(client):
 
 async def test_ingest_note_chroma_delete_best_effort(client):
     """If Chroma delete raises, the HTTP response is still 200."""
-    from brn_daemon.main import app_state
-
     fake_embed = MagicMock()
     fake_embed.embed = AsyncMock(return_value=[0.1] * 3)
     fake_chroma = MagicMock()
     fake_chroma.add_note = AsyncMock()
     fake_chroma.note_collection = MagicMock()
     fake_chroma.note_collection.delete.side_effect = RuntimeError("chroma down")
-    app_state["_embed_client_ref"] = fake_embed
-    app_state["chroma_store"] = fake_chroma
+    client.ctx.embed_client = fake_embed
+    client.ctx.chroma_store = fake_chroma
 
     r = await client.post("/ingest/note", json={"text": "embed then delete"})
     note_id = r.json()["id"]

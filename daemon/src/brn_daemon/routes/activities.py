@@ -1,9 +1,10 @@
 import re
 
 import aiosqlite
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
+from brn_daemon.context import AppContext, get_context
 from brn_daemon.db import get_db_path
 
 router = APIRouter()
@@ -91,15 +92,17 @@ class BackfillRequest(BaseModel):
 
 
 @router.post("/activities/backfill")
-async def backfill_activities(body: BackfillRequest | None = None):
+async def backfill_activities(
+    body: BackfillRequest | None = None,
+    ctx: AppContext = Depends(get_context),
+):
     """Re-run inference for captures with readable OCR text but no activity.
 
     Repairs the permanent classification gaps left by provider outages and
     inference-queue overflows; such captures otherwise stay 'unclassified'
     in the timeline forever. Also runs automatically at daemon startup.
     """
-    from brn_daemon.main import app_state
-    queue = app_state.get("inference_queue")
+    queue = ctx.inference_queue
     if queue is None:
         raise HTTPException(503, "Inference queue is not running")
     body = body or BackfillRequest()

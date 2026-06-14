@@ -1,8 +1,10 @@
 import asyncio
 
 import httpx
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
+
+from brn_daemon.context import AppContext, get_context
 
 router = APIRouter()
 
@@ -29,19 +31,18 @@ async def get_logs(
 
 
 @router.get("/debug/status", response_model=DebugStatusResponse)
-async def get_debug_status():
+async def get_debug_status(ctx: AppContext = Depends(get_context)):
     from brn_daemon.config import load_config
-    from brn_daemon.main import app_state
 
     cfg = await asyncio.get_event_loop().run_in_executor(None, load_config)
 
-    # Daemon section — reuse existing app_state
-    _iq = app_state.get("inference_queue")
+    # Daemon section — read from the app context
+    _iq = ctx.inference_queue
     daemon_section = {
-        "status": "paused" if app_state.get("paused") else "capturing",
-        "capture_count_today": app_state.get("capture_count_today", 0),
-        "last_captured_at": app_state.get("last_captured_at"),
-        "paused": bool(app_state.get("paused")),
+        "status": "paused" if ctx.paused else "capturing",
+        "capture_count_today": ctx.capture_count_today,
+        "last_captured_at": ctx.last_captured_at,
+        "paused": bool(ctx.paused),
         "dropped_inferences": _iq.dropped_count if _iq is not None else 0,
         "inference_queue_depth": _iq.queue_depth if _iq is not None else 0,
     }
@@ -65,7 +66,7 @@ async def get_debug_status():
     }
 
     # Chroma counts
-    chroma = app_state.get("chroma_store")
+    chroma = ctx.chroma_store
     activity_count = 0
     note_count = 0
     if chroma is not None:
@@ -91,9 +92,5 @@ async def get_debug_status():
         gateway=gateway_section,
         chroma=chroma_section,
         last_error=last_error,
-        failed_capture_ids=(
-            app_state.get("inference_queue").failed_capture_ids  # type: ignore[union-attr]
-            if app_state.get("inference_queue") is not None
-            else []
-        ),
+        failed_capture_ids=_iq.failed_capture_ids if _iq is not None else [],
     )

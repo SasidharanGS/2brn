@@ -3,12 +3,13 @@ import logging
 from typing import Annotated
 
 import aiosqlite
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, field_validator
 
 from brn_daemon.config import (
     BlogScheduleConfig,
     ScheduleConfig,
+    blog_cron_kwargs,
     delete_screenshot_password,
     get_chat_api_key,
     get_embed_api_key,
@@ -18,6 +19,7 @@ from brn_daemon.config import (
     set_embed_api_key,
     set_screenshot_password,
 )
+from brn_daemon.context import AppContext, get_context
 from brn_daemon.db import get_db_path
 from brn_daemon.encryption import (
     decrypt_all_screenshots,
@@ -31,6 +33,7 @@ from brn_daemon.encryption import (
     re_encrypt_all_screenshots,
     verify_password,
 )
+from brn_daemon.services import rebuild_ai_clients
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -154,7 +157,7 @@ async def get_settings():
 
 
 @router.put("/settings")
-async def update_settings(body: SettingsUpdateRequest):
+async def update_settings(body: SettingsUpdateRequest, ctx: AppContext = Depends(get_context)):
     cfg = load_config()
     if body.chat_provider:
         p = body.chat_provider
@@ -207,8 +210,7 @@ async def update_settings(body: SettingsUpdateRequest):
         cfg.joplin_db_path = body.joplin_db_path
     from apscheduler.jobstores.base import JobLookupError
 
-    from brn_daemon.main import app_state
-    scheduler = app_state.get("scheduler")
+    scheduler = ctx.scheduler
     if body.journal_schedule is not None:
         cfg.journal_schedule = ScheduleConfig(hour=body.journal_schedule.hour, minute=body.journal_schedule.minute)
         if scheduler:
@@ -217,7 +219,6 @@ async def update_settings(body: SettingsUpdateRequest):
             except JobLookupError:
                 logger.warning("journal_job not found in scheduler; schedule saved but not live-applied")
     if body.blog_schedule is not None:
-        from brn_daemon.main import _blog_cron_kwargs
         cfg.blog_schedule = BlogScheduleConfig(
             frequency=body.blog_schedule.frequency,
             hour=body.blog_schedule.hour,
@@ -227,23 +228,21 @@ async def update_settings(body: SettingsUpdateRequest):
         )
         if scheduler:
             try:
-                scheduler.reschedule_job("blog_job", trigger="cron", **_blog_cron_kwargs(cfg.blog_schedule))
+                scheduler.reschedule_job("blog_job", trigger="cron", **blog_cron_kwargs(cfg.blog_schedule))
             except JobLookupError:
                 logger.warning("blog_job not found in scheduler; schedule saved but not live-applied")
     save_config(cfg)
     if body.chat_provider is not None or body.embed_provider is not None:
-        from brn_daemon.main import _rebuild_ai_clients
-        await _rebuild_ai_clients()
+        await rebuild_ai_clients(ctx)
     return {"ok": True}
 
 
 @router.post("/settings/paused")
-async def set_paused(paused: bool):
-    from brn_daemon.main import app_state
+async def set_paused(paused: bool, ctx: AppContext = Depends(get_context)):
     cfg = load_config()
     cfg.paused = paused
     save_config(cfg)
-    app_state["paused"] = paused
+    ctx.paused = paused
     return {"ok": True, "paused": paused}
 
 
@@ -257,21 +256,19 @@ async def list_exclusions():
 
 
 @router.post("/settings/exclusions")
-async def add_exclusion(body: ExclusionRequest):
-    from brn_daemon.main import app_state
+async def add_exclusion(body: ExclusionRequest, ctx: AppContext = Depends(get_context)):
     async with aiosqlite.connect(get_db_path()) as conn:
         try:
             await conn.execute("INSERT INTO app_exclusions (app_name) VALUES (?)", (body.app_name,))
             await conn.commit()
         except aiosqlite.IntegrityError:
             raise HTTPException(409, f"{body.app_name} is already excluded")
-    app_state["exclusions_dirty"] = True
+    ctx.exclusions_dirty = True
     return {"ok": True}
 
 
 @router.delete("/settings/exclusions/{app_name}")
-async def remove_exclusion(app_name: str):
-    from brn_daemon.main import app_state
+async def remove_exclusion(app_name: str, ctx: AppContext = Depends(get_context)):
     async with aiosqlite.connect(get_db_path()) as conn:
         cur = await conn.execute(
             "DELETE FROM app_exclusions WHERE app_name = ?", (app_name,)
@@ -279,20 +276,19 @@ async def remove_exclusion(app_name: str):
         await conn.commit()
         if cur.rowcount == 0:
             raise HTTPException(404, f"{app_name} is not excluded")
-    app_state["exclusions_dirty"] = True
+    ctx.exclusions_dirty = True
     return {"ok": True}
 
 
 @router.post("/settings/resync-chroma")
-async def resync_chroma():
+async def resync_chroma(ctx: AppContext = Depends(get_context)):
     """Backfill all activities with summaries that are not yet in ChromaDB."""
     from brn_daemon.embeddings import EmbeddingService
-    from brn_daemon.main import app_state
     from brn_daemon.providers import make_embed_client
 
     async def _run_backfill() -> int:
         embed_client = make_embed_client()
-        chroma = app_state.get("chroma_store")
+        chroma = ctx.chroma_store
         if chroma is None:
             from brn_daemon.embeddings import ChromaStore
             chroma = ChromaStore()
@@ -336,9 +332,8 @@ async def resync_chroma():
 
 
 @router.get("/settings/chroma-status")
-async def chroma_status():
+async def chroma_status(ctx: AppContext = Depends(get_context)):
     """Return counts of total activities vs embedded ones."""
-    from brn_daemon.main import app_state
     async with aiosqlite.connect(get_db_path()) as conn:
         cur = await conn.execute(
             "SELECT COUNT(*) FROM activities WHERE summary IS NOT NULL AND summary != ''"
@@ -348,7 +343,7 @@ async def chroma_status():
             "SELECT COUNT(*) FROM activities WHERE chroma_id IS NOT NULL AND chroma_id != ''"
         )
         embedded = (await cur.fetchone() or (0,))[0]
-    chroma = app_state.get("chroma_store")
+    chroma = ctx.chroma_store
     if chroma is None:
         from brn_daemon.embeddings import ChromaStore
         chroma = ChromaStore()
@@ -374,7 +369,7 @@ class ScreenshotPasswordDisable(BaseModel):
 
 
 @router.post("/settings/screenshot-password")
-async def set_screenshot_password_route(body: ScreenshotPasswordSet):
+async def set_screenshot_password_route(body: ScreenshotPasswordSet, ctx: AppContext = Depends(get_context)):
     """Initialise screenshot encryption. Generates a salt, derives the key, persists the
     verifier to ``~/.2brn/encryption.json``, stores the password in the OS keychain, and
     (optionally) encrypts every existing screenshot in the background.
@@ -384,10 +379,9 @@ async def set_screenshot_password_route(body: ScreenshotPasswordSet):
     if not body.password or len(body.password) < 8:
         raise HTTPException(400, "Password must be at least 8 characters")
 
-    from brn_daemon.main import app_state
     key = initialize_encryption(body.password)
     set_screenshot_password(body.password)
-    app_state["screenshot_key"] = key
+    ctx.screenshot_key = key
 
     if body.encrypt_existing:
         async def _bulk_encrypt():
@@ -406,7 +400,7 @@ async def set_screenshot_password_route(body: ScreenshotPasswordSet):
 
 
 @router.put("/settings/screenshot-password")
-async def change_screenshot_password_route(body: ScreenshotPasswordChange):
+async def change_screenshot_password_route(body: ScreenshotPasswordChange, ctx: AppContext = Depends(get_context)):
     """Change the screenshot password. Verifies the old password against the stored verifier,
     then re-encrypts every ``.jpg.enc`` file in the background with the new key.
     """
@@ -437,8 +431,7 @@ async def change_screenshot_password_route(body: ScreenshotPasswordChange):
     save_encryption_state(EncryptionState(salt=new_salt, verifier=new_verifier))
     set_screenshot_password(body.new_password)
 
-    from brn_daemon.main import app_state
-    app_state["screenshot_key"] = new_key
+    ctx.screenshot_key = new_key
 
     async def _bulk_reencrypt():
         try:
@@ -455,7 +448,7 @@ async def change_screenshot_password_route(body: ScreenshotPasswordChange):
 
 
 @router.delete("/settings/screenshot-password")
-async def disable_screenshot_password_route(body: ScreenshotPasswordDisable):
+async def disable_screenshot_password_route(body: ScreenshotPasswordDisable, ctx: AppContext = Depends(get_context)):
     """Disable screenshot encryption. Verifies the password, decrypts every ``.jpg.enc`` file
     back to plaintext (optionally), removes the verifier and the keychain entry.
     """
@@ -481,7 +474,6 @@ async def disable_screenshot_password_route(body: ScreenshotPasswordDisable):
 
     delete_encryption_state()
     delete_screenshot_password()
-    from brn_daemon.main import app_state
-    app_state["screenshot_key"] = None
+    ctx.screenshot_key = None
 
     return {"ok": True, "message": "Screenshot encryption disabled"}

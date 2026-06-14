@@ -7,7 +7,7 @@ UI through a ``0600`` file in ``~/.2brn/`` (both run as the same OS user) — ga
 every endpoint except the liveness probe.
 
 Enforcement is wired in ``main.create_app`` and is active only once a token has
-been loaded into ``app_state`` (which happens in the real daemon lifespan), so
+been loaded into the app context (which happens in the real daemon lifespan), so
 the test harness, which doesn't run the lifespan, is unaffected.
 """
 from __future__ import annotations

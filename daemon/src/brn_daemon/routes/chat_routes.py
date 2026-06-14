@@ -2,9 +2,11 @@ import asyncio
 import json
 import logging
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+
+from brn_daemon.context import AppContext, get_context
 
 logger = logging.getLogger(__name__)
 
@@ -18,9 +20,8 @@ class ChatRequest(BaseModel):
     category_filter: str | None = None
 
 @router.post("/chat")
-async def chat_endpoint(body: ChatRequest):
-    from brn_daemon.main import app_state
-    service = app_state.get("chat_service")
+async def chat_endpoint(body: ChatRequest, ctx: AppContext = Depends(get_context)):
+    service = ctx.chat_service
     if not service:
         async def error_stream():
             yield "data: " + json.dumps({"chunk": "Chat service unavailable."}) + "\n\n"

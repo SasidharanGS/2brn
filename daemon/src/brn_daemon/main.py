@@ -33,9 +33,11 @@ from brn_daemon.chat import ChatService
 from brn_daemon.config import (
     BlogScheduleConfig,
     ScheduleConfig,
+    blog_cron_kwargs,
     get_screenshot_password,
     load_config,
 )
+from brn_daemon.context import AppContext
 from brn_daemon.db import get_conn, get_db_path, init_db
 from brn_daemon.dedup import compute_phash
 from brn_daemon.embeddings import ChromaStore, EmbeddingService
@@ -86,52 +88,6 @@ _root_logger = logging.getLogger()
 if not any(isinstance(h, _LogBufferHandler) for h in _root_logger.handlers):
     _root_logger.addHandler(_LogBufferHandler(_log_buffer))
 
-from typing import TypedDict
-
-
-class AppState(TypedDict, total=False):
-    paused: bool
-    capture_count_today: int
-    last_captured_at: str | None
-    journal_generator: JournalGenerator | None
-    chat_service: ChatService | None
-    vault_watcher: object | None  # JoplinWatcher when joplin_enabled, else None
-    journal_generating: set[str]
-    blog_generator: BlogGenerator | None
-    blog_generating: set[str]
-    chroma_store: ChromaStore | None
-    exclusions_dirty: bool
-    screenshot_key: bytes | None
-    event_bus: EventBus | None
-    plugin_orchestrator: PluginOrchestrator | None
-    scheduler: AsyncIOScheduler | None
-    inference_queue: InferenceQueue | None
-    _embed_client_ref: object | None
-    api_token: str | None
-
-
-app_state: AppState = {
-    "paused": False,
-    "capture_count_today": 0,
-    "last_captured_at": None,
-    "journal_generator": None,
-    "chat_service": None,
-    "vault_watcher": None,
-    "journal_generating": set(),
-    "blog_generator": None,
-    "blog_generating": set(),
-    "chroma_store": None,
-    "exclusions_dirty": True,
-    "screenshot_key": None,
-    "event_bus": None,
-    "plugin_orchestrator": None,
-    "scheduler": None,
-    "inference_queue": None,
-    "_embed_client_ref": None,
-    "api_token": None,
-}
-
-
 def _load_screenshot_key() -> bytes | None:
     """Derive the screenshot encryption key from the keychain password.
 
@@ -154,17 +110,9 @@ def _load_screenshot_key() -> bytes | None:
     return key
 
 
-def _blog_cron_kwargs(s: "BlogScheduleConfig") -> dict:
-    """Convert a BlogScheduleConfig to APScheduler cron trigger kwargs."""
-    if s.frequency == "monthly":
-        return {"day": s.day, "hour": s.hour, "minute": s.minute}
-    if s.frequency == "weekly" and s.days_of_week:
-        return {"day_of_week": ",".join(s.days_of_week), "hour": s.hour, "minute": s.minute}
-    return {"hour": s.hour, "minute": s.minute}
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    ctx: AppContext = app.state.context
     await init_db()
 
     # Migrate plugin secrets from legacy "2brn" keychain service to "2brn-plugins"
@@ -184,23 +132,23 @@ async def lifespan(app: FastAPI):
         logger.info("Migrated %d plugin keychain entries to 2brn-plugins", len(_entries_to_migrate))
 
     cfg = load_config()
-    app_state["paused"] = cfg.paused
-    app_state["screenshot_key"] = _load_screenshot_key()
-    app_state["api_token"] = load_or_create_token()
-    if app_state["api_token"]:
+    ctx.paused = cfg.paused
+    ctx.screenshot_key = _load_screenshot_key()
+    ctx.api_token = load_or_create_token()
+    if ctx.api_token:
         logger.info("Local API authentication: enabled")
     else:
         logger.warning("Local API authentication: DISABLED (could not create token file)")
 
     chat_fn, stream_fn = make_chat_fn()
     embed_client = make_embed_client()
-    app_state["_embed_client_ref"] = embed_client
+    ctx.embed_client = embed_client
     chroma = ChromaStore()
     embedding_service = EmbeddingService(embed_client=embed_client, chroma_store=chroma)
-    app_state["chroma_store"] = chroma
+    ctx.chroma_store = chroma
 
     event_bus = EventBus()
-    app_state["event_bus"] = event_bus
+    ctx.event_bus = event_bus
 
     inference_queue = InferenceQueue(
         chat_fn=chat_fn,
@@ -208,13 +156,13 @@ async def lifespan(app: FastAPI):
         embedding_service=embedding_service,
         event_bus=event_bus,
     )
-    app_state["inference_queue"] = inference_queue
+    ctx.inference_queue = inference_queue
     journal_gen = JournalGenerator(chat_fn=chat_fn)
     blog_gen = BlogGenerator(chat_fn=chat_fn)
-    app_state["blog_generator"] = blog_gen
+    ctx.blog_generator = blog_gen
     chat_service = ChatService(chat_fn=chat_fn, stream_fn=stream_fn, embed_client=embed_client, chroma_store=chroma)
-    app_state["journal_generator"] = journal_gen
-    app_state["chat_service"] = chat_service
+    ctx.journal_generator = journal_gen
+    ctx.chat_service = chat_service
 
     scheduler = AsyncIOScheduler(job_defaults={
         "misfire_grace_time": 3600,
@@ -231,32 +179,34 @@ async def lifespan(app: FastAPI):
     scheduler.add_job(
         _blog_job,
         "cron",
-        **_blog_cron_kwargs(cfg.blog_schedule),
+        **blog_cron_kwargs(cfg.blog_schedule),
         id="blog_job",
         args=[blog_gen, event_bus],
     )
     scheduler.add_job(
         _purge_job,
         "cron", hour=2, minute=0, id="purge_daily",
+        args=[ctx],
     )
     scheduler.add_job(
         _reset_capture_count_job,
         "cron", hour=0, minute=0, id="reset_capture_count",
+        args=[ctx],
     )
     scheduler.start()
-    app_state["scheduler"] = scheduler
+    ctx.scheduler = scheduler
 
     orchestrator = PluginOrchestrator(event_bus=event_bus, scheduler=scheduler, chat_fn=chat_fn)
     await orchestrator.start()
-    app_state["plugin_orchestrator"] = orchestrator
+    ctx.plugin_orchestrator = orchestrator
 
     asyncio.create_task(_startup_backfill_journal(journal_gen, event_bus, cfg.journal_schedule))
     asyncio.create_task(_startup_backfill_blog(blog_gen, event_bus, cfg.blog_schedule))
 
     inference_task = asyncio.create_task(inference_queue.run())
-    asyncio.create_task(app_state["inference_queue"].heal_unembedded())
+    asyncio.create_task(inference_queue.heal_unembedded())
     asyncio.create_task(inference_queue.backfill_unclassified())
-    capture_task = asyncio.create_task(_capture_loop(cfg, inference_queue))
+    capture_task = asyncio.create_task(_capture_loop(ctx, cfg, inference_queue))
 
     # Optional Joplin note embedding watcher — off by default for OSS users.
     vault_watcher = None
@@ -268,7 +218,7 @@ async def lifespan(app: FastAPI):
                 chroma_client=chroma.chroma_client,
                 db_path=Path(cfg.joplin_db_path) if cfg.joplin_db_path else None,
             )
-            app_state["vault_watcher"] = vault_watcher
+            ctx.vault_watcher = vault_watcher
             loop = asyncio.get_running_loop()
             asyncio.create_task(_start_vault_watcher(vault_watcher, loop))
         except Exception:
@@ -371,11 +321,11 @@ async def _startup_backfill_blog(
     await _blog_job(blog_gen, event_bus, target_date=today)
 
 
-async def _purge_job() -> None:
+async def _purge_job(ctx: AppContext) -> None:
     cfg = load_config()
     await purge_old_captures(
         months=cfg.purge_months,
-        chroma_store=app_state.get("chroma_store"),
+        chroma_store=ctx.chroma_store,
     )
     try:
         await sweep_orphaned_screenshots()
@@ -383,8 +333,8 @@ async def _purge_job() -> None:
         logger.exception("Orphan screenshot sweep failed")
 
 
-async def _reset_capture_count_job() -> None:
-    app_state["capture_count_today"] = 0
+async def _reset_capture_count_job(ctx: AppContext) -> None:
+    ctx.capture_count_today = 0
 
 
 async def _start_vault_watcher(vault_watcher, loop) -> None:
@@ -544,7 +494,7 @@ async def _record_capture(
     logger.info("Capture #%d → saved (no readable text or metadata, skipping inference)", capture_id)
 
 
-async def _capture_loop(cfg, inference_queue: InferenceQueue):
+async def _capture_loop(ctx: AppContext, cfg, inference_queue: InferenceQueue):
     policy = CapturePolicy(
         heartbeat_seconds=cfg.capture_interval_seconds,
         similarity_threshold=cfg.similarity_threshold,
@@ -562,16 +512,16 @@ async def _capture_loop(cfg, inference_queue: InferenceQueue):
             await asyncio.sleep(policy.next_tick_seconds(asyncio.get_running_loop().time()))
             now = asyncio.get_running_loop().time()
 
-            if app_state["paused"]:  # type: ignore[typeddict-item]
+            if ctx.paused:
                 continue
 
             # Refresh exclusions from DB every 30s instead of every tick
-            if (now - exclusion_cache_time) >= EXCLUSION_CACHE_TTL or app_state.get("exclusions_dirty"):
+            if (now - exclusion_cache_time) >= EXCLUSION_CACHE_TTL or ctx.exclusions_dirty:
                 async with aiosqlite.connect(get_db_path()) as conn:
                     cur = await conn.execute("SELECT app_name FROM app_exclusions")
                     excluded_apps = {row[0] for row in await cur.fetchall()}
                 exclusion_cache_time = now
-                app_state["exclusions_dirty"] = False
+                ctx.exclusions_dirty = False
 
             windows = get_windows_snapshot()
             monitors = capture_all_monitors_with_rects()
@@ -608,7 +558,7 @@ async def _capture_loop(cfg, inference_queue: InferenceQueue):
             file_paths = await asyncio.gather(*[
                 _save_screenshot_off_loop(
                     loop, item.frame.image,
-                    key=app_state.get("screenshot_key"),
+                    key=ctx.screenshot_key,
                     monitor_index=item.frame.monitor_index,
                 )
                 for item in kept
@@ -625,8 +575,8 @@ async def _capture_loop(cfg, inference_queue: InferenceQueue):
                         ocr_memos, sparse_memos,
                     )
 
-            app_state["last_captured_at"] = datetime.now(UTC).isoformat()
-            app_state["capture_count_today"] = app_state.get("capture_count_today", 0) + 1
+            ctx.last_captured_at = datetime.now(UTC).isoformat()
+            ctx.capture_count_today += 1
 
         except asyncio.CancelledError:
             break
@@ -634,62 +584,14 @@ async def _capture_loop(cfg, inference_queue: InferenceQueue):
             logger.exception("Capture loop error")
 
 
-async def _rebuild_ai_clients() -> None:
-    """Rebuild chat and embed clients from the current config.
-
-    Called after PUT /settings saves provider changes. Replaces in-memory
-    clients in every consumer without restarting the daemon.
-    """
-    old_embed = app_state.get("_embed_client_ref")
-    new_chat_fn, new_stream_fn = make_chat_fn()
-    new_embed_client = make_embed_client()
-
-    if old_embed is not None:
-        try:
-            await old_embed.aclose()  # type: ignore[union-attr]
-        except Exception:
-            logger.exception("Error closing old embed client during rebuild")
-
-    chroma = app_state.get("chroma_store")
-    new_embedding_service = EmbeddingService(embed_client=new_embed_client, chroma_store=chroma)
-    new_chat_service = ChatService(
-        chat_fn=new_chat_fn,
-        stream_fn=new_stream_fn,
-        embed_client=new_embed_client,
-        chroma_store=chroma,
-    )
-
-    app_state["chat_service"] = new_chat_service
-    app_state["_embed_client_ref"] = new_embed_client
-
-    iq = app_state.get("inference_queue")
-    if iq is not None:
-        iq.set_chat_fn(new_chat_fn)
-        iq.set_embedding_service(new_embedding_service)
-
-    jg = app_state.get("journal_generator")
-    if jg is not None:
-        jg.set_chat_fn(new_chat_fn)
-
-    bg = app_state.get("blog_generator")
-    if bg is not None:
-        bg.set_chat_fn(new_chat_fn)
-
-    po = app_state.get("plugin_orchestrator")
-    if po is not None:
-        po.chat_fn = new_chat_fn
-
-    logger.info("AI clients rebuilt from updated config")
-
-
 async def _require_api_token(request: Request, call_next):
     """Reject requests lacking the loopback bearer token.
 
-    Inert until a token is loaded into app_state, so the test harness (which
-    doesn't run the lifespan) is unaffected. The liveness probe and CORS
+    Inert until a token is loaded into the app context, so the test harness
+    (which doesn't run the lifespan) is unaffected. The liveness probe and CORS
     preflight pass through unauthenticated.
     """
-    expected = app_state.get("api_token")
+    expected = request.app.state.context.api_token
     if expected and request.method != "OPTIONS" and request.url.path not in PUBLIC_PATHS:
         header = request.headers.get("authorization", "")
         token = header[7:].strip() if header[:7].lower() == "bearer " else ""
@@ -717,9 +619,14 @@ def create_app() -> FastAPI:
     )
 
     app = FastAPI(title="2brn Daemon", lifespan=lifespan)
+    # The per-app context holds every long-lived service and mutable runtime
+    # field (replacing the former global ``app_state`` dict). It exists from app
+    # construction so the test harness — which doesn't run the lifespan — has a
+    # populated-on-demand context; lifespan fills in the service singletons.
+    app.state.context = AppContext()
     # Loopback bearer-token auth (inner). Added before CORS so CORS stays the
     # outermost layer — it answers preflight and decorates the 401 so the UI can
-    # read it. Enforced only once a token is loaded into app_state (lifespan).
+    # read it. Enforced only once a token is loaded into the context (lifespan).
     app.add_middleware(BaseHTTPMiddleware, dispatch=_require_api_token)
     # Allow the Vite dev server and the Electron renderer only. The bearer token
     # is the real gate; this drops the previous any-localhost-port allowance

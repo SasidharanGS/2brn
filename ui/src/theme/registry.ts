@@ -10,10 +10,9 @@ import Instructions from '../screens/Instructions'
 import Chat from '../screens/Chat'
 import Devices from '../screens/Devices'
 import Timeline from '../screens/Timeline'
-import MinimalInsights from '../screens/minimal/Insights'
+import Insights from '../screens/Insights'
 import MinimalPlugins from '../screens/minimal/Plugins'
 import MinimalSettings from '../screens/minimal/Settings'
-import Insights from '../screens/modern/Insights'
 import Plugins from '../screens/modern/Plugins'
 import Settings from '../screens/modern/Settings'
 
@@ -33,16 +32,15 @@ const shared: Partial<Record<ScreenName, ComponentType>> = {
   chat: Chat,
   devices: Devices,
   timeline: Timeline,
+  insights: Insights,
 }
 
 const modern: Partial<Record<ScreenName, ComponentType>> = {
-  insights: Insights,
   plugins: Plugins,
   settings: Settings,
 }
 
 const minimal: Partial<Record<ScreenName, ComponentType>> = {
-  insights: MinimalInsights,
   plugins: MinimalPlugins,
   settings: MinimalSettings,
 }

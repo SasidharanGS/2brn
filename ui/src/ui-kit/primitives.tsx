@@ -329,6 +329,21 @@ export function Notice({ children }: { children: ReactNode }) {
   return <div className="k-notice">{children}</div>
 }
 
+/** Segmented control — display casing follows the skin (Day/day). */
+export function Segmented<T extends string>({ value, options, onChange }: {
+  value: T; options: readonly T[]; onChange: (v: T) => void
+}) {
+  return (
+    <div className="k-seg">
+      {options.map(o => (
+        <button key={o} type="button" className="k-seg-btn" data-active={o === value} onClick={() => onChange(o)}>
+          {o}
+        </button>
+      ))}
+    </div>
+  )
+}
+
 /** Read-only labelled value box (select-all), e.g. a pairing URL or token. */
 export function TokenField({ label, value, mono }: { label: ReactNode; value: string; mono?: boolean }) {
   return (

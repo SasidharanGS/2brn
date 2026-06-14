@@ -11,10 +11,9 @@ import Chat from '../screens/Chat'
 import Devices from '../screens/Devices'
 import Timeline from '../screens/Timeline'
 import Insights from '../screens/Insights'
+import Settings from '../screens/Settings'
 import MinimalPlugins from '../screens/minimal/Plugins'
-import MinimalSettings from '../screens/minimal/Settings'
 import Plugins from '../screens/modern/Plugins'
-import Settings from '../screens/modern/Settings'
 
 export type { ScreenName }
 
@@ -33,16 +32,15 @@ const shared: Partial<Record<ScreenName, ComponentType>> = {
   devices: Devices,
   timeline: Timeline,
   insights: Insights,
+  settings: Settings,
 }
 
 const modern: Partial<Record<ScreenName, ComponentType>> = {
   plugins: Plugins,
-  settings: Settings,
 }
 
 const minimal: Partial<Record<ScreenName, ComponentType>> = {
   plugins: MinimalPlugins,
-  settings: MinimalSettings,
 }
 
 export function getScreen(skin: Skin, name: ScreenName): ComponentType {

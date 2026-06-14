@@ -243,6 +243,19 @@ export function useSettingsForm() {
     onError: () => flash('Failed to disable (check password)'),
   })
 
+  // Client-side password validation lives here (it was duplicated verbatim in
+  // both skins' screens — finding U-02). The view just calls these.
+  function submitEnableEncryption() {
+    if (encPwd.length < 8) { flash('Password must be at least 8 characters'); return }
+    if (encPwd !== encPwdConfirm) { flash('Passwords do not match'); return }
+    enableEncryption.mutate()
+  }
+  function submitChangeEncryption() {
+    if (encNewPwd.length < 8) { flash('Password must be at least 8 characters'); return }
+    if (encNewPwd !== encNewPwdConfirm) { flash('Passwords do not match'); return }
+    changeEncryption.mutate()
+  }
+
   return {
     settings, exclusions,
     form, setField, tuning, setTuningField,
@@ -257,5 +270,6 @@ export function useSettingsForm() {
     saveProviders, togglePause, saveTuning,
     runBackfill, runResync, addExclusion, removeExclusion,
     enableEncryption, changeEncryption, disableEncryption,
+    submitEnableEncryption, submitChangeEncryption,
   }
 }

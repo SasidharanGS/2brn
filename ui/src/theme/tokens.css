@@ -68,6 +68,20 @@
   --k-space-md: 1rem;
   --k-space-lg: 2rem;
   --k-space-xl: 2.5rem;
+
+  /* component tokens */
+  --k-text-heading: 19px;          /* page-header h1 (smaller than the hero) */
+  --k-badge-bg: var(--amber-bg);
+  --k-badge-fg: var(--amber);
+  --k-btn-ghost-bg: var(--bg-surface-2);
+  --k-btn-pad: 0.5rem 1rem;
+  --k-btn-text: 13px;
+  --k-card-pad: 1.5rem;
+  --k-empty-pad: 2.5rem;
+  --k-control-bg: var(--bg-surface-2);
+  --k-control-pad: 0.25rem 0.5rem;
+  --k-danger: var(--red);
+  --k-danger-bg: var(--red-bg);
 }
 
 :root[data-skin='minimal'] {
@@ -125,4 +139,18 @@
   --k-space-md: var(--space-md);
   --k-space-lg: var(--space-lg);
   --k-space-xl: var(--space-xl);
+
+  /* component tokens — neutral/monochrome, square, lighter weights */
+  --k-text-heading: var(--text-display);
+  --k-badge-bg: var(--pill-bg);
+  --k-badge-fg: var(--muted);
+  --k-btn-ghost-bg: transparent;
+  --k-btn-pad: 6px 12px;
+  --k-btn-text: var(--text-2xs);
+  --k-card-pad: var(--space-lg);
+  --k-empty-pad: var(--space-xl) var(--space-lg);
+  --k-control-bg: transparent;
+  --k-control-pad: 6px 0;
+  --k-danger: var(--accent);
+  --k-danger-bg: transparent;
 }

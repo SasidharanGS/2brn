@@ -54,4 +54,5 @@ export default function Icon({ name, size = 16, strokeWidth = 1.5, style }: Icon
 export const ICON_EMOJI: Partial<Record<IconName, string>> = {
   home: '🏠', chat: '💬', journal: '📔', blog: '✍', timeline: '⏱',
   insights: '◎', instructions: '📋', plugins: '🔌', devices: '📱', settings: '⚙',
+  warn: '⚠️',
 }

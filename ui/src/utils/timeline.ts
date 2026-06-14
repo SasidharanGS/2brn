@@ -36,3 +36,10 @@ export function groupActivitiesByHour(filtered: ActivityRecord[]): HourGroups {
   }
   return { byHour, activeHours, railHours }
 }
+
+/** Whole-hour label for the rail + sticky headings, e.g. "09:00 am". */
+export function fmtHour(h: number): string {
+  const ap = h < 12 ? 'am' : 'pm'
+  const hh = h % 12 === 0 ? 12 : h % 12
+  return `${String(hh).padStart(2, '0')}:00 ${ap}`
+}

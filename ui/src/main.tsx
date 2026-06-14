@@ -1,6 +1,10 @@
 import ReactDOM from 'react-dom/client'
 import { HashRouter } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+// Self-hosted fonts (bundled) — no runtime fetch to Google, so the strict CSP
+// can forbid external origins. Registers 'Geist Variable' / 'Geist Mono Variable'.
+import '@fontsource-variable/geist'
+import '@fontsource-variable/geist-mono'
 import App from './App'
 import { ThemeProvider } from './theme/ThemeContext'
 import { initApiBase } from './api/client'

@@ -54,6 +54,74 @@ async def test_auth_inert_when_no_token_loaded(tmp_home):
         assert (await client.get("/captures?date=2026-01-01")).status_code == 200
 
 
+def _lan_transport(app):
+    """ASGITransport whose client looks like a LAN peer (not loopback)."""
+    return ASGITransport(app=app, client=("192.168.1.50", 5555))
+
+
+async def test_master_token_rejected_over_lan(tmp_home):
+    """The master token authenticates only on loopback — never over the LAN."""
+    from brn_daemon.db import init_db
+    await init_db()
+    app = main_mod.create_app()
+    app.state.context.api_token = "secret-token"
+    async with AsyncClient(transport=_lan_transport(app), base_url="http://t") as client:
+        resp = await client.get(
+            "/captures?date=2026-01-01", headers={"Authorization": "Bearer secret-token"}
+        )
+        assert resp.status_code == 401
+
+
+async def test_device_token_accepted_over_lan_then_revoked(tmp_home):
+    """A per-device token works over the LAN and stops working once revoked."""
+    from brn_daemon.db import init_db
+    from brn_daemon.repository import create_device, delete_device
+    await init_db()
+    app = main_mod.create_app()
+    app.state.context.api_token = "secret-token"
+    device_id, device_token = await create_device("phone")
+
+    async with AsyncClient(transport=_lan_transport(app), base_url="http://t") as client:
+        ok = await client.get(
+            "/captures?date=2026-01-01",
+            headers={"Authorization": f"Bearer {device_token}"},
+        )
+        assert ok.status_code == 200
+
+        assert await delete_device(device_id) is True
+        revoked = await client.get(
+            "/captures?date=2026-01-01",
+            headers={"Authorization": f"Bearer {device_token}"},
+        )
+        assert revoked.status_code == 401
+
+
+async def test_device_cannot_manage_devices_over_lan(tmp_home):
+    """A valid device token still can't touch /devices* (loopback + master only)."""
+    from brn_daemon.db import init_db
+    from brn_daemon.repository import create_device
+    await init_db()
+    app = main_mod.create_app()
+    app.state.context.api_token = "secret-token"
+    _id, device_token = await create_device("phone")
+    async with AsyncClient(transport=_lan_transport(app), base_url="http://t") as client:
+        resp = await client.get("/devices", headers={"Authorization": f"Bearer {device_token}"})
+        assert resp.status_code == 403
+
+
+async def test_master_manages_devices_on_loopback(tmp_home):
+    """The desktop (loopback + master token) can list devices."""
+    from brn_daemon.db import init_db
+    await init_db()
+    app = main_mod.create_app()
+    app.state.context.api_token = "secret-token"
+    # Default ASGITransport client is 127.0.0.1 → loopback.
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as client:
+        resp = await client.get("/devices", headers={"Authorization": "Bearer secret-token"})
+        assert resp.status_code == 200
+        assert resp.json() == []
+
+
 @pytest.mark.parametrize("method,path,body", [
     ("GET",    "/connection-info",  None),
     ("POST",   "/ingest/note",      {"text": "hi"}),

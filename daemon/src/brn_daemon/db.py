@@ -166,6 +166,18 @@ async def init_db() -> None:
                 created_at DATETIME NOT NULL
             );
 
+            -- Per-device LAN tokens. Each paired phone gets its own token; we
+            -- store only its SHA-256 hash so a DB leak never exposes a live
+            -- credential. Revoke = delete the row (independent of the master
+            -- loopback token and of every other device).
+            CREATE TABLE IF NOT EXISTS devices (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                token_hash TEXT NOT NULL UNIQUE,
+                created_at TEXT NOT NULL,
+                last_seen_at TEXT
+            );
+
             CREATE INDEX IF NOT EXISTS idx_captures_captured_at ON captures(captured_at);
             CREATE INDEX IF NOT EXISTS idx_captures_monitor ON captures(monitor_index);
             CREATE INDEX IF NOT EXISTS idx_activities_capture_id ON activities(capture_id);

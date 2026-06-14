@@ -12,6 +12,7 @@ const BRN_ICON_PATHS = {
   insights: '<path d="M9 18h6"/><path d="M10 21h4"/><path d="M12 3a6 6 0 0 0-4 10.5c.7.7 1 1.3 1 2.5h6c0-1.2.3-1.8 1-2.5A6 6 0 0 0 12 3z"/>',
   instructions: '<rect x="5" y="4" width="14" height="17" rx="1"/><path d="M9 4V3h6v1"/><path d="M8 9h8M8 13h8M8 17h5"/>',
   plugins: '<path d="M9 3v5M15 3v5"/><path d="M7 8h10v3a5 5 0 0 1-10 0z"/><path d="M12 16v5"/>',
+  devices: '<rect x="7" y="3" width="10" height="18" rx="2"/><path d="M11 18h2"/>',
   settings: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M22 12h-3M5 12H2M19 19l-2-2M7 7 5 5M19 5l-2 2M7 17l-2 2"/>',
   calendar: '<rect x="4" y="5" width="16" height="16" rx="1"/><path d="M4 9h16M8 3v4M16 3v4"/>',
   search: '<circle cx="11" cy="11" r="6"/><path d="m20 20-4-4"/>',

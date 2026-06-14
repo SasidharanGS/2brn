@@ -14,6 +14,7 @@ const NAV = [
   { to: '/insights',      label: 'Insights',     icon: '💡'              },
   { to: '/instructions',  label: 'Instructions', icon: '📋'              },
   { to: '/plugins',       label: 'Plugins',      icon: '🔌'              },
+  { to: '/devices',       label: 'Devices',      icon: '📱'              },
   { to: '/settings',      label: 'Settings',     icon: '⚙️'              },
 ]
 

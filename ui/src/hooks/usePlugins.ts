@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api/client'
 import type { Plugin, PluginRule, PluginTool, RuleExecution } from '../api/types'
 import { queryKeys } from '../api/queryKeys'
+import { parseArgs, parseEnv } from '../lib/pluginInput'
 
 const PLUGINS_QK = queryKeys.plugins()
 const RULES_QK = queryKeys.pluginRules
@@ -54,26 +55,6 @@ export function useNewPluginForm(onCreated: (p: Plugin) => void) {
   const createMut = useMutation({
     mutationFn: api.createPlugin,
   })
-
-  function parseArgs(text: string): string[] {
-    return text.trim().length === 0
-      ? []
-      : text.split('\n').map(s => s.trim()).filter(Boolean)
-  }
-
-  function parseEnv(text: string): Record<string, string> {
-    const out: Record<string, string> = {}
-    text.split('\n').forEach(line => {
-      const trimmed = line.trim()
-      if (!trimmed || trimmed.startsWith('#')) return
-      const eq = trimmed.indexOf('=')
-      if (eq <= 0) return
-      const key = trimmed.slice(0, eq).trim()
-      const value = trimmed.slice(eq + 1).trim()
-      if (key) out[key] = value
-    })
-    return out
-  }
 
   async function handleSave() {
     setError(null)

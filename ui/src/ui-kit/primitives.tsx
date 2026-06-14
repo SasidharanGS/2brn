@@ -158,11 +158,13 @@ export function PageHeader({ title, subtitle, right }: {
   )
 }
 
-/** Small status pill (e.g. "edited"). */
-export function Badge({ children }: { children: ReactNode }) {
+/** Small status pill. `tone='ok'` is a success/health badge (green / neutral). */
+export function Badge({ children, tone = 'default' }: { children: ReactNode; tone?: 'default' | 'ok' }) {
+  const bg = tone === 'ok' ? 'var(--k-badge-ok-bg)' : 'var(--k-badge-bg)'
+  const fg = tone === 'ok' ? 'var(--k-badge-ok-fg)' : 'var(--k-badge-fg)'
   return (
     <span style={{
-      display: 'inline-block', background: 'var(--k-badge-bg)', color: 'var(--k-badge-fg)',
+      display: 'inline-block', background: bg, color: fg,
       borderRadius: 'var(--k-radius-pill)', padding: '2px 8px',
       fontSize: 'var(--k-text-label)', fontWeight: 'var(--k-label-weight)' as CSSProperties['fontWeight'],
       textTransform: 'var(--k-text-transform)' as CSSProperties['textTransform'], whiteSpace: 'nowrap',
@@ -187,12 +189,13 @@ export function Button({ children, onClick, disabled, variant = 'ghost', type = 
   )
 }
 
-/** Quiet inline text action (card-row edit / delete / confirm). */
-export function QuietButton({ children, onClick, danger }: {
-  children: ReactNode; onClick?: () => void; danger?: boolean
+/** Quiet inline text action (card-row edit / delete / run / confirm). */
+export function QuietButton({ children, onClick, danger, accent, disabled }: {
+  children: ReactNode; onClick?: () => void; danger?: boolean; accent?: boolean; disabled?: boolean
 }) {
+  const mod = danger ? ' k-quiet--danger' : accent ? ' k-quiet--accent' : ''
   return (
-    <button type="button" onClick={onClick} className={`k-quiet${danger ? ' k-quiet--danger' : ''}`}>
+    <button type="button" onClick={onClick} disabled={disabled} className={`k-quiet${mod}`}>
       {children}
     </button>
   )

@@ -28,7 +28,7 @@ export default function App() {
           <ErrorBoundary>
             <Routes>
               {ROUTES.map(({ to, screen }) => {
-                const Screen = getScreen(skin, screen)
+                const Screen = getScreen(screen)
                 return <Route key={to} path={to} element={<Screen />} />
               })}
             </Routes>

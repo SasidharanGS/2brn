@@ -12,40 +12,30 @@ import Devices from '../screens/Devices'
 import Timeline from '../screens/Timeline'
 import Insights from '../screens/Insights'
 import Settings from '../screens/Settings'
-import MinimalPlugins from '../screens/minimal/Plugins'
-import Plugins from '../screens/modern/Plugins'
+import Plugins from '../screens/Plugins'
 
 export type { ScreenName }
 
 // ── Screen registry ───────────────────────────────────────────────────────────
-// `shared` holds screens unified onto ONE component tree (epic #93) — these
-// render in every skin via the ui-kit token contract. Screens not yet migrated
-// still have a per-skin fork in `modern`/`minimal`; the minimal fork falls back
-// to the modern one when absent, so the app stays shippable mid-migration.
+// Epic #93 complete: every screen is ONE component that renders in both skins
+// via the ui-kit token contract (theme/tokens.css). No more per-skin screen
+// forks; only the app chrome (Shell) still differs per skin below.
 
-const shared: Partial<Record<ScreenName, ComponentType>> = {
+const screens: Record<ScreenName, ComponentType> = {
   home: Home,
+  chat: Chat,
   journal: Journal,
   blog: Blog,
-  instructions: Instructions,
-  chat: Chat,
-  devices: Devices,
   timeline: Timeline,
   insights: Insights,
+  instructions: Instructions,
+  plugins: Plugins,
+  devices: Devices,
   settings: Settings,
 }
 
-const modern: Partial<Record<ScreenName, ComponentType>> = {
-  plugins: Plugins,
-}
-
-const minimal: Partial<Record<ScreenName, ComponentType>> = {
-  plugins: MinimalPlugins,
-}
-
-export function getScreen(skin: Skin, name: ScreenName): ComponentType {
-  // Unified screens win; otherwise the per-skin fork (minimal → modern fallback).
-  return shared[name] ?? (skin === 'minimal' ? minimal[name] : undefined) ?? modern[name]!
+export function getScreen(name: ScreenName): ComponentType {
+  return screens[name]
 }
 
 // ── Shell registry ────────────────────────────────────────────────────────────

@@ -8,15 +8,14 @@ import Journal from '../screens/Journal'
 import Blog from '../screens/Blog'
 import Instructions from '../screens/Instructions'
 import Chat from '../screens/Chat'
+import Devices from '../screens/Devices'
 import MinimalTimeline from '../screens/minimal/Timeline'
 import MinimalInsights from '../screens/minimal/Insights'
 import MinimalPlugins from '../screens/minimal/Plugins'
-import MinimalDevices from '../screens/minimal/Devices'
 import MinimalSettings from '../screens/minimal/Settings'
 import Timeline from '../screens/modern/Timeline'
 import Insights from '../screens/modern/Insights'
 import Plugins from '../screens/modern/Plugins'
-import Devices from '../screens/modern/Devices'
 import Settings from '../screens/modern/Settings'
 
 export type { ScreenName }
@@ -33,13 +32,13 @@ const shared: Partial<Record<ScreenName, ComponentType>> = {
   blog: Blog,
   instructions: Instructions,
   chat: Chat,
+  devices: Devices,
 }
 
 const modern: Partial<Record<ScreenName, ComponentType>> = {
   timeline: Timeline,
   insights: Insights,
   plugins: Plugins,
-  devices: Devices,
   settings: Settings,
 }
 
@@ -47,7 +46,6 @@ const minimal: Partial<Record<ScreenName, ComponentType>> = {
   timeline: MinimalTimeline,
   insights: MinimalInsights,
   plugins: MinimalPlugins,
-  devices: MinimalDevices,
   settings: MinimalSettings,
 }
 

@@ -324,6 +324,27 @@ export function PromptPill({ children, onClick }: { children: ReactNode; onClick
   return <button type="button" onClick={onClick} className="k-pill">{children}</button>
 }
 
+/** Inline notice / warning banner. */
+export function Notice({ children }: { children: ReactNode }) {
+  return <div className="k-notice">{children}</div>
+}
+
+/** Read-only labelled value box (select-all), e.g. a pairing URL or token. */
+export function TokenField({ label, value, mono }: { label: ReactNode; value: string; mono?: boolean }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <SectionLabel>{label}</SectionLabel>
+      <code style={{
+        fontSize: 'var(--k-text-meta)', color: 'var(--k-fg)', wordBreak: 'break-all', userSelect: 'all',
+        fontFamily: mono ? 'var(--k-font-mono)' : 'var(--k-font)', background: 'var(--k-surface)',
+        border: '1px solid var(--k-rule)', borderRadius: 'var(--k-radius-sm)', padding: '6px 8px',
+      }}>
+        {value}
+      </code>
+    </div>
+  )
+}
+
 /** Multi-select category filter chip. Modern is colour-coded per category;
  *  minimal is monochrome (accent fill + × when selected) — a per-skin leaf. */
 export function CategoryChip({ label, cat, active, onClick }: {

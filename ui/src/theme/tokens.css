@@ -88,6 +88,8 @@
   --k-switch-knob-on: var(--toggle-knob);
   --k-switch-knob-off: var(--toggle-knob);
   --k-pill-bg: var(--bg-surface-2);
+  --k-notice-bg: var(--accent-glow);
+  --k-notice-border: var(--border-focus);
 
   /* chat chrome */
   --k-chat-pad: 0;
@@ -174,6 +176,8 @@
   --k-switch-knob-on: var(--bg);
   --k-switch-knob-off: var(--fg);
   --k-pill-bg: transparent;
+  --k-notice-bg: transparent;
+  --k-notice-border: var(--muted);
 
   /* chat chrome — airier, centered reading column, divider rules (no bg bars) */
   --k-chat-pad: var(--space-lg);

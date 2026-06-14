@@ -241,38 +241,3 @@ def re_encrypt_all_screenshots(old_key: bytes, new_key: bytes) -> tuple[int, int
             failed += 1
     return success, failed
 
-
-# ── DB helpers ────────────────────────────────────────────────────────────────
-
-async def mark_captures_encrypted() -> int:
-    """Append ``.enc`` to every ``captures.file_path`` that ends in ``.jpg``.
-
-    Run after :func:`encrypt_existing_screenshots`. Returns the row count.
-    """
-    import aiosqlite
-
-    from brn_daemon.db import get_db_path
-    async with aiosqlite.connect(get_db_path()) as conn:
-        cur = await conn.execute(
-            "UPDATE captures SET file_path = file_path || '.enc' "
-            "WHERE file_path LIKE '%.jpg'",
-        )
-        await conn.commit()
-        return cur.rowcount or 0
-
-
-async def mark_captures_decrypted() -> int:
-    """Strip trailing ``.enc`` from every ``captures.file_path``.
-
-    Run after :func:`decrypt_all_screenshots`. Returns the row count.
-    """
-    import aiosqlite
-
-    from brn_daemon.db import get_db_path
-    async with aiosqlite.connect(get_db_path()) as conn:
-        cur = await conn.execute(
-            "UPDATE captures SET file_path = SUBSTR(file_path, 1, LENGTH(file_path) - 4) "
-            "WHERE file_path LIKE '%.jpg.enc'",
-        )
-        await conn.commit()
-        return cur.rowcount or 0

@@ -23,7 +23,7 @@ from brn_daemon.config import (
     set_plugin_env_value,
 )
 from brn_daemon.context import AppContext, get_context
-from brn_daemon.db import get_conn, get_db_path
+from brn_daemon.db import get_conn
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -251,7 +251,7 @@ async def _fetch_rule(conn: aiosqlite.Connection, rule_id: int) -> aiosqlite.Row
 
 @router.get("/plugins", response_model=list[PluginOut])
 async def list_plugins():
-    async with aiosqlite.connect(get_db_path()) as conn:
+    async with get_conn() as conn:
         conn.row_factory = aiosqlite.Row
         cur = await conn.execute("SELECT * FROM plugins ORDER BY created_at ASC")
         rows = await cur.fetchall()
@@ -261,7 +261,7 @@ async def list_plugins():
 @router.post("/plugins", response_model=PluginOut, status_code=201)
 async def create_plugin(body: PluginCreate):
     env_keys = sorted(body.env.keys())
-    async with aiosqlite.connect(get_db_path()) as conn:
+    async with get_conn() as conn:
         conn.row_factory = aiosqlite.Row
         try:
             cur = await conn.execute(
@@ -286,7 +286,7 @@ async def create_plugin(body: PluginCreate):
 
 @router.put("/plugins/{plugin_id}", response_model=PluginOut)
 async def update_plugin(plugin_id: int, body: PluginUpdate, orch=Depends(get_orchestrator)):
-    async with aiosqlite.connect(get_db_path()) as conn:
+    async with get_conn() as conn:
         conn.row_factory = aiosqlite.Row
         old_row = await _fetch_plugin(conn, plugin_id)
         new_command = body.command if body.command is not None else old_row["command"]
@@ -342,7 +342,7 @@ async def delete_plugin(plugin_id: int, orch=Depends(get_orchestrator)):
 @router.get("/plugins/{plugin_id}/tools", response_model=list[ToolOut])
 async def list_plugin_tools(plugin_id: int, orch=Depends(get_orchestrator)):
     """Connect to the MCP server and list its tools. Used by the UI when authoring rules."""
-    async with aiosqlite.connect(get_db_path()) as conn:
+    async with get_conn() as conn:
         conn.row_factory = aiosqlite.Row
         row = await _fetch_plugin(conn, plugin_id)
     try:
@@ -355,7 +355,7 @@ async def list_plugin_tools(plugin_id: int, orch=Depends(get_orchestrator)):
         )
         # Mark plugin healthy.
         now = datetime.now(UTC).isoformat()
-        async with aiosqlite.connect(get_db_path()) as conn:
+        async with get_conn() as conn:
             await conn.execute(
                 "UPDATE plugins SET last_health_at = ?, last_health_ok = 1, last_health_error = NULL WHERE id = ?",
                 (now, plugin_id),
@@ -364,7 +364,7 @@ async def list_plugin_tools(plugin_id: int, orch=Depends(get_orchestrator)):
         return [ToolOut(**t) for t in tools]
     except Exception as exc:
         now = datetime.now(UTC).isoformat()
-        async with aiosqlite.connect(get_db_path()) as conn:
+        async with get_conn() as conn:
             await conn.execute(
                 "UPDATE plugins SET last_health_at = ?, last_health_ok = 0, last_health_error = ? WHERE id = ?",
                 (now, str(exc), plugin_id),
@@ -384,7 +384,7 @@ async def list_rules(plugin_id: int | None = None):
         sql += " WHERE plugin_id = ?"
         params = (plugin_id,)
     sql += " ORDER BY created_at ASC"
-    async with aiosqlite.connect(get_db_path()) as conn:
+    async with get_conn() as conn:
         conn.row_factory = aiosqlite.Row
         cur = await conn.execute(sql, params)
         rows = await cur.fetchall()
@@ -393,7 +393,7 @@ async def list_rules(plugin_id: int | None = None):
 
 @router.post("/plugin-rules", response_model=RuleOut, status_code=201)
 async def create_rule(body: RuleCreate, orch=Depends(get_orchestrator)):
-    async with aiosqlite.connect(get_db_path()) as conn:
+    async with get_conn() as conn:
         conn.row_factory = aiosqlite.Row
         plugin_row = await _fetch_plugin(conn, body.plugin_id)
         cur = await conn.execute(
@@ -419,7 +419,7 @@ async def create_rule(body: RuleCreate, orch=Depends(get_orchestrator)):
     except Exception as exc:
         logger.info("Rule %s saved but parse failed: %s", rule_id, exc)
 
-    async with aiosqlite.connect(get_db_path()) as conn:
+    async with get_conn() as conn:
         conn.row_factory = aiosqlite.Row
         row = await _fetch_rule(conn, rule_id)
     return _row_to_rule(row)
@@ -427,7 +427,7 @@ async def create_rule(body: RuleCreate, orch=Depends(get_orchestrator)):
 
 @router.put("/plugin-rules/{rule_id}", response_model=RuleOut)
 async def update_rule(rule_id: int, body: RuleUpdate, orch=Depends(get_orchestrator)):
-    async with aiosqlite.connect(get_db_path()) as conn:
+    async with get_conn() as conn:
         conn.row_factory = aiosqlite.Row
         rule = await _fetch_rule(conn, rule_id)
         plugin = await _fetch_plugin(conn, rule["plugin_id"])
@@ -462,7 +462,7 @@ async def update_rule(rule_id: int, body: RuleUpdate, orch=Depends(get_orchestra
     else:
         await orch.refresh_rules()
 
-    async with aiosqlite.connect(get_db_path()) as conn:
+    async with get_conn() as conn:
         conn.row_factory = aiosqlite.Row
         row = await _fetch_rule(conn, rule_id)
     return _row_to_rule(row)
@@ -480,7 +480,7 @@ async def delete_rule(rule_id: int, orch=Depends(get_orchestrator)):
 
 @router.post("/plugin-rules/{rule_id}/reparse", response_model=RuleOut)
 async def reparse_rule(rule_id: int, orch=Depends(get_orchestrator)):
-    async with aiosqlite.connect(get_db_path()) as conn:
+    async with get_conn() as conn:
         conn.row_factory = aiosqlite.Row
         rule = await _fetch_rule(conn, rule_id)
         plugin = await _fetch_plugin(conn, rule["plugin_id"])
@@ -497,7 +497,7 @@ async def reparse_rule(rule_id: int, orch=Depends(get_orchestrator)):
     except Exception as exc:
         # Status is already persisted as 'error' inside reparse_rule.
         logger.info("Re-parse rule %s failed: %s", rule_id, exc)
-    async with aiosqlite.connect(get_db_path()) as conn:
+    async with get_conn() as conn:
         conn.row_factory = aiosqlite.Row
         row = await _fetch_rule(conn, rule_id)
     return _row_to_rule(row)
@@ -513,7 +513,7 @@ async def run_rule(rule_id: int, orch=Depends(get_orchestrator)):
 
 @router.get("/plugin-rules/{rule_id}/executions", response_model=list[ExecutionOut])
 async def list_executions(rule_id: int, limit: int = 50):
-    async with aiosqlite.connect(get_db_path()) as conn:
+    async with get_conn() as conn:
         conn.row_factory = aiosqlite.Row
         await _fetch_rule(conn, rule_id)
         cur = await conn.execute(

@@ -18,12 +18,11 @@ from brn_daemon.encryption import (
     initialize_encryption,
     is_initialised,
     load_encryption_state,
-    mark_captures_decrypted,
-    mark_captures_encrypted,
     re_encrypt_all_screenshots,
     save_encryption_state,
     verify_password,
 )
+from brn_daemon.repository import mark_captures_decrypted, mark_captures_encrypted
 
 
 def test_derive_key_produces_32_bytes(tmp_home):

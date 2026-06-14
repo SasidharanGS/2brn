@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from brn_daemon.context import AppContext, get_context
-from brn_daemon.db import get_db_path
+from brn_daemon.db import get_conn
 
 router = APIRouter()
 
@@ -23,7 +23,7 @@ class BlogPostUpdateRequest(BaseModel):
 
 @router.get("/blog/{date}", response_model=BlogPostResponse)
 async def get_blog_post(date: str):
-    async with aiosqlite.connect(get_db_path()) as conn:
+    async with get_conn() as conn:
         conn.row_factory = aiosqlite.Row
         cur = await conn.execute(
             "SELECT date, content, generated_at, edited_by_user FROM blog_posts WHERE date = ?",
@@ -63,7 +63,7 @@ async def generate_blog_post(date: str, ctx: AppContext = Depends(get_context)):
 @router.put("/blog/{date}")
 async def update_blog_post(date: str, body: BlogPostUpdateRequest):
     now = datetime.now(UTC).isoformat()
-    async with aiosqlite.connect(get_db_path()) as conn:
+    async with get_conn() as conn:
         await conn.execute(
             """INSERT INTO blog_posts (date, content, generated_at, edited_by_user)
                VALUES (?, ?, ?, 1)

@@ -1,14 +1,12 @@
 import logging
 from datetime import date
 
-import aiosqlite
-
 from brn_daemon.content_generator import (
     fetch_day_summaries,
     load_active_instruction_bodies,
     upsert_generated_content,
 )
-from brn_daemon.db import get_db_path
+from brn_daemon.db import get_conn
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +49,7 @@ class JournalGenerator:
         """Generate a full-day journal for target_date. Returns content or None if skipped."""
         date_str = target_date.isoformat()
 
-        async with aiosqlite.connect(get_db_path()) as conn:
+        async with get_conn() as conn:
             cur = await conn.execute(
                 "SELECT id, edited_by_user FROM journals WHERE date = ?", (date_str,)
             )

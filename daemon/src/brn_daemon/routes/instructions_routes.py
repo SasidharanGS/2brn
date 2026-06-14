@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from brn_daemon.context import AppContext, get_context
-from brn_daemon.db import get_db_path
+from brn_daemon.db import get_conn
 
 router = APIRouter()
 
@@ -32,7 +32,7 @@ class UpdateInstructionRequest(BaseModel):
 
 @router.get("/instructions", response_model=list[UserInstruction])
 async def list_instructions():
-    async with aiosqlite.connect(get_db_path()) as conn:
+    async with get_conn() as conn:
         conn.row_factory = aiosqlite.Row
         cur = await conn.execute(
             "SELECT id, title, body, enabled, created_at FROM user_instructions ORDER BY created_at ASC"
@@ -53,7 +53,7 @@ async def list_instructions():
 @router.post("/instructions", response_model=UserInstruction, status_code=201)
 async def create_instruction(body: CreateInstructionRequest, ctx: AppContext = Depends(get_context)):
     now = datetime.now(UTC).isoformat()
-    async with aiosqlite.connect(get_db_path()) as conn:
+    async with get_conn() as conn:
         cur = await conn.execute(
             "INSERT INTO user_instructions (title, body, enabled, created_at) VALUES (?, ?, ?, ?)",
             (body.title, body.body, int(body.enabled), now),
@@ -68,7 +68,7 @@ async def create_instruction(body: CreateInstructionRequest, ctx: AppContext = D
 
 @router.put("/instructions/{instruction_id}", response_model=UserInstruction)
 async def update_instruction(instruction_id: int, body: UpdateInstructionRequest, ctx: AppContext = Depends(get_context)):
-    async with aiosqlite.connect(get_db_path()) as conn:
+    async with get_conn() as conn:
         conn.row_factory = aiosqlite.Row
         cur = await conn.execute(
             "SELECT id, title, body, enabled, created_at FROM user_instructions WHERE id = ?",
@@ -99,7 +99,7 @@ async def update_instruction(instruction_id: int, body: UpdateInstructionRequest
 
 @router.delete("/instructions/{instruction_id}", status_code=204)
 async def delete_instruction(instruction_id: int, ctx: AppContext = Depends(get_context)):
-    async with aiosqlite.connect(get_db_path()) as conn:
+    async with get_conn() as conn:
         cur = await conn.execute(
             "DELETE FROM user_instructions WHERE id = ?", (instruction_id,)
         )

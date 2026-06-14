@@ -7,7 +7,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel
 
 from brn_daemon.context import AppContext, get_context
-from brn_daemon.db import get_db_path
+from brn_daemon.db import get_conn
 from brn_daemon.encryption import ENCRYPTED_EXT, decrypt_bytes
 from brn_daemon.timeutil import local_day_bounds_utc
 
@@ -31,7 +31,7 @@ async def get_captures(date: str = Query(..., description="YYYY-MM-DD")):
         lo, hi = local_day_bounds_utc(date)
     except ValueError:
         raise HTTPException(400, f"Invalid date '{date}', expected YYYY-MM-DD")
-    async with aiosqlite.connect(get_db_path()) as conn:
+    async with get_conn() as conn:
         conn.row_factory = aiosqlite.Row
         # Range bounds (not date(captured_at)) so idx_captures_captured_at is used,
         # and local-day aware to match the rest of the app (see timeutil).
@@ -50,7 +50,7 @@ async def get_captures(date: str = Query(..., description="YYYY-MM-DD")):
 @router.get("/captures/{capture_id}/image")
 async def get_capture_image(capture_id: int, ctx: AppContext = Depends(get_context)) -> Response:
     """Stream the JPEG bytes for a capture. Decrypts on the fly when the file is encrypted."""
-    async with aiosqlite.connect(get_db_path()) as conn:
+    async with get_conn() as conn:
         cur = await conn.execute(
             "SELECT file_path FROM captures WHERE id = ?", (capture_id,)
         )

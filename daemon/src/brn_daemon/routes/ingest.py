@@ -15,7 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from brn_daemon.context import AppContext, get_context
-from brn_daemon.db import get_conn, get_db_path
+from brn_daemon.db import get_conn
 from brn_daemon.timeutil import utc_iso_to_local_date, utc_now_iso
 
 logger = logging.getLogger(__name__)
@@ -68,7 +68,7 @@ async def _try_embed_note(
             "notebook": source_url or "",
         }
         await chroma.add_note(doc_id=doc_id, text=text, metadata=metadata, embedding=embedding)
-        async with aiosqlite.connect(get_db_path()) as conn:
+        async with get_conn() as conn:
             await conn.execute(
                 "UPDATE shared_notes SET chroma_id = ?, embedded = 1 WHERE id = ?",
                 (doc_id, note_id),
@@ -106,7 +106,7 @@ async def ingest_note(body: NoteIngestRequest, ctx: AppContext = Depends(get_con
 @router.get("/ingest/notes", response_model=list[SharedNote])
 async def list_notes(limit: int = 50):
     limit = max(1, min(limit, 200))
-    async with aiosqlite.connect(get_db_path()) as conn:
+    async with get_conn() as conn:
         conn.row_factory = aiosqlite.Row
         cur = await conn.execute(
             "SELECT id, title, text, source_url, tags, source, embedded, created_at "

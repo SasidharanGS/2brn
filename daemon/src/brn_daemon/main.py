@@ -117,7 +117,7 @@ async def lifespan(app: FastAPI):
 
     # Migrate plugin secrets from legacy "2brn" keychain service to "2brn-plugins"
     from brn_daemon.config import migrate_plugin_keychain_entries as _migrate_keychain
-    async with aiosqlite.connect(get_db_path()) as _mig_conn:
+    async with get_conn() as _mig_conn:
         _mig_conn.row_factory = aiosqlite.Row
         _mig_cur = await _mig_conn.execute(
             "SELECT name, env_keys FROM plugins WHERE env_keys != '[]'"
@@ -289,7 +289,7 @@ async def _startup_backfill_journal(
     if now.hour < schedule.hour or (now.hour == schedule.hour and now.minute < schedule.minute):
         return
     today = dt_date.today()
-    async with aiosqlite.connect(get_db_path()) as conn:
+    async with get_conn() as conn:
         cur = await conn.execute("SELECT id FROM journals WHERE date = ?", (today.isoformat(),))
         if await cur.fetchone():
             return
@@ -313,7 +313,7 @@ async def _startup_backfill_blog(
     if now.hour < schedule.hour or (now.hour == schedule.hour and now.minute < schedule.minute):
         return
     today = dt_date.today()
-    async with aiosqlite.connect(get_db_path()) as conn:
+    async with get_conn() as conn:
         cur = await conn.execute("SELECT id FROM blog_posts WHERE date = ?", (today.isoformat(),))
         if await cur.fetchone():
             return
@@ -517,7 +517,7 @@ async def _capture_loop(ctx: AppContext, cfg, inference_queue: InferenceQueue):
 
             # Refresh exclusions from DB every 30s instead of every tick
             if (now - exclusion_cache_time) >= EXCLUSION_CACHE_TTL or ctx.exclusions_dirty:
-                async with aiosqlite.connect(get_db_path()) as conn:
+                async with get_conn() as conn:
                     cur = await conn.execute("SELECT app_name FROM app_exclusions")
                     excluded_apps = {row[0] for row in await cur.fetchall()}
                 exclusion_cache_time = now

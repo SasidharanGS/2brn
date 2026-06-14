@@ -10,7 +10,7 @@ import aiosqlite
 from fastapi import APIRouter, HTTPException, Query
 
 from brn_daemon.config import load_config
-from brn_daemon.db import get_db_path
+from brn_daemon.db import get_conn
 from brn_daemon.sessions import (
     UNCLASSIFIED,
     Block,
@@ -355,7 +355,7 @@ async def insights_summary(
     base_lo, base_hi, _n_periods, base_label = _baseline_range(date, period)
     policy = await _session_policy()
 
-    async with aiosqlite.connect(get_db_path()) as conn:
+    async with get_conn() as conn:
         conn.row_factory = aiosqlite.Row
         blocks = await _blocks_for_range(conn, lo, hi, policy)
         observed = compute_totals(blocks)["observed_seconds"]

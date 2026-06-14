@@ -20,7 +20,7 @@ from brn_daemon.config import (
     set_screenshot_password,
 )
 from brn_daemon.context import AppContext, get_context
-from brn_daemon.db import get_db_path
+from brn_daemon.db import get_conn
 from brn_daemon.encryption import (
     decrypt_all_screenshots,
     delete_encryption_state,
@@ -28,11 +28,10 @@ from brn_daemon.encryption import (
     initialize_encryption,
     is_initialised,
     load_encryption_state,
-    mark_captures_decrypted,
-    mark_captures_encrypted,
     re_encrypt_all_screenshots,
     verify_password,
 )
+from brn_daemon.repository import mark_captures_decrypted, mark_captures_encrypted
 from brn_daemon.services import rebuild_ai_clients
 
 router = APIRouter()
@@ -248,7 +247,7 @@ async def set_paused(paused: bool, ctx: AppContext = Depends(get_context)):
 
 @router.get("/settings/exclusions")
 async def list_exclusions():
-    async with aiosqlite.connect(get_db_path()) as conn:
+    async with get_conn() as conn:
         conn.row_factory = aiosqlite.Row
         cur = await conn.execute("SELECT app_name, added_at FROM app_exclusions ORDER BY app_name")
         rows = await cur.fetchall()
@@ -257,7 +256,7 @@ async def list_exclusions():
 
 @router.post("/settings/exclusions")
 async def add_exclusion(body: ExclusionRequest, ctx: AppContext = Depends(get_context)):
-    async with aiosqlite.connect(get_db_path()) as conn:
+    async with get_conn() as conn:
         try:
             await conn.execute("INSERT INTO app_exclusions (app_name) VALUES (?)", (body.app_name,))
             await conn.commit()
@@ -269,7 +268,7 @@ async def add_exclusion(body: ExclusionRequest, ctx: AppContext = Depends(get_co
 
 @router.delete("/settings/exclusions/{app_name}")
 async def remove_exclusion(app_name: str, ctx: AppContext = Depends(get_context)):
-    async with aiosqlite.connect(get_db_path()) as conn:
+    async with get_conn() as conn:
         cur = await conn.execute(
             "DELETE FROM app_exclusions WHERE app_name = ?", (app_name,)
         )
@@ -294,7 +293,7 @@ async def resync_chroma(ctx: AppContext = Depends(get_context)):
             chroma = ChromaStore()
         service = EmbeddingService(embed_client=embed_client, chroma_store=chroma)
         synced = 0
-        async with aiosqlite.connect(get_db_path()) as conn:
+        async with get_conn() as conn:
             conn.row_factory = aiosqlite.Row
             cur = await conn.execute(
                 """SELECT a.id, a.summary, a.task_category, a.productivity_state,
@@ -334,7 +333,7 @@ async def resync_chroma(ctx: AppContext = Depends(get_context)):
 @router.get("/settings/chroma-status")
 async def chroma_status(ctx: AppContext = Depends(get_context)):
     """Return counts of total activities vs embedded ones."""
-    async with aiosqlite.connect(get_db_path()) as conn:
+    async with get_conn() as conn:
         cur = await conn.execute(
             "SELECT COUNT(*) FROM activities WHERE summary IS NOT NULL AND summary != ''"
         )

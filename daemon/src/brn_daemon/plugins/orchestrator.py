@@ -23,7 +23,7 @@ from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
 from brn_daemon.config import get_plugin_env_value
-from brn_daemon.db import get_db_path
+from brn_daemon.db import get_conn
 from brn_daemon.plugins.events import EventBus, EventNames
 from brn_daemon.plugins.mcp_client import MCPClient, MCPClientPool, MCPError, MCPTimeoutError
 from brn_daemon.plugins.rule_parser import (
@@ -97,7 +97,7 @@ class PluginOrchestrator:
     # ---- scheduled rules --------------------------------------------------
 
     async def _register_scheduled_rules(self) -> None:
-        async with aiosqlite.connect(get_db_path()) as conn:
+        async with get_conn() as conn:
             conn.row_factory = aiosqlite.Row
             cur = await conn.execute(
                 """SELECT r.id, r.trigger
@@ -142,7 +142,7 @@ class PluginOrchestrator:
     # ---- DB loaders -------------------------------------------------------
 
     async def _load_rules_for_trigger(self, trigger: str) -> list[dict[str, Any]]:
-        async with aiosqlite.connect(get_db_path()) as conn:
+        async with get_conn() as conn:
             conn.row_factory = aiosqlite.Row
             cur = await conn.execute(
                 """SELECT r.id, r.plugin_id, r.tool_name, r.args_template,
@@ -156,7 +156,7 @@ class PluginOrchestrator:
         return [dict(r) for r in rows]
 
     async def _load_rule(self, rule_id: int) -> dict[str, Any] | None:
-        async with aiosqlite.connect(get_db_path()) as conn:
+        async with get_conn() as conn:
             conn.row_factory = aiosqlite.Row
             cur = await conn.execute(
                 """SELECT r.id, r.plugin_id, r.tool_name, r.args_template, r.trigger,
@@ -241,7 +241,7 @@ class PluginOrchestrator:
         error: str | None = None,
     ) -> None:
         ended = datetime.now(UTC).isoformat()
-        async with aiosqlite.connect(get_db_path()) as conn:
+        async with get_conn() as conn:
             await conn.execute(
                 """INSERT INTO plugin_rule_executions
                    (rule_id, started_at, ended_at, status, error, payload, result)
@@ -301,7 +301,7 @@ class PluginOrchestrator:
         try:
             parsed = await parse_rule(rule_text, tools, self.chat_fn)
             validate_trigger(parsed.trigger)
-            async with aiosqlite.connect(get_db_path()) as conn:
+            async with get_conn() as conn:
                 await conn.execute(
                     """UPDATE plugin_rules
                        SET trigger = ?, tool_name = ?, args_template = ?,
@@ -319,7 +319,7 @@ class PluginOrchestrator:
             await self.refresh_rules()
             return parsed
         except RuleParseError as exc:
-            async with aiosqlite.connect(get_db_path()) as conn:
+            async with get_conn() as conn:
                 await conn.execute(
                     """UPDATE plugin_rules
                        SET parse_status = 'error', parse_error = ?,
@@ -340,7 +340,7 @@ class PluginOrchestrator:
         """
         base = {"date": date_str, "time": time_str}
         if trigger == EventNames.JOURNAL_GENERATED:
-            async with aiosqlite.connect(get_db_path()) as conn:
+            async with get_conn() as conn:
                 conn.row_factory = aiosqlite.Row
                 cur = await conn.execute(
                     "SELECT content FROM journals WHERE date = ? ORDER BY generated_at DESC LIMIT 1",
@@ -349,7 +349,7 @@ class PluginOrchestrator:
                 row = await cur.fetchone()
             base["journal_content"] = row["content"] if row and row["content"] else ""
         elif trigger == EventNames.BLOG_GENERATED:
-            async with aiosqlite.connect(get_db_path()) as conn:
+            async with get_conn() as conn:
                 conn.row_factory = aiosqlite.Row
                 cur = await conn.execute(
                     "SELECT content FROM blog_posts WHERE date = ? ORDER BY generated_at DESC LIMIT 1",
@@ -358,7 +358,7 @@ class PluginOrchestrator:
                 row = await cur.fetchone()
             base["blog_content"] = row["content"] if row and row["content"] else ""
         elif trigger == EventNames.CAPTURE_INFERRED:
-            async with aiosqlite.connect(get_db_path()) as conn:
+            async with get_conn() as conn:
                 conn.row_factory = aiosqlite.Row
                 cur = await conn.execute(
                     """SELECT a.summary, a.task_category, a.productivity_state,

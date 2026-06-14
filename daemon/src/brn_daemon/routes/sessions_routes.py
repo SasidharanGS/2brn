@@ -7,7 +7,7 @@ import aiosqlite
 from fastapi import APIRouter, HTTPException, Query
 
 from brn_daemon.config import load_config
-from brn_daemon.db import get_db_path
+from brn_daemon.db import get_conn
 from brn_daemon.sessions import SessionPolicy, compute_totals, fetch_samples, sessionize
 from brn_daemon.timeutil import local_day_bounds_utc
 
@@ -33,7 +33,7 @@ async def get_sessions(date: str = Query(..., description="Local day, YYYY-MM-DD
         gap_split_seconds=max(180, 3 * interval),
     )
 
-    async with aiosqlite.connect(get_db_path()) as conn:
+    async with get_conn() as conn:
         conn.row_factory = aiosqlite.Row
         samples = await fetch_samples(conn, lo, hi)
 

@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from brn_daemon.context import AppContext, get_context
-from brn_daemon.db import get_db_path
+from brn_daemon.db import get_conn
 
 router = APIRouter()
 
@@ -42,7 +42,7 @@ async def get_activities(
         conditions.append("productivity_state = ?")
         params.append(productivity_state)
     where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
-    async with aiosqlite.connect(get_db_path()) as conn:
+    async with get_conn() as conn:
         conn.row_factory = aiosqlite.Row
         cur = await conn.execute(
             f"SELECT id, capture_id, started_at, summary, tags, "
@@ -74,7 +74,7 @@ async def get_activity_dates(month: str = Query(..., description="YYYY-MM")):
     # for any month under lexicographic comparison.
     lo = f"{month}-01T00:00:00"
     hi = f"{month}-31T23:59:59.999999"
-    async with aiosqlite.connect(get_db_path()) as conn:
+    async with get_conn() as conn:
         cur = await conn.execute(
             "SELECT DISTINCT substr(started_at, 1, 10) AS d FROM activities "
             "WHERE started_at >= ? AND started_at <= ? ORDER BY d",
@@ -120,7 +120,7 @@ async def override_activity(activity_id: int, body: OverrideRequest):
     from brn_daemon.inference import VALID_CATEGORIES, VALID_STATES
     if body.task_category not in VALID_CATEGORIES or body.productivity_state not in VALID_STATES:
         raise HTTPException(400, "Invalid category or state")
-    async with aiosqlite.connect(get_db_path()) as conn:
+    async with get_conn() as conn:
         cur = await conn.execute(
             "UPDATE activities SET task_category = ?, productivity_state = ?, "
             "category_overridden_by_user = 1 WHERE id = ?",

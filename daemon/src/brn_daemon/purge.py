@@ -5,9 +5,7 @@ import time
 from datetime import UTC, datetime
 from pathlib import Path
 
-import aiosqlite
-
-from brn_daemon.db import get_brn_home, get_db_path
+from brn_daemon.db import get_brn_home, get_conn
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +36,7 @@ async def purge_old_captures(months: int = 12, chroma_store=None) -> int:
     cutoff_str = cutoff.strftime("%Y-%m-%dT%H:%M:%S.%f")
     files_deleted = 0
 
-    async with aiosqlite.connect(get_db_path()) as conn:
+    async with get_conn() as conn:
         cur = await conn.execute(
             "SELECT id, file_path FROM captures WHERE captured_at < ?",
             (cutoff_str,),
@@ -134,7 +132,7 @@ async def sweep_orphaned_screenshots(min_age_seconds: int = 3600) -> int:
     save and DB insert. Only files older than ``min_age_seconds`` are touched
     so an in-flight save can never be swept.
     """
-    async with aiosqlite.connect(get_db_path()) as conn:
+    async with get_conn() as conn:
         cur = await conn.execute(
             "SELECT file_path FROM captures WHERE file_path IS NOT NULL"
         )

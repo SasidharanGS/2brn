@@ -160,7 +160,6 @@ class InferenceQueue:
 
     async def _load_instructions(self) -> list[str]:
         """Return active instruction bodies, using a 30-second in-memory cache."""
-        import aiosqlite
         loop = asyncio.get_running_loop()
         now = loop.time()
         if (
@@ -169,7 +168,7 @@ class InferenceQueue:
         ):
             return self._instructions_cache
         try:
-            async with aiosqlite.connect(self._db_path_fn()) as conn:
+            async with get_conn(self._db_path_fn()) as conn:
                 cur = await conn.execute(
                     "SELECT body FROM user_instructions WHERE enabled = 1 ORDER BY created_at ASC"
                 )
@@ -187,9 +186,8 @@ class InferenceQueue:
 
     async def _lookup_captured_at(self, capture_id: int) -> str | None:
         """Return the capture's own timestamp, or None if the row is gone."""
-        import aiosqlite
         try:
-            async with aiosqlite.connect(self._db_path_fn()) as conn:
+            async with get_conn(self._db_path_fn()) as conn:
                 cur = await conn.execute(
                     "SELECT captured_at FROM captures WHERE id = ?", (capture_id,)
                 )
@@ -221,7 +219,6 @@ class InferenceQueue:
         classified — see _backfill_sparse for the per-metadata dedup that
         keeps this to ~1 LLM call per distinct (app, window title).
         """
-        import aiosqlite
         now = datetime.now(UTC)
         since = (now - timedelta(days=days)).strftime(DB_TS_FMT)
         until = (now - timedelta(minutes=grace_minutes)).strftime(DB_TS_FMT)
@@ -234,7 +231,7 @@ class InferenceQueue:
               AND length(trim(COALESCE(c.ocr_text, ''))) >= 20
               AND c.captured_at >= ? AND c.captured_at < ?
         """
-        async with aiosqlite.connect(self._db_path_fn()) as conn:
+        async with get_conn(self._db_path_fn()) as conn:
             cur = await conn.execute(f"SELECT COUNT(*) {candidates_sql}", (since, until))
             row = await cur.fetchone()
             total = row[0] if row else 0
@@ -272,11 +269,10 @@ class InferenceQueue:
         ``sparse_deferred``: a later run finds the landed activity and clones
         them. Captures with neither app nor title are skipped entirely.
         """
-        import aiosqlite
         cloned = 0
         rep_queued = 0
         deferred = 0
-        async with aiosqlite.connect(self._db_path_fn()) as conn:
+        async with get_conn(self._db_path_fn()) as conn:
             cur = await conn.execute(
                 """SELECT c.id, c.captured_at,
                           COALESCE(c.app_name, '') AS app_name,
@@ -335,7 +331,7 @@ class InferenceQueue:
         healed = 0
         BATCH = 200
         while True:
-            async with aiosqlite.connect(self._db_path_fn()) as conn:
+            async with get_conn(self._db_path_fn()) as conn:
                 conn.row_factory = aiosqlite.Row
                 cur = await conn.execute(
                     """SELECT a.id, a.summary, a.tags, a.task_category, a.productivity_state,

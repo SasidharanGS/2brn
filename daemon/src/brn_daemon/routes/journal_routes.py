@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from brn_daemon.context import AppContext, get_context
-from brn_daemon.db import get_db_path
+from brn_daemon.db import get_conn
 
 router = APIRouter()
 
@@ -20,7 +20,7 @@ class JournalUpdateRequest(BaseModel):
 
 @router.get("/journal/{date}", response_model=JournalResponse)
 async def get_journal(date: str):
-    async with aiosqlite.connect(get_db_path()) as conn:
+    async with get_conn() as conn:
         conn.row_factory = aiosqlite.Row
         cur = await conn.execute(
             "SELECT date, content, generated_at, edited_by_user FROM journals WHERE date = ?",
@@ -58,7 +58,7 @@ async def generate_journal(date: str, ctx: AppContext = Depends(get_context)):
 @router.put("/journal/{date}")
 async def update_journal(date: str, body: JournalUpdateRequest):
     from datetime import datetime
-    async with aiosqlite.connect(get_db_path()) as conn:
+    async with get_conn() as conn:
         await conn.execute(
             """INSERT INTO journals (date, content, generated_at, edited_by_user)
                VALUES (?, ?, ?, 1)

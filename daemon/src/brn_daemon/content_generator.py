@@ -6,9 +6,7 @@ This module provides them as standalone async functions to eliminate duplication
 import logging
 from datetime import UTC, datetime
 
-import aiosqlite
-
-from brn_daemon.db import get_db_path
+from brn_daemon.db import get_conn
 from brn_daemon.timeutil import local_day_bounds_utc
 
 logger = logging.getLogger(__name__)
@@ -17,7 +15,7 @@ logger = logging.getLogger(__name__)
 async def load_active_instruction_bodies() -> list[str]:
     """Return the body text of all enabled user instructions, ordered by creation."""
     try:
-        async with aiosqlite.connect(get_db_path()) as conn:
+        async with get_conn() as conn:
             cur = await conn.execute(
                 "SELECT body FROM user_instructions WHERE enabled = 1 ORDER BY created_at ASC"
             )
@@ -35,7 +33,7 @@ async def fetch_day_summaries(date_str: str) -> list[str]:
     bounds are the plain calendar-day strings.
     """
     lo, hi = local_day_bounds_utc(date_str)
-    async with aiosqlite.connect(get_db_path()) as conn:
+    async with get_conn() as conn:
         cur = await conn.execute(
             "SELECT summary FROM activities "
             "WHERE started_at >= ? AND started_at <= ? "
@@ -59,7 +57,7 @@ async def upsert_generated_content(
     edited_by_user INTEGER).
     """
     now = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S.%f")
-    async with aiosqlite.connect(get_db_path()) as conn:
+    async with get_conn() as conn:
         await conn.execute(
             f"""INSERT INTO {table} (date, content, generated_at, edited_by_user)
                 VALUES (?, ?, ?, 0)

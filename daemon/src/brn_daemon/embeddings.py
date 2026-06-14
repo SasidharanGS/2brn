@@ -1,11 +1,10 @@
 import asyncio
 import logging
 
-import aiosqlite
 import chromadb
 from chromadb.config import Settings
 
-from brn_daemon.db import get_brn_home, get_db_path
+from brn_daemon.db import get_brn_home, get_conn
 
 logger = logging.getLogger(__name__)
 
@@ -129,7 +128,7 @@ class EmbeddingService:
             embedding = await self._embed_client.embed(summary)
             doc_id = f"activity-{activity_id}"
             await self._store.add(doc_id=doc_id, text=summary, metadata=metadata, embedding=embedding)
-            async with aiosqlite.connect(get_db_path()) as conn:
+            async with get_conn() as conn:
                 await conn.execute(
                     "UPDATE activities SET chroma_id = ? WHERE id = ?",
                     (doc_id, activity_id),
@@ -154,7 +153,7 @@ class EmbeddingService:
         except Exception:
             logger.exception("Batch embed failed for %d activities", len(items))
             return 0
-        async with aiosqlite.connect(get_db_path()) as conn:
+        async with get_conn() as conn:
             for it, emb in zip(items, embeddings):
                 doc_id = f"activity-{it['activity_id']}"
                 await self._store.add(

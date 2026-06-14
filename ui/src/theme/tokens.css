@@ -87,6 +87,16 @@
   --k-switch-off-border: var(--border-2);
   --k-switch-knob-on: var(--toggle-knob);
   --k-switch-knob-off: var(--toggle-knob);
+  --k-pill-bg: var(--bg-surface-2);
+
+  /* chat chrome */
+  --k-chat-pad: 0;
+  --k-chat-bar-pad: 10px 20px;
+  --k-chat-bar-bg: var(--bg-surface);
+  --k-chat-scroll-pad: 20px 24px;
+  --k-chat-msg-gap: 1rem;
+  --k-chat-measure: none;
+  --k-chat-msg-align: 0;
 }
 
 :root[data-skin='minimal'] {
@@ -163,4 +173,14 @@
   --k-switch-off-border: var(--rule);
   --k-switch-knob-on: var(--bg);
   --k-switch-knob-off: var(--fg);
+  --k-pill-bg: transparent;
+
+  /* chat chrome — airier, centered reading column, divider rules (no bg bars) */
+  --k-chat-pad: var(--space-lg);
+  --k-chat-bar-pad: 0 0 var(--space-md);
+  --k-chat-bar-bg: transparent;
+  --k-chat-scroll-pad: var(--space-lg) 0;
+  --k-chat-msg-gap: var(--space-lg);
+  --k-chat-measure: var(--measure);
+  --k-chat-msg-align: auto;
 }

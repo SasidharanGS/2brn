@@ -160,3 +160,57 @@
   line-height: 1.7;
   white-space: pre-wrap;
 }
+
+/* ── Chat ─────────────────────────────────────────────────────────────────────
+   One tree; the per-skin chrome (bg-surface bars vs divider rules, centered
+   reading column vs full width) is all token-driven. */
+.k-chat { display: flex; flex-direction: column; height: 100%; box-sizing: border-box; padding: var(--k-chat-pad); }
+.k-chat-filter {
+  display: flex; align-items: center; flex-wrap: wrap; gap: var(--k-space-xs);
+  flex: 0 0 auto; border-bottom: 1px solid var(--k-rule);
+  padding: var(--k-chat-bar-pad); background: var(--k-chat-bar-bg);
+}
+.k-chat-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: var(--k-chat-scroll-pad); }
+.k-chat-msgs {
+  display: flex; flex-direction: column; gap: var(--k-chat-msg-gap);
+  max-width: var(--k-chat-measure); margin: 0 var(--k-chat-msg-align);
+}
+
+/* Suggested-prompt pill / monochrome category pill */
+.k-pill, .k-catpill {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: var(--k-pill-bg); color: var(--k-muted);
+  border: 1px solid var(--k-rule); border-radius: var(--k-radius-pill);
+  padding: 6px 11px; cursor: pointer; font-family: var(--k-font);
+  font-size: var(--k-text-meta); font-weight: var(--k-body-weight);
+  transition: color 0.2s ease, border-color 0.2s ease;
+}
+.k-pill:hover, .k-catpill:hover { color: var(--k-fg); border-color: var(--k-muted); }
+.k-catpill[data-active='true'] {
+  background: var(--k-accent); color: var(--k-on-accent);
+  border-color: var(--k-accent); font-weight: var(--k-emphasis-weight);
+}
+
+/* Modern chat bubble */
+.k-bubble {
+  max-width: 78%; border-radius: var(--k-radius); padding: 12px 16px;
+  font-size: var(--k-text-body); line-height: 1.6;
+  background: var(--k-surface); border: 1px solid var(--k-rule); color: var(--k-fg);
+}
+.k-bubble[data-role='user'] { background: var(--accent-glow-2); border-color: var(--k-accent-soft); }
+
+/* Modern chat composer controls */
+.k-composer-input {
+  flex: 1; min-width: 0; border-radius: var(--k-radius-sm);
+  background: var(--k-input-bg); border: 1px solid var(--k-rule-strong);
+  padding: 10px 16px; color: var(--k-fg); font-family: var(--k-font);
+  font-size: var(--k-text-body); outline: none; transition: box-shadow 0.2s ease;
+}
+.k-composer-input:focus { box-shadow: var(--k-glow-sm); }
+.k-composer-send {
+  border: none; cursor: pointer; background: var(--k-accent); color: var(--k-on-accent);
+  border-radius: var(--k-radius-sm); padding: 0 20px; font-size: var(--k-text-body);
+  font-weight: var(--k-emphasis-weight); font-family: var(--k-font);
+  transition: background 0.15s ease, opacity 0.15s ease;
+}
+.k-composer-send:disabled { opacity: 0.3; cursor: default; }

@@ -2,6 +2,7 @@ import type { CSSProperties, ReactNode } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { useKit } from './KitProvider'
 import Icon, { ICON_EMOJI, type IconName } from './Icon'
+import { categoryChip } from '../utils/design'
 
 // Shared presentation primitives. Each renders ONE markup tree for both skins;
 // all skin variation comes from the `--k-*` token contract (theme/tokens.css)
@@ -315,6 +316,123 @@ export function Markdown({ content, variant }: { content: string; variant: 'jour
         {content}
       </ReactMarkdown>
     </div>
+  )
+}
+
+/** Suggested-prompt pill (chat empty state). */
+export function PromptPill({ children, onClick }: { children: ReactNode; onClick?: () => void }) {
+  return <button type="button" onClick={onClick} className="k-pill">{children}</button>
+}
+
+/** Multi-select category filter chip. Modern is colour-coded per category;
+ *  minimal is monochrome (accent fill + × when selected) — a per-skin leaf. */
+export function CategoryChip({ label, cat, active, onClick }: {
+  label: string; cat?: string; active: boolean; onClick: () => void
+}) {
+  const { skin } = useKit()
+  if (skin === 'minimal') {
+    return (
+      <button type="button" className="k-catpill" data-active={active} onClick={onClick}>
+        {label}
+        {active && <span aria-hidden="true" style={{ fontSize: 'var(--text-xs)', lineHeight: 1, opacity: 0.85 }}>×</span>}
+      </button>
+    )
+  }
+  const chip = cat ? categoryChip(cat) : null
+  const activeStyle: CSSProperties = active
+    ? (chip
+        ? { background: chip.bg, color: chip.text, border: `1px solid ${chip.text}40` }
+        : { background: 'var(--accent-glow)', color: 'var(--accent)', border: '1px solid rgba(129,140,248,0.35)' })
+    : { background: 'var(--bg-surface-2)', color: 'var(--text-muted)', border: '1px solid var(--border)' }
+  return (
+    <button
+      type="button" onClick={onClick}
+      style={{
+        display: 'inline-flex', alignItems: 'center', gap: 6, borderRadius: 999,
+        padding: '4px 10px', cursor: 'pointer', fontSize: 11, fontWeight: 500,
+        transition: 'background 0.1s ease, color 0.1s ease, border-color 0.1s ease', ...activeStyle,
+      }}
+    >
+      {chip && <span style={{ width: 6, height: 6, borderRadius: '50%', background: chip.dot }} />}
+      {label}
+    </button>
+  )
+}
+
+export interface ChatMsg { id: string; role: 'user' | 'assistant'; content: string; streaming?: boolean }
+
+/** One chat message — a bubble (modern) or a labelled block (minimal). */
+export function ChatMessage({ msg }: { msg: ChatMsg }) {
+  const { skin } = useKit()
+  if (skin === 'minimal') {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--k-space-xs)' }}>
+        <SectionLabel>{msg.role === 'user' ? 'you' : '2brn'}</SectionLabel>
+        {msg.role === 'assistant'
+          ? (msg.streaming && !msg.content
+              ? <p style={{ margin: 0, fontSize: 'var(--k-text-lg)', color: 'var(--k-muted)' }}>…</p>
+              : <Markdown content={msg.content} variant="chat" />)
+          : <p style={{ margin: 0, fontSize: 'var(--k-text-lg)', lineHeight: 1.75, color: 'var(--k-fg)', whiteSpace: 'pre-wrap' }}>{msg.content}</p>}
+      </div>
+    )
+  }
+  return (
+    <div style={{ display: 'flex', justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start' }}>
+      <div className="k-bubble" data-role={msg.role}>
+        {msg.role === 'assistant' ? <Markdown content={msg.content} variant="chat" /> : msg.content}
+        {msg.streaming && (
+          <span className="pulse" style={{
+            display: 'inline-block', width: 6, height: 14, marginLeft: 4, borderRadius: 2,
+            verticalAlign: 'middle', background: 'var(--k-accent)',
+          }} />
+        )}
+      </div>
+    </div>
+  )
+}
+
+/** Chat composer — joined accent button (modern) / bordered icon row (minimal). */
+export function ChatComposer({ value, onChange, onSubmit, loading }: {
+  value: string; onChange: (v: string) => void; onSubmit: () => void; loading: boolean
+}) {
+  const { skin } = useKit()
+  const disabled = loading || !value.trim()
+  if (skin === 'minimal') {
+    return (
+      <form
+        onSubmit={e => { e.preventDefault(); onSubmit() }}
+        style={{ display: 'flex', border: '1px solid var(--k-rule)', flex: '0 0 auto' }}
+      >
+        <input
+          value={value} onChange={e => onChange(e.target.value)} disabled={loading}
+          placeholder="Ask your second brain…" className="k-askbox-input"
+          style={{ padding: 'var(--k-space-sm) var(--k-space-md)', fontSize: 'var(--k-text-body)', fontWeight: 'var(--k-body-weight)' as CSSProperties['fontWeight'] }}
+        />
+        <button
+          type="submit" aria-label="send" disabled={disabled} className="m-fill-btn"
+          style={{
+            border: 'none', borderLeft: '1px solid var(--k-rule)', padding: '0 var(--k-space-md)',
+            cursor: 'pointer', display: 'flex', alignItems: 'center', opacity: disabled ? 0.5 : 1,
+          }}
+        >
+          <Icon name="send" size={16} />
+        </button>
+      </form>
+    )
+  }
+  return (
+    <form
+      onSubmit={e => { e.preventDefault(); onSubmit() }}
+      style={{ display: 'flex', gap: 12, padding: '16px 20px', borderTop: '1px solid var(--k-rule)', background: 'var(--k-chat-bar-bg)', flex: '0 0 auto' }}
+    >
+      <input
+        value={value} onChange={e => onChange(e.target.value)} disabled={loading}
+        placeholder="Ask your second brain…" className="k-composer-input"
+      />
+      <button type="submit" aria-label="send" disabled={disabled} className="k-composer-send">
+        {loading ? '…' : '↵'}
+      </button>
+    </form>
   )
 }
 

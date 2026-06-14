@@ -3,7 +3,7 @@ import type { Skin } from './ThemeContext'
 import type { ScreenName } from './routes'
 import ModernShell from '../screens/modern/Shell'
 import MinimalShell from '../screens/minimal/Shell'
-import MinimalHome from '../screens/minimal/Home'
+import Home from '../screens/Home'
 import MinimalChat from '../screens/minimal/Chat'
 import MinimalJournal from '../screens/minimal/Journal'
 import MinimalBlog from '../screens/minimal/Blog'
@@ -13,7 +13,6 @@ import MinimalInstructions from '../screens/minimal/Instructions'
 import MinimalPlugins from '../screens/minimal/Plugins'
 import MinimalDevices from '../screens/minimal/Devices'
 import MinimalSettings from '../screens/minimal/Settings'
-import Home from '../screens/modern/Home'
 import Chat from '../screens/modern/Chat'
 import Journal from '../screens/modern/Journal'
 import Blog from '../screens/modern/Blog'
@@ -27,12 +26,16 @@ import Settings from '../screens/modern/Settings'
 export type { ScreenName }
 
 // ── Screen registry ───────────────────────────────────────────────────────────
-// Each skin provides its own presentation components; data/logic is shared.
-// A screen missing from a skin falls back to the modern implementation, so
-// the minimal skin can be built (and shipped) screen-by-screen.
+// `shared` holds screens unified onto ONE component tree (epic #93) — these
+// render in every skin via the ui-kit token contract. Screens not yet migrated
+// still have a per-skin fork in `modern`/`minimal`; the minimal fork falls back
+// to the modern one when absent, so the app stays shippable mid-migration.
 
-const modern: Record<ScreenName, ComponentType> = {
+const shared: Partial<Record<ScreenName, ComponentType>> = {
   home: Home,
+}
+
+const modern: Partial<Record<ScreenName, ComponentType>> = {
   chat: Chat,
   journal: Journal,
   blog: Blog,
@@ -44,8 +47,7 @@ const modern: Record<ScreenName, ComponentType> = {
   settings: Settings,
 }
 
-const minimal: Record<ScreenName, ComponentType> = {
-  home: MinimalHome,
+const minimal: Partial<Record<ScreenName, ComponentType>> = {
   chat: MinimalChat,
   journal: MinimalJournal,
   blog: MinimalBlog,
@@ -58,7 +60,8 @@ const minimal: Record<ScreenName, ComponentType> = {
 }
 
 export function getScreen(skin: Skin, name: ScreenName): ComponentType {
-  return (skin === 'minimal' ? minimal[name] : undefined) ?? modern[name]
+  // Unified screens win; otherwise the per-skin fork (minimal → modern fallback).
+  return shared[name] ?? (skin === 'minimal' ? minimal[name] : undefined) ?? modern[name]!
 }
 
 // ── Shell registry ────────────────────────────────────────────────────────────

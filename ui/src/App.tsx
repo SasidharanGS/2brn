@@ -3,6 +3,7 @@ import { Routes, Route, useLocation } from 'react-router-dom'
 import ErrorBoundary from './components/shared/ErrorBoundary'
 import { DateProvider } from './context/DateContext'
 import { useTheme } from './theme/ThemeContext'
+import { KitProvider } from './ui-kit'
 import { getScreen, getShell } from './theme/registry'
 import { ROUTES } from './theme/routes'
 
@@ -21,17 +22,19 @@ export default function App() {
   const Shell = getShell(skin)
 
   return (
-    <DateProvider>
-      <Shell calendarApplies={calendarApplies}>
-        <ErrorBoundary>
-          <Routes>
-            {ROUTES.map(({ to, screen }) => {
-              const Screen = getScreen(skin, screen)
-              return <Route key={to} path={to} element={<Screen />} />
-            })}
-          </Routes>
-        </ErrorBoundary>
-      </Shell>
-    </DateProvider>
+    <KitProvider skin={skin}>
+      <DateProvider>
+        <Shell calendarApplies={calendarApplies}>
+          <ErrorBoundary>
+            <Routes>
+              {ROUTES.map(({ to, screen }) => {
+                const Screen = getScreen(skin, screen)
+                return <Route key={to} path={to} element={<Screen />} />
+              })}
+            </Routes>
+          </ErrorBoundary>
+        </Shell>
+      </DateProvider>
+    </KitProvider>
   )
 }

@@ -1,0 +1,128 @@
+/* ── ui-kit token contract ────────────────────────────────────────────────────
+   ONE semantic vocabulary (`--k-*`) consumed by every ui-kit primitive, so a
+   single component tree renders correctly in both skins. Each skin maps the
+   contract onto its own palette/scale: modern (the default `:root`) reuses the
+   index.css tokens; minimal remaps under [data-skin='minimal'] to its own
+   index/minimal.css tokens. Structural differences (radius, casing, card
+   border/shadow, density) are expressed here as tokens — not as forked screens.
+
+   The kit reads ONLY `--k-*`. Skins keep their existing `--text/--fg/...` vars
+   untouched, so un-migrated screens are unaffected.                            */
+
+:root {
+  /* fonts */
+  --k-font: var(--font-sans);
+  --k-font-mono: var(--font-mono);
+
+  /* color */
+  --k-bg: var(--bg-base);
+  --k-surface: var(--bg-surface);
+  --k-surface-2: var(--bg-surface-2);
+  --k-input-bg: var(--bg-input);
+  --k-fg: var(--text);
+  --k-muted: var(--text-muted);
+  --k-dim: var(--text-dim);
+  --k-rule: var(--border);
+  --k-rule-strong: var(--border-2);
+  --k-accent: var(--accent);
+  --k-accent-hover: var(--accent-hover);
+  --k-accent-soft: var(--accent-glow);
+  --k-on-accent: #ffffff;
+
+  /* shape / treatment */
+  --k-radius: 12px;
+  --k-radius-sm: 9px;
+  --k-radius-pill: 999px;
+  --k-card-shadow: none;
+  --k-text-transform: none;
+  --k-label-transform: uppercase;
+  --k-heading-weight: 600;
+  --k-emphasis-weight: 500;
+  --k-body-weight: 400;
+  --k-label-weight: 500;
+  --k-label-tracking: 0.1em;
+  --k-tracking-tight: -0.01em;
+
+  /* focus/hover elevation (indigo glow — minimal has none) */
+  --k-glow-sm: 0 0 0 1px rgba(129, 140, 248, 0.3), 0 0 12px rgba(129, 140, 248, 0.1);
+  --k-glow: 0 0 0 1px rgba(129, 140, 248, 0.4), 0 0 24px rgba(129, 140, 248, 0.15);
+
+  /* type scale */
+  --k-text-hero: 23px;
+  --k-text-xl: 18px;
+  --k-text-lg: 16px;
+  --k-text-title: 14px;
+  --k-text-body: 14px;
+  --k-text-sm: 13px;
+  --k-text-meta: 12px;
+  --k-text-label: 11px;
+  --k-leading: 1.5;
+
+  /* spacing */
+  --k-page-pad: 2rem;
+  --k-page-max: 700px;
+  --k-page-align: auto;
+  --k-space-2xs: 0.25rem;
+  --k-space-xs: 0.375rem;
+  --k-space-sm: 0.625rem;
+  --k-space-md: 1rem;
+  --k-space-lg: 2rem;
+  --k-space-xl: 2.5rem;
+}
+
+:root[data-skin='minimal'] {
+  /* color */
+  --k-bg: var(--bg);
+  --k-surface: transparent;
+  --k-surface-2: transparent;
+  --k-input-bg: transparent;
+  --k-fg: var(--fg);
+  --k-muted: var(--muted);
+  --k-dim: var(--muted);
+  --k-rule: var(--rule);
+  --k-rule-strong: var(--rule);
+  --k-accent: var(--accent);
+  --k-accent-hover: var(--accent-strong);
+  --k-accent-soft: transparent;
+  --k-on-accent: var(--bg);
+
+  /* shape / treatment — square, no elevation, lowercase, lighter weights */
+  --k-radius: 0px;
+  --k-radius-sm: 0px;
+  --k-radius-pill: var(--radius-pill);
+  --k-card-shadow: none;
+  --k-text-transform: lowercase;
+  --k-label-transform: lowercase;
+  --k-heading-weight: 400;
+  --k-emphasis-weight: 400;
+  --k-body-weight: 300;
+  --k-label-weight: 300;
+  --k-label-tracking: var(--tracking-label);
+  --k-tracking-tight: var(--tracking-tight);
+
+  /* no elevation in the minimal language */
+  --k-glow-sm: none;
+  --k-glow: none;
+
+  /* type scale — minimal's fluid rem scale */
+  --k-text-hero: var(--text-hero);
+  --k-text-xl: var(--text-xl);
+  --k-text-lg: var(--text-lg);
+  --k-text-title: var(--text-md);
+  --k-text-body: var(--text-base);
+  --k-text-sm: var(--text-base);
+  --k-text-meta: var(--text-2xs);
+  --k-text-label: var(--text-2xs);
+  --k-leading: var(--leading-snug);
+
+  /* spacing — minimal's airier scale */
+  --k-page-pad: var(--space-lg);
+  --k-page-max: 760px;
+  --k-page-align: 0;
+  --k-space-2xs: 0.25rem;
+  --k-space-xs: var(--space-xs);
+  --k-space-sm: var(--space-sm);
+  --k-space-md: var(--space-md);
+  --k-space-lg: var(--space-lg);
+  --k-space-xl: var(--space-xl);
+}

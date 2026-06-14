@@ -10,6 +10,8 @@ import { ThemeProvider } from './theme/ThemeContext'
 import { initApiBase } from './api/client'
 import './index.css'
 import './theme/minimal.css'
+import './theme/tokens.css'
+import './ui-kit/kit.css'
 
 // Resolve the daemon port from the Electron bridge before the first request.
 void initApiBase()

@@ -1,0 +1,61 @@
+/* ── ui-kit interactive states ────────────────────────────────────────────────
+   Pseudo-states (focus-within / hover) that inline styles can't express. Every
+   value flows from the `--k-*` token contract; the few genuinely-divergent
+   behaviours (minimal trades elevation for an accent border) are scoped by
+   [data-skin]. Classes are `k-` prefixed to avoid colliding with the modern
+   (`nav-tile`, Tailwind) or minimal (`m-*`) class namespaces.                  */
+
+.k-askbox {
+  display: flex;
+  overflow: hidden;
+  background: var(--k-input-bg);
+  border: 1px solid var(--k-rule-strong);
+  border-radius: var(--k-radius);
+  transition: box-shadow 0.2s ease, border-color 0.2s ease;
+}
+.k-askbox:focus-within { box-shadow: var(--k-glow); }
+:root[data-skin='minimal'] .k-askbox:focus-within { box-shadow: none; border-color: var(--k-accent); }
+
+.k-askbox-input {
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: none;
+  outline: none;
+  color: var(--k-fg);
+  font-family: var(--k-font);
+}
+.k-askbox-input::placeholder { color: var(--k-muted); text-transform: var(--k-text-transform); }
+
+.k-askbox-btn {
+  border: none;
+  cursor: pointer;
+  background: var(--k-accent);
+  color: var(--k-on-accent);
+  font-family: var(--k-font);
+  transition: background 0.15s ease, opacity 0.15s ease;
+}
+.k-askbox-btn:hover:not(:disabled) { background: var(--k-accent-hover); }
+.k-askbox-btn:disabled { opacity: 0.3; cursor: default; }
+
+.k-navtile {
+  text-align: left;
+  cursor: pointer;
+  background: var(--k-surface);
+  border: 1px solid var(--k-rule);
+  border-radius: var(--k-radius);
+  font-family: var(--k-font);
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+}
+.k-navtile:hover {
+  background: var(--k-surface-2);
+  border-color: var(--k-rule-strong);
+  transform: translateY(-2px);
+  box-shadow: var(--k-glow-sm);
+}
+:root[data-skin='minimal'] .k-navtile:hover {
+  background: transparent;
+  border-color: var(--k-accent);
+  transform: none;
+  box-shadow: none;
+}

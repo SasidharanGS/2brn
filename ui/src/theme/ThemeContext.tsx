@@ -71,3 +71,9 @@ export function useTheme(): ThemeContextValue {
   if (!ctx) throw new Error('useTheme must be used inside <ThemeProvider>')
   return ctx
 }
+
+/** Non-throwing skin reader — returns 'modern' outside a provider (used by the
+ *  ui-kit's KitProvider so primitives stay renderable in isolation/tests). */
+export function useThemeSkin(): Skin {
+  return useContext(ThemeContext)?.skin ?? 'modern'
+}

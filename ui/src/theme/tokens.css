@@ -99,6 +99,10 @@
   --k-ok-bg: var(--green-bg);
   --k-ok-fg: var(--green);
   --k-ok-border: rgba(52, 211, 153, 0.2);
+  --k-health-ok: #22c55e;
+  --k-health-err: var(--red);
+  --k-badge-ok-bg: rgba(34, 197, 94, 0.12);
+  --k-badge-ok-fg: #22c55e;
 
   /* chat chrome */
   --k-chat-pad: 0;
@@ -196,6 +200,10 @@
   --k-ok-bg: transparent;
   --k-ok-fg: var(--fg);
   --k-ok-border: var(--rule);
+  --k-health-ok: var(--fg);
+  --k-health-err: var(--accent);
+  --k-badge-ok-bg: var(--pill-bg);
+  --k-badge-ok-fg: var(--muted);
 
   /* chat chrome — airier, centered reading column, divider rules (no bg bars) */
   --k-chat-pad: var(--space-lg);

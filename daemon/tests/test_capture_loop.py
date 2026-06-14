@@ -1,4 +1,4 @@
-"""Capture-loop plumbing: what touches the disk/executor, OCR reuse, and the
+"""Capture-pipeline plumbing: what touches the disk/executor, OCR reuse, and the
 per-capture classification routing.
 
 The keep/skip policy itself is covered in test_capture_policy.py.
@@ -8,14 +8,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from PIL import Image
 
-from brn_daemon.capture_policy import Frame, KeptFrame
-from brn_daemon.main import (
-    _MonitorMemo,
-    _ocr_kept_frames,
-    _record_capture,
-    _save_screenshot_off_loop,
-    _SparseMemo,
+from brn_daemon.capture_pipeline import (
+    CaptureRecorder,
+    MonitorMemo,
+    SparseMemo,
+    save_screenshot_off_loop,
 )
+from brn_daemon.capture_policy import Frame, KeptFrame
 
 _IMG = Image.new("RGB", (64, 64), color=0)
 
@@ -38,24 +37,26 @@ def _kept(
     return KeptFrame(frame=frame, trigger="heartbeat", phash="0" * 16, unchanged=unchanged)
 
 
-# ── _ocr_kept_frames: reuse for unchanged heartbeats ────────────────────────
+# ── ocr_kept_frames: reuse for unchanged heartbeats ─────────────────────────
 
 
 async def test_unchanged_heartbeat_reuses_memoised_ocr():
-    memos = {1: _MonitorMemo(capture_id=7, ocr_text="hello world")}
-    with patch("brn_daemon.main.extract_text") as mock_ocr:
-        results = await _ocr_kept_frames(
-            asyncio.get_running_loop(), [_kept(unchanged=True)], memos
+    rec = CaptureRecorder()
+    rec.ocr_memos = {1: MonitorMemo(capture_id=7, ocr_text="hello world")}
+    with patch("brn_daemon.capture_pipeline.extract_text") as mock_ocr:
+        results = await rec.ocr_kept_frames(
+            asyncio.get_running_loop(), [_kept(unchanged=True)]
         )
     assert results == [("hello world", True)]
     mock_ocr.assert_not_called()
 
 
 async def test_changed_frame_gets_fresh_ocr():
-    memos = {1: _MonitorMemo(capture_id=7, ocr_text="stale")}
-    with patch("brn_daemon.main.extract_text", return_value="fresh text") as mock_ocr:
-        results = await _ocr_kept_frames(
-            asyncio.get_running_loop(), [_kept(unchanged=False)], memos
+    rec = CaptureRecorder()
+    rec.ocr_memos = {1: MonitorMemo(capture_id=7, ocr_text="stale")}
+    with patch("brn_daemon.capture_pipeline.extract_text", return_value="fresh text") as mock_ocr:
+        results = await rec.ocr_kept_frames(
+            asyncio.get_running_loop(), [_kept(unchanged=False)]
         )
     assert results == [("fresh text", False)]
     mock_ocr.assert_called_once()
@@ -63,16 +64,18 @@ async def test_changed_frame_gets_fresh_ocr():
 
 async def test_unchanged_frame_without_memo_falls_back_to_fresh_ocr():
     """First heartbeat after daemon start has nothing to reuse."""
-    with patch("brn_daemon.main.extract_text", return_value="fresh text"):
-        results = await _ocr_kept_frames(asyncio.get_running_loop(), [_kept(unchanged=True)], {})
+    rec = CaptureRecorder()
+    with patch("brn_daemon.capture_pipeline.extract_text", return_value="fresh text"):
+        results = await rec.ocr_kept_frames(asyncio.get_running_loop(), [_kept(unchanged=True)])
     assert results == [("fresh text", False)]
 
 
 async def test_mixed_batch_preserves_frame_order():
-    memos = {1: _MonitorMemo(capture_id=7, ocr_text="cached")}
+    rec = CaptureRecorder()
+    rec.ocr_memos = {1: MonitorMemo(capture_id=7, ocr_text="cached")}
     kept = [_kept(1, unchanged=True), _kept(2, unchanged=False)]
-    with patch("brn_daemon.main.extract_text", return_value="fresh"):
-        results = await _ocr_kept_frames(asyncio.get_running_loop(), kept, memos)
+    with patch("brn_daemon.capture_pipeline.extract_text", return_value="fresh"):
+        results = await rec.ocr_kept_frames(asyncio.get_running_loop(), kept)
     assert results == [("cached", True), ("fresh", False)]
 
 
@@ -88,13 +91,13 @@ async def test_save_screenshot_offloaded_to_executor(tmp_home):
         return original_run(executor, fn, *args)
 
     with patch.object(loop, "run_in_executor", side_effect=tracking_run):
-        with patch("brn_daemon.main.save_screenshot", return_value="/tmp/fake.jpg"):
-            await _save_screenshot_off_loop(loop, _IMG, key=None, monitor_index=1)
+        with patch("brn_daemon.capture_pipeline.save_screenshot", return_value="/tmp/fake.jpg"):
+            await save_screenshot_off_loop(loop, _IMG, key=None, monitor_index=1)
 
     assert "save_screenshot" in executor_funcs
 
 
-# ── _record_capture: classification routing ─────────────────────────────────
+# ── CaptureRecorder.record: classification routing ──────────────────────────
 
 
 def _queue() -> MagicMock:
@@ -129,56 +132,58 @@ async def _activity_count(db, *, exclude_capture: int | None = None) -> int:
 
 async def test_readable_text_goes_to_normal_inference(tmp_home, db):
     queue = _queue()
-    ocr_memos: dict[int, _MonitorMemo] = {}
+    rec = CaptureRecorder()
 
-    await _record_capture(db, queue, _kept(), "/tmp/x.jpg", READABLE, False, ocr_memos, {})
+    await rec.record(db, queue, _kept(), "/tmp/x.jpg", READABLE, False)
 
     queue.enqueue.assert_awaited_once()
     assert queue.enqueue.await_args.args[3] == READABLE
-    assert ocr_memos[1].ocr_text == READABLE  # becomes the monitor's fresh root
+    assert rec.ocr_memos[1].ocr_text == READABLE  # becomes the monitor's fresh root
 
 
 async def test_sparse_with_metadata_queues_metadata_only_inference(tmp_home, db):
     queue = _queue()
-    sparse_memos: dict[int, _SparseMemo] = {}
+    rec = CaptureRecorder()
 
-    await _record_capture(
+    await rec.record(
         db, queue, _kept(app_name="VLC", window_title="movie.mp4"),
-        "/tmp/x.jpg", "x7@", False, {}, sparse_memos,
+        "/tmp/x.jpg", "x7@", False,
     )
 
     queue.enqueue.assert_awaited_once()
-    memo = sparse_memos[1]
+    memo = rec.sparse_memos[1]
     assert (memo.app_name, memo.window_title) == ("VLC", "movie.mp4")
 
 
 async def test_sparse_with_same_metadata_clones_instead_of_inferring(tmp_home, db):
     source_id = await _seed_classified_capture(db)
     queue = _queue()
-    sparse_memos = {1: _SparseMemo(app_name="VLC", window_title="movie.mp4", capture_id=source_id)}
+    rec = CaptureRecorder()
+    rec.sparse_memos = {1: SparseMemo(app_name="VLC", window_title="movie.mp4", capture_id=source_id)}
 
-    await _record_capture(
+    await rec.record(
         db, queue, _kept(app_name="VLC", window_title="movie.mp4"),
-        "/tmp/x.jpg", "x7@", False, {}, sparse_memos,
+        "/tmp/x.jpg", "x7@", False,
     )
 
     queue.enqueue.assert_not_awaited()
     assert await _activity_count(db, exclude_capture=source_id) == 1  # the clone
-    assert sparse_memos[1].capture_id == source_id  # root unchanged
+    assert rec.sparse_memos[1].capture_id == source_id  # root unchanged
 
 
 async def test_sparse_with_new_metadata_reinfers(tmp_home, db):
     source_id = await _seed_classified_capture(db)
     queue = _queue()
-    sparse_memos = {1: _SparseMemo(app_name="VLC", window_title="old.mp4", capture_id=source_id)}
+    rec = CaptureRecorder()
+    rec.sparse_memos = {1: SparseMemo(app_name="VLC", window_title="old.mp4", capture_id=source_id)}
 
-    await _record_capture(
+    await rec.record(
         db, queue, _kept(app_name="VLC", window_title="new.mp4"),
-        "/tmp/x.jpg", "x7@", False, {}, sparse_memos,
+        "/tmp/x.jpg", "x7@", False,
     )
 
     queue.enqueue.assert_awaited_once()
-    assert sparse_memos[1].window_title == "new.mp4"
+    assert rec.sparse_memos[1].window_title == "new.mp4"
 
 
 async def test_sparse_memo_without_landed_activity_falls_back_to_inference(tmp_home, db):
@@ -189,23 +194,25 @@ async def test_sparse_memo_without_landed_activity_falls_back_to_inference(tmp_h
     await db.commit()
     pending_id = cur.lastrowid  # capture with no activity row
     queue = _queue()
-    sparse_memos = {1: _SparseMemo(app_name="VLC", window_title="movie.mp4", capture_id=pending_id)}
+    rec = CaptureRecorder()
+    rec.sparse_memos = {1: SparseMemo(app_name="VLC", window_title="movie.mp4", capture_id=pending_id)}
 
-    await _record_capture(
+    await rec.record(
         db, queue, _kept(app_name="VLC", window_title="movie.mp4"),
-        "/tmp/x.jpg", "x7@", False, {}, sparse_memos,
+        "/tmp/x.jpg", "x7@", False,
     )
 
     queue.enqueue.assert_awaited_once()
-    assert sparse_memos[1].capture_id != pending_id  # new root
+    assert rec.sparse_memos[1].capture_id != pending_id  # new root
 
 
 async def test_sparse_without_metadata_stays_unclassified(tmp_home, db):
     queue = _queue()
+    rec = CaptureRecorder()
 
-    await _record_capture(
+    await rec.record(
         db, queue, _kept(app_name="", window_title=""),
-        "/tmp/x.jpg", "x7@", False, {}, {},
+        "/tmp/x.jpg", "x7@", False,
     )
 
     queue.enqueue.assert_not_awaited()
@@ -217,13 +224,14 @@ async def test_sparse_without_metadata_stays_unclassified(tmp_home, db):
 async def test_unchanged_heartbeat_clones_from_ocr_memo(tmp_home, db):
     source_id = await _seed_classified_capture(db)
     queue = _queue()
-    ocr_memos = {1: _MonitorMemo(capture_id=source_id, ocr_text=READABLE)}
+    rec = CaptureRecorder()
+    rec.ocr_memos = {1: MonitorMemo(capture_id=source_id, ocr_text=READABLE)}
 
-    await _record_capture(db, queue, _kept(unchanged=True), "/tmp/x.jpg", READABLE, True, ocr_memos, {})
+    await rec.record(db, queue, _kept(unchanged=True), "/tmp/x.jpg", READABLE, True)
 
     queue.enqueue.assert_not_awaited()
     assert await _activity_count(db, exclude_capture=source_id) == 1
-    assert ocr_memos[1].capture_id == source_id  # reuse must not shift the root
+    assert rec.ocr_memos[1].capture_id == source_id  # reuse must not shift the root
 
 
 async def test_unchanged_heartbeat_without_landed_activity_falls_back(tmp_home, db):
@@ -233,9 +241,10 @@ async def test_unchanged_heartbeat_without_landed_activity_falls_back(tmp_home, 
     await db.commit()
     pending_id = cur.lastrowid
     queue = _queue()
-    ocr_memos = {1: _MonitorMemo(capture_id=pending_id, ocr_text=READABLE)}
+    rec = CaptureRecorder()
+    rec.ocr_memos = {1: MonitorMemo(capture_id=pending_id, ocr_text=READABLE)}
 
-    await _record_capture(db, queue, _kept(unchanged=True), "/tmp/x.jpg", READABLE, True, ocr_memos, {})
+    await rec.record(db, queue, _kept(unchanged=True), "/tmp/x.jpg", READABLE, True)
 
     queue.enqueue.assert_awaited_once()
-    assert ocr_memos[1].capture_id == pending_id  # root preserved for later clones
+    assert rec.ocr_memos[1].capture_id == pending_id  # root preserved for later clones

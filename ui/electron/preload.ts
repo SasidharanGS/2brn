@@ -4,11 +4,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getDaemonPort: () => ipcRenderer.invoke('get-daemon-port'),
   getApiToken: () => ipcRenderer.invoke('get-api-token'),
   getPlatform: () => ipcRenderer.invoke('get-platform'),
-  onDaemonStatus: (callback: (status: string) => void) => {
-    const handler = (_event: Electron.IpcRendererEvent, status: string) => callback(status)
-    ipcRenderer.on('daemon-status', handler)
-    return () => ipcRenderer.removeListener('daemon-status', handler)
-  },
   getTheme: () => ipcRenderer.invoke('get-theme'),
   onThemeChanged: (callback: (theme: 'dark' | 'light') => void) => {
     const handler = (_event: Electron.IpcRendererEvent, theme: 'dark' | 'light') => callback(theme)

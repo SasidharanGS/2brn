@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, nativeTheme } from 'electron'
+import { app, BrowserWindow, ipcMain, nativeTheme, session, shell } from 'electron'
 import { spawn, ChildProcess } from 'child_process'
 import * as fs from 'fs'
 import * as path from 'path'
@@ -149,37 +149,64 @@ function startDaemon(): void {
       daemonRestartAttempts++
       setTimeout(startDaemon, 10_000)
     } else {
-      mainWindow?.webContents.send('daemon-status', 'error')
+      log('error', 'daemon exited and exceeded the restart budget — leaving it down')
     }
   })
 }
 
 function pollDaemonHealth(): void {
-  let failures = 0
+  // The renderer shows daemon status from its own /status poll (react-query); the
+  // only thing the main process needs from health is to refresh the auto-restart
+  // budget so a daemon that's been healthy for a while gets a fresh 3 attempts if
+  // it later crashes (see daemon.on('exit')).
   healthPollTimer = setInterval(() => {
-    // Guard: don't send to destroyed webContents
     if (!mainWindow || mainWindow.isDestroyed()) return
-
     const req = http.get(
       { hostname: DAEMON_HOST, port: DAEMON_PORT, path: '/status', timeout: 3000 },
       (res) => {
-        if (!mainWindow || mainWindow.isDestroyed()) return
-        if (res.statusCode === 200) {
-          failures = 0
-          daemonRestartAttempts = 0
-          mainWindow.webContents.send('daemon-status', 'ok')
-        }
-        res.resume() // consume response to free socket
+        if (res.statusCode === 200) daemonRestartAttempts = 0
+        res.resume() // consume response to free the socket
       }
     )
-    req.on('error', () => {
-      failures++
-      if (failures >= 2 && mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('daemon-status', 'offline')
-      }
-    })
+    req.on('error', () => { /* the exit handler owns restarts; nothing to do here */ })
     req.end()
   }, 5000)
+}
+
+function applyContentSecurityPolicy(): void {
+  // Lock down what the renderer may load/connect to. Prod is strict — only
+  // same-origin assets, and network connections only to the local daemon (no
+  // external script/font/connect at all, so a malicious string rendered by
+  // react-markdown can't exfiltrate or pull remote code). Dev relaxes script +
+  // connect for Vite's HMR (inline/eval + the dev-server websocket).
+  const daemon = `http://${DAEMON_HOST}:${DAEMON_PORT}`
+  const policy = (isDev()
+    ? [
+        "default-src 'self'",
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+        "style-src 'self' 'unsafe-inline'",
+        "img-src 'self' data: blob:",
+        "font-src 'self' data:",
+        `connect-src 'self' ${daemon} http://localhost:5173 ws://localhost:5173`,
+      ]
+    : [
+        "default-src 'self'",
+        "script-src 'self'",
+        "style-src 'self' 'unsafe-inline'",
+        "img-src 'self' data: blob:",
+        "font-src 'self' data:",
+        `connect-src 'self' ${daemon}`,
+        "object-src 'none'",
+        "base-uri 'self'",
+        "form-action 'none'",
+      ]
+  ).join('; ')
+
+  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    callback({
+      responseHeaders: { ...details.responseHeaders, 'Content-Security-Policy': [policy] },
+    })
+  })
 }
 
 function createWindow(): void {
@@ -200,6 +227,19 @@ function createWindow(): void {
 
   mainWindow.on('closed', () => {
     mainWindow = null
+  })
+
+  // LLM/note text is rendered via react-markdown, so never let a link navigate
+  // the app frame or open an in-app popup. External links go to the system browser.
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:\/\//i.test(url)) void shell.openExternal(url)
+    return { action: 'deny' }
+  })
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    const devUrl = process.env.VITE_DEV_SERVER_URL ?? 'http://localhost:5173'
+    if (url.startsWith('file://') || (isDev() && url.startsWith(devUrl))) return
+    event.preventDefault()
+    if (/^https?:\/\//i.test(url)) void shell.openExternal(url)
   })
 
   if (isDev()) {
@@ -234,6 +274,7 @@ nativeTheme.on('updated', () => {
 })
 
 app.whenReady().then(async () => {
+  applyContentSecurityPolicy()
   const alreadyRunning = await probeDaemon()
   if (alreadyRunning) {
     log('info', 'already running on port 7842 (launchd) — skipping spawn')

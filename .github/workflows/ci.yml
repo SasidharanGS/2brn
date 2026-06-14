@@ -61,8 +61,16 @@ jobs:
         run: pnpm install --frozen-lockfile
         working-directory: ui
 
+      - name: Lint
+        run: pnpm lint
+        working-directory: ui
+
       - name: Type-check
         run: pnpm exec tsc --noEmit
+        working-directory: ui
+
+      - name: Test
+        run: pnpm test
         working-directory: ui
 
       - name: Build

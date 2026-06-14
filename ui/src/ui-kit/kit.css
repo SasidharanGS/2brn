@@ -191,6 +191,16 @@
   border-color: var(--k-accent); font-weight: var(--k-emphasis-weight);
 }
 
+/* Segmented control (period toggle) */
+.k-seg { display: inline-flex; border: 1px solid var(--k-rule); border-radius: var(--k-radius-sm); padding: 2px; background: var(--k-seg-bg); }
+.k-seg-btn {
+  border: none; cursor: pointer; padding: 4px 12px; background: none; color: var(--k-muted);
+  border-radius: var(--k-radius-sm); font-family: var(--k-font); font-size: var(--k-text-meta);
+  font-weight: var(--k-emphasis-weight); text-transform: var(--k-seg-transform);
+  transition: background 0.2s ease, color 0.2s ease;
+}
+.k-seg-btn[data-active='true'] { background: var(--k-accent); color: var(--k-on-accent); }
+
 /* Inline notice / warning banner */
 .k-notice {
   border-radius: var(--k-radius-sm);

@@ -11,9 +11,10 @@ import logging
 from typing import Any
 
 import aiosqlite
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from brn_daemon.context import AppContext, get_context
 from brn_daemon.db import get_conn, get_db_path
 from brn_daemon.timeutil import utc_iso_to_local_date, utc_now_iso
 
@@ -46,14 +47,13 @@ class SharedNote(BaseModel):
 
 
 async def _try_embed_note(
-    note_id: int, title: str | None, text: str, source_url: str | None, created_at: str
+    ctx: AppContext, note_id: int, title: str | None, text: str,
+    source_url: str | None, created_at: str,
 ) -> bool:
     """Embed a shared note into note_memories. Best-effort — a row is always saved;
     if embedding is unavailable or fails the note stays ``embedded=0``."""
-    from brn_daemon.main import app_state
-
-    embed_client: Any = app_state.get("_embed_client_ref")
-    chroma = app_state.get("chroma_store")
+    embed_client: Any = ctx.embed_client
+    chroma = ctx.chroma_store
     if embed_client is None or chroma is None:
         return False
     try:
@@ -81,7 +81,7 @@ async def _try_embed_note(
 
 
 @router.post("/ingest/note", response_model=NoteIngestResponse)
-async def ingest_note(body: NoteIngestRequest):
+async def ingest_note(body: NoteIngestRequest, ctx: AppContext = Depends(get_context)):
     text = body.text.strip()
     if not text:
         raise HTTPException(400, "text must not be empty")
@@ -99,7 +99,7 @@ async def ingest_note(body: NoteIngestRequest):
         await conn.commit()
         note_id: int = cur.lastrowid  # type: ignore[assignment]
 
-    embedded = await _try_embed_note(note_id, title, text, source_url, created_at)
+    embedded = await _try_embed_note(ctx, note_id, title, text, source_url, created_at)
     return NoteIngestResponse(ok=True, id=note_id, embedded=embedded)
 
 
@@ -130,9 +130,7 @@ async def list_notes(limit: int = 50):
 
 
 @router.delete("/ingest/notes/{note_id}")
-async def delete_note(note_id: int):
-    from brn_daemon.main import app_state
-
+async def delete_note(note_id: int, ctx: AppContext = Depends(get_context)):
     async with get_conn() as conn:
         cur = await conn.execute("SELECT chroma_id FROM shared_notes WHERE id = ?", (note_id,))
         row = await cur.fetchone()
@@ -143,7 +141,7 @@ async def delete_note(note_id: int):
         await conn.commit()
 
     if chroma_id:
-        chroma = app_state.get("chroma_store")
+        chroma = ctx.chroma_store
         if chroma is not None:
             try:
                 loop = asyncio.get_running_loop()

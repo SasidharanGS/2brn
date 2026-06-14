@@ -5,17 +5,18 @@ from httpx import AsyncClient, ASGITransport
 
 @pytest.fixture
 async def client(tmp_home, db):
-    from brn_daemon.main import create_app, app_state
+    from brn_daemon.main import create_app
 
     mock_orch = MagicMock()
     mock_orch.reparse_rule = AsyncMock()
     mock_orch.refresh_rules = AsyncMock()
     mock_orch.pool = MagicMock()
     mock_orch.pool.restart = AsyncMock()
-    app_state["plugin_orchestrator"] = mock_orch
 
     app = create_app()
+    app.state.context.plugin_orchestrator = mock_orch
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        c.ctx = app.state.context
         yield c
 
 

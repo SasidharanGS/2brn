@@ -10,11 +10,15 @@ from brn_daemon.db import get_db_path, init_db
 
 @pytest.fixture
 async def activities_client(tmp_home):
-    """FastAPI test client with minimal app_state stubs and seeded activity data."""
+    """FastAPI test client with minimal context stubs and seeded activity data.
+
+    The populated :class:`AppContext` is attached as ``client.ctx`` so tests can
+    reach the service mocks the routes will use.
+    """
     from brn_daemon.blog import BlogGenerator
     from brn_daemon.chat import ChatService
     from brn_daemon.journal import JournalGenerator
-    from brn_daemon.main import app_state, create_app
+    from brn_daemon.main import create_app
 
     fake_chat_fn = AsyncMock(return_value='{"summary":"x","tags":[],"task_category":"work","task_category_confidence":0.9,"productivity_state":"productive","productivity_confidence":0.9}')
     fake_stream_fn = AsyncMock()
@@ -24,21 +28,23 @@ async def activities_client(tmp_home):
     fake_chroma.query = AsyncMock(return_value={"documents": [[]], "metadatas": [[]], "distances": [[]]})
     fake_chroma.query_notes = AsyncMock(return_value={"documents": [[]], "metadatas": [[]], "distances": [[]]})
 
-    app_state["chat_service"] = ChatService(
+    app = create_app()
+    ctx = app.state.context
+    ctx.chat_service = ChatService(
         chat_fn=fake_chat_fn,
         stream_fn=fake_stream_fn,
         embed_client=fake_embed_client,
         chroma_store=fake_chroma,
     )
-    app_state["_embed_client_ref"] = fake_embed_client
-    app_state["inference_queue"] = MagicMock()
-    app_state["inference_queue"]._chat_fn = fake_chat_fn
-    app_state["inference_queue"]._embedding_service = MagicMock()
-    app_state["journal_generator"] = JournalGenerator(chat_fn=fake_chat_fn)
-    app_state["blog_generator"] = BlogGenerator(chat_fn=fake_chat_fn)
-    app_state["plugin_orchestrator"] = MagicMock()
-    app_state["plugin_orchestrator"].chat_fn = fake_chat_fn
-    app_state["chroma_store"] = fake_chroma
+    ctx.embed_client = fake_embed_client
+    ctx.inference_queue = MagicMock()
+    ctx.inference_queue._chat_fn = fake_chat_fn
+    ctx.inference_queue._embedding_service = MagicMock()
+    ctx.journal_generator = JournalGenerator(chat_fn=fake_chat_fn)
+    ctx.blog_generator = BlogGenerator(chat_fn=fake_chat_fn)
+    ctx.plugin_orchestrator = MagicMock()
+    ctx.plugin_orchestrator.chat_fn = fake_chat_fn
+    ctx.chroma_store = fake_chroma
 
     # Init DB and seed a capture + activity
     await init_db()
@@ -57,8 +63,8 @@ async def activities_client(tmp_home):
         )
         await conn.commit()
 
-    app = create_app()
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        client.ctx = ctx
         yield client
 
 
@@ -148,24 +154,22 @@ async def test_get_activities_returns_empty_for_unknown_date(activities_client):
 
 
 async def test_post_backfill_triggers_inference_backfill(activities_client):
-    from brn_daemon.main import app_state
-    app_state["inference_queue"].backfill_unclassified = AsyncMock(
+    activities_client.ctx.inference_queue.backfill_unclassified = AsyncMock(
         return_value={"queued": 3, "remaining": 1}
     )
     resp = await activities_client.post("/activities/backfill", json={"days": 3})
     assert resp.status_code == 200
     assert resp.json() == {"ok": True, "queued": 3, "remaining": 1}
-    app_state["inference_queue"].backfill_unclassified.assert_awaited_once_with(days=3, include_sparse=False)
+    activities_client.ctx.inference_queue.backfill_unclassified.assert_awaited_once_with(days=3, include_sparse=False)
 
 
 async def test_post_backfill_defaults_to_seven_days(activities_client):
-    from brn_daemon.main import app_state
-    app_state["inference_queue"].backfill_unclassified = AsyncMock(
+    activities_client.ctx.inference_queue.backfill_unclassified = AsyncMock(
         return_value={"queued": 0, "remaining": 0}
     )
     resp = await activities_client.post("/activities/backfill")
     assert resp.status_code == 200
-    app_state["inference_queue"].backfill_unclassified.assert_awaited_once_with(days=7, include_sparse=False)
+    activities_client.ctx.inference_queue.backfill_unclassified.assert_awaited_once_with(days=7, include_sparse=False)
 
 
 async def test_post_backfill_rejects_out_of_range_days(activities_client):
@@ -174,8 +178,7 @@ async def test_post_backfill_rejects_out_of_range_days(activities_client):
 
 
 async def test_post_backfill_forwards_include_sparse(activities_client):
-    from brn_daemon.main import app_state
-    app_state["inference_queue"].backfill_unclassified = AsyncMock(
+    activities_client.ctx.inference_queue.backfill_unclassified = AsyncMock(
         return_value={"queued": 0, "remaining": 0, "sparse_cloned": 5, "sparse_queued": 2, "sparse_deferred": 9}
     )
     resp = await activities_client.post(
@@ -183,6 +186,6 @@ async def test_post_backfill_forwards_include_sparse(activities_client):
     )
     assert resp.status_code == 200
     assert resp.json()["sparse_cloned"] == 5
-    app_state["inference_queue"].backfill_unclassified.assert_awaited_once_with(
+    activities_client.ctx.inference_queue.backfill_unclassified.assert_awaited_once_with(
         days=7, include_sparse=True
     )

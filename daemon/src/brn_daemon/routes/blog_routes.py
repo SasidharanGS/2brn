@@ -1,9 +1,10 @@
 from datetime import UTC, datetime
 
 import aiosqlite
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from brn_daemon.context import AppContext, get_context
 from brn_daemon.db import get_db_path
 
 router = APIRouter()
@@ -35,9 +36,8 @@ async def get_blog_post(date: str):
 
 
 @router.post("/blog/{date}/generate")
-async def generate_blog_post(date: str):
-    from brn_daemon.main import app_state
-    gen = app_state.get("blog_generator")
+async def generate_blog_post(date: str, ctx: AppContext = Depends(get_context)):
+    gen = ctx.blog_generator
     if not gen:
         raise HTTPException(503, "Blog generator not available")
 
@@ -47,7 +47,7 @@ async def generate_blog_post(date: str):
     except ValueError:
         raise HTTPException(400, f"Invalid date '{date}', expected YYYY-MM-DD")
 
-    generating: set = app_state.setdefault("blog_generating", set())
+    generating = ctx.blog_generating
     if date in generating:
         raise HTTPException(409, f"Blog post for {date} is already being generated")
 

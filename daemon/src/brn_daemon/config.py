@@ -111,6 +111,15 @@ class Config:
             raise ValueError(f"similarity_threshold must be in (0.5, 1.0], got {self.similarity_threshold}")
 
 
+def blog_cron_kwargs(s: BlogScheduleConfig) -> dict:
+    """Convert a BlogScheduleConfig to APScheduler cron trigger kwargs."""
+    if s.frequency == "monthly":
+        return {"day": s.day, "hour": s.hour, "minute": s.minute}
+    if s.frequency == "weekly" and s.days_of_week:
+        return {"day_of_week": ",".join(s.days_of_week), "hour": s.hour, "minute": s.minute}
+    return {"hour": s.hour, "minute": s.minute}
+
+
 def _config_path() -> Path:
     return get_brn_home() / "config.json"
 

@@ -3,8 +3,8 @@
 Plugins represent MCP servers (command + args + env_keys). Rules attach to a
 plugin and describe — in natural language — what to do when a trigger fires.
 
-The orchestrator is read from main.app_state and re-parses rules / refreshes
-scheduled jobs as a side effect of mutating endpoints.
+The orchestrator is injected from the app context (``get_orchestrator``) and
+re-parses rules / refreshes scheduled jobs as a side effect of mutating endpoints.
 """
 from __future__ import annotations
 
@@ -15,13 +15,14 @@ import re
 from datetime import UTC, datetime
 
 import aiosqlite
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, field_validator
 
 from brn_daemon.config import (
     delete_plugin_env_value,
     set_plugin_env_value,
 )
+from brn_daemon.context import AppContext, get_context
 from brn_daemon.db import get_conn, get_db_path
 
 router = APIRouter()
@@ -183,10 +184,9 @@ class ToolOut(BaseModel):
 # ---- helpers --------------------------------------------------------------
 
 
-def _get_orchestrator():
-    """Late-import to break circular dependency with main.py."""
-    from brn_daemon.main import app_state
-    orch = app_state.get("plugin_orchestrator")
+def get_orchestrator(ctx: AppContext = Depends(get_context)):
+    """FastAPI dependency: the running plugin orchestrator, or 503 if not ready."""
+    orch = ctx.plugin_orchestrator
     if orch is None:
         raise HTTPException(503, "Plugin orchestrator not initialised")
     return orch
@@ -285,7 +285,7 @@ async def create_plugin(body: PluginCreate):
 
 
 @router.put("/plugins/{plugin_id}", response_model=PluginOut)
-async def update_plugin(plugin_id: int, body: PluginUpdate):
+async def update_plugin(plugin_id: int, body: PluginUpdate, orch=Depends(get_orchestrator)):
     async with aiosqlite.connect(get_db_path()) as conn:
         conn.row_factory = aiosqlite.Row
         old_row = await _fetch_plugin(conn, plugin_id)
@@ -317,14 +317,13 @@ async def update_plugin(plugin_id: int, body: PluginUpdate):
         for k in old_keys - new_keys:
             delete_plugin_env_value(plugin_name, k)
 
-    orch = _get_orchestrator()
     await orch.pool.restart(plugin_id)
     await orch.refresh_rules()
     return _row_to_plugin(row)
 
 
 @router.delete("/plugins/{plugin_id}", status_code=204)
-async def delete_plugin(plugin_id: int):
+async def delete_plugin(plugin_id: int, orch=Depends(get_orchestrator)):
     async with get_conn() as conn:
         conn.row_factory = aiosqlite.Row
         row = await _fetch_plugin(conn, plugin_id)
@@ -336,18 +335,16 @@ async def delete_plugin(plugin_id: int):
     for k in env_keys:
         delete_plugin_env_value(plugin_name, k)
 
-    orch = _get_orchestrator()
     await orch.pool.restart(plugin_id)
     await orch.refresh_rules()
 
 
 @router.get("/plugins/{plugin_id}/tools", response_model=list[ToolOut])
-async def list_plugin_tools(plugin_id: int):
+async def list_plugin_tools(plugin_id: int, orch=Depends(get_orchestrator)):
     """Connect to the MCP server and list its tools. Used by the UI when authoring rules."""
     async with aiosqlite.connect(get_db_path()) as conn:
         conn.row_factory = aiosqlite.Row
         row = await _fetch_plugin(conn, plugin_id)
-    orch = _get_orchestrator()
     try:
         tools = await orch.list_plugin_tools(
             plugin_id=plugin_id,
@@ -395,7 +392,7 @@ async def list_rules(plugin_id: int | None = None):
 
 
 @router.post("/plugin-rules", response_model=RuleOut, status_code=201)
-async def create_rule(body: RuleCreate):
+async def create_rule(body: RuleCreate, orch=Depends(get_orchestrator)):
     async with aiosqlite.connect(get_db_path()) as conn:
         conn.row_factory = aiosqlite.Row
         plugin_row = await _fetch_plugin(conn, body.plugin_id)
@@ -408,7 +405,6 @@ async def create_rule(body: RuleCreate):
         rule_id: int = cur.lastrowid  # type: ignore[assignment]
         await conn.commit()
 
-    orch = _get_orchestrator()
     # Try to parse immediately. Failures are stored on the row; we still return 201.
     try:
         await orch.reparse_rule(
@@ -430,7 +426,7 @@ async def create_rule(body: RuleCreate):
 
 
 @router.put("/plugin-rules/{rule_id}", response_model=RuleOut)
-async def update_rule(rule_id: int, body: RuleUpdate):
+async def update_rule(rule_id: int, body: RuleUpdate, orch=Depends(get_orchestrator)):
     async with aiosqlite.connect(get_db_path()) as conn:
         conn.row_factory = aiosqlite.Row
         rule = await _fetch_rule(conn, rule_id)
@@ -450,7 +446,6 @@ async def update_rule(rule_id: int, body: RuleUpdate):
             )
         await conn.commit()
 
-    orch = _get_orchestrator()
     if body.rule_text is not None and body.rule_text != rule["rule_text"]:
         try:
             await orch.reparse_rule(
@@ -474,23 +469,21 @@ async def update_rule(rule_id: int, body: RuleUpdate):
 
 
 @router.delete("/plugin-rules/{rule_id}", status_code=204)
-async def delete_rule(rule_id: int):
+async def delete_rule(rule_id: int, orch=Depends(get_orchestrator)):
     async with get_conn() as conn:
         conn.row_factory = aiosqlite.Row
         await _fetch_rule(conn, rule_id)
         await conn.execute("DELETE FROM plugin_rules WHERE id = ?", (rule_id,))
         await conn.commit()
-    orch = _get_orchestrator()
     await orch.refresh_rules()
 
 
 @router.post("/plugin-rules/{rule_id}/reparse", response_model=RuleOut)
-async def reparse_rule(rule_id: int):
+async def reparse_rule(rule_id: int, orch=Depends(get_orchestrator)):
     async with aiosqlite.connect(get_db_path()) as conn:
         conn.row_factory = aiosqlite.Row
         rule = await _fetch_rule(conn, rule_id)
         plugin = await _fetch_plugin(conn, rule["plugin_id"])
-    orch = _get_orchestrator()
     try:
         await orch.reparse_rule(
             rule_id=rule_id,
@@ -511,8 +504,7 @@ async def reparse_rule(rule_id: int):
 
 
 @router.post("/plugin-rules/{rule_id}/run")
-async def run_rule(rule_id: int):
-    orch = _get_orchestrator()
+async def run_rule(rule_id: int, orch=Depends(get_orchestrator)):
     try:
         return await orch.run_rule_now(rule_id)
     except ValueError as exc:

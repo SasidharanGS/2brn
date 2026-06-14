@@ -1,9 +1,10 @@
 from datetime import UTC
 
 import aiosqlite
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from brn_daemon.context import AppContext, get_context
 from brn_daemon.db import get_db_path
 
 router = APIRouter()
@@ -31,9 +32,8 @@ async def get_journal(date: str):
     return JournalResponse(**dict(row))
 
 @router.post("/journal/{date}/generate")
-async def generate_journal(date: str):
-    from brn_daemon.main import app_state
-    gen = app_state.get("journal_generator")
+async def generate_journal(date: str, ctx: AppContext = Depends(get_context)):
+    gen = ctx.journal_generator
     if not gen:
         raise HTTPException(503, "Journal generator not available")
 
@@ -43,7 +43,7 @@ async def generate_journal(date: str):
     except ValueError:
         raise HTTPException(400, f"Invalid date '{date}', expected YYYY-MM-DD")
 
-    generating: set = app_state.setdefault("journal_generating", set())
+    generating = ctx.journal_generating
     if date in generating:
         raise HTTPException(409, f"Journal for {date} is already being generated")
 

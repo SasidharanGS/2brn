@@ -20,11 +20,11 @@ def test_env_token_overrides_file(tmp_home, monkeypatch):
     assert load_or_create_token() == "env-token-123"
 
 
-async def test_protected_routes_require_token(tmp_home, monkeypatch):
+async def test_protected_routes_require_token(tmp_home):
     from brn_daemon.db import init_db
     await init_db()
-    monkeypatch.setitem(main_mod.app_state, "api_token", "secret-token")
     app = main_mod.create_app()
+    app.state.context.api_token = "secret-token"
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as client:
         # Liveness probe is always reachable (used by the Electron health probe).
         assert (await client.get("/status")).status_code == 200
@@ -48,8 +48,8 @@ async def test_auth_inert_when_no_token_loaded(tmp_home):
     """
     from brn_daemon.db import init_db
     await init_db()
-    assert main_mod.app_state.get("api_token") in (None, "")
     app = main_mod.create_app()
+    assert app.state.context.api_token in (None, "")
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as client:
         assert (await client.get("/captures?date=2026-01-01")).status_code == 200
 
@@ -60,13 +60,13 @@ async def test_auth_inert_when_no_token_loaded(tmp_home):
     ("GET",    "/ingest/notes",     None),
     ("DELETE", "/ingest/notes/1",   None),
 ])
-async def test_mobile_endpoints_require_token(tmp_home, monkeypatch, method, path, body):
+async def test_mobile_endpoints_require_token(tmp_home, method, path, body):
     """Every new mobile-bridge endpoint returns 401 when no token is provided."""
     from brn_daemon.db import init_db
 
     await init_db()
-    monkeypatch.setitem(main_mod.app_state, "api_token", "secret-token")
     app = main_mod.create_app()
+    app.state.context.api_token = "secret-token"
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as client:
         if method == "GET":
             resp = await client.get(path)

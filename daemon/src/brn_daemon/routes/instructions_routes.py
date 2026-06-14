@@ -1,9 +1,10 @@
 from datetime import UTC, datetime
 
 import aiosqlite
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from brn_daemon.context import AppContext, get_context
 from brn_daemon.db import get_db_path
 
 router = APIRouter()
@@ -50,7 +51,7 @@ async def list_instructions():
 
 
 @router.post("/instructions", response_model=UserInstruction, status_code=201)
-async def create_instruction(body: CreateInstructionRequest):
+async def create_instruction(body: CreateInstructionRequest, ctx: AppContext = Depends(get_context)):
     now = datetime.now(UTC).isoformat()
     async with aiosqlite.connect(get_db_path()) as conn:
         cur = await conn.execute(
@@ -59,15 +60,14 @@ async def create_instruction(body: CreateInstructionRequest):
         )
         await conn.commit()
         row_id: int = cur.lastrowid  # type: ignore[assignment]
-    from brn_daemon.main import app_state
-    iq = app_state.get("inference_queue")
+    iq = ctx.inference_queue
     if iq is not None:
         iq.invalidate_instructions_cache()
     return UserInstruction(id=row_id, title=body.title, body=body.body, enabled=body.enabled, created_at=now)
 
 
 @router.put("/instructions/{instruction_id}", response_model=UserInstruction)
-async def update_instruction(instruction_id: int, body: UpdateInstructionRequest):
+async def update_instruction(instruction_id: int, body: UpdateInstructionRequest, ctx: AppContext = Depends(get_context)):
     async with aiosqlite.connect(get_db_path()) as conn:
         conn.row_factory = aiosqlite.Row
         cur = await conn.execute(
@@ -85,8 +85,7 @@ async def update_instruction(instruction_id: int, body: UpdateInstructionRequest
             (new_title, new_body, int(new_enabled), instruction_id),
         )
         await conn.commit()
-    from brn_daemon.main import app_state
-    iq = app_state.get("inference_queue")
+    iq = ctx.inference_queue
     if iq is not None:
         iq.invalidate_instructions_cache()
     return UserInstruction(
@@ -99,7 +98,7 @@ async def update_instruction(instruction_id: int, body: UpdateInstructionRequest
 
 
 @router.delete("/instructions/{instruction_id}", status_code=204)
-async def delete_instruction(instruction_id: int):
+async def delete_instruction(instruction_id: int, ctx: AppContext = Depends(get_context)):
     async with aiosqlite.connect(get_db_path()) as conn:
         cur = await conn.execute(
             "DELETE FROM user_instructions WHERE id = ?", (instruction_id,)
@@ -107,7 +106,6 @@ async def delete_instruction(instruction_id: int):
         await conn.commit()
         if cur.rowcount == 0:
             raise HTTPException(status_code=404, detail="Instruction not found")
-    from brn_daemon.main import app_state
-    iq = app_state.get("inference_queue")
+    iq = ctx.inference_queue
     if iq is not None:
         iq.invalidate_instructions_cache()

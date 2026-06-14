@@ -11,6 +11,7 @@ import MinimalTimeline from '../screens/minimal/Timeline'
 import MinimalInsights from '../screens/minimal/Insights'
 import MinimalInstructions from '../screens/minimal/Instructions'
 import MinimalPlugins from '../screens/minimal/Plugins'
+import MinimalDevices from '../screens/minimal/Devices'
 import MinimalSettings from '../screens/minimal/Settings'
 import Home from '../screens/modern/Home'
 import Chat from '../screens/modern/Chat'
@@ -20,6 +21,7 @@ import Timeline from '../screens/modern/Timeline'
 import Insights from '../screens/modern/Insights'
 import Instructions from '../screens/modern/Instructions'
 import Plugins from '../screens/modern/Plugins'
+import Devices from '../screens/modern/Devices'
 import Settings from '../screens/modern/Settings'
 
 export type { ScreenName }
@@ -38,6 +40,7 @@ const modern: Record<ScreenName, ComponentType> = {
   insights: Insights,
   instructions: Instructions,
   plugins: Plugins,
+  devices: Devices,
   settings: Settings,
 }
 
@@ -50,6 +53,7 @@ const minimal: Record<ScreenName, ComponentType> = {
   insights: MinimalInsights,
   instructions: MinimalInstructions,
   plugins: MinimalPlugins,
+  devices: MinimalDevices,
   settings: MinimalSettings,
 }
 

@@ -3,6 +3,7 @@ import type {
   InsightsSummary, InsightsPeriod, SessionsResponse,
   AppSettings, SettingsUpdateRequest, AppExclusion, BackfillResponse, UserInstruction, LogLine, DebugStatus,
   Plugin, PluginRule, PluginTool, RuleExecution, PluginCreate, PluginUpdate, RuleCreate, RuleUpdate,
+  DeviceRecord, CreatedDevice, ConnectionInfo,
 } from './types'
 
 let BASE_URL = 'http://127.0.0.1:7842'
@@ -189,6 +190,12 @@ export const api = {
     post<{ ok: boolean; result?: Record<string, unknown>; error?: string }>(`/plugin-rules/${id}/run`),
   listRuleExecutions: (id: number, limit = 50) =>
     get<RuleExecution[]>(`/plugin-rules/${id}/executions?limit=${limit}`),
+
+  // ── Devices (mobile pairing) ──────────────────────────────────────────────
+  getConnectionInfo: () => get<ConnectionInfo>('/connection-info'),
+  listDevices: () => get<DeviceRecord[]>('/devices'),
+  createDevice: (name: string) => post<CreatedDevice>('/devices', { name }),
+  revokeDevice: (id: number) => del<{ ok: boolean; deleted: boolean }>(`/devices/${id}`),
 
   chatStream: async function* (question: string, date_filter?: string, categories?: string[], signal?: AbortSignal) {
     const res = await authedFetch('/chat', {

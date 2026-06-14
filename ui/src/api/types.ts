@@ -311,3 +311,26 @@ export interface RuleUpdate {
   rule_text?: string
   enabled?: boolean
 }
+
+// ── Devices (mobile pairing / per-device LAN tokens) ──────────────────────────
+
+export interface DeviceRecord {
+  id: number
+  name: string
+  created_at: string
+  last_seen_at: string | null
+}
+
+/** Returned only at creation — carries the plaintext token for the QR. */
+export interface CreatedDevice {
+  id: number
+  name: string
+  token: string
+}
+
+export interface ConnectionInfo {
+  hostname: string
+  port: number
+  lan_access: boolean
+  lan_urls: string[]
+}

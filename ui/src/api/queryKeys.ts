@@ -15,4 +15,6 @@ export const queryKeys = {
   pluginRules: (pluginId: number | null) => ['plugin-rules', pluginId ?? 0] as const,
   pluginTools: (pluginId: number | null) => ['plugin-tools', pluginId ?? 0] as const,
   ruleExecutions: (ruleId: number | null) => ['rule-executions', ruleId ?? 0] as const,
+  devices: () => ['devices'] as const,
+  connectionInfo: () => ['connection-info'] as const,
 } as const

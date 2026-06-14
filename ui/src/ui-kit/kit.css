@@ -93,6 +93,29 @@
 :root[data-skin='minimal'] .k-btn--danger { background: none; border-color: var(--k-rule); }
 :root[data-skin='minimal'] .k-btn--danger:hover:not(:disabled) { border-color: var(--k-accent); }
 
+/* `soft` = a tinted accent action (modern accent-glow) / quiet accent-on-hover (minimal). */
+.k-btn--soft { background: var(--k-accent-soft); color: var(--k-accent); border: 1px solid var(--k-accent); }
+.k-btn--soft:hover:not(:disabled) { background: var(--k-accent-soft); opacity: 0.85; }
+:root[data-skin='minimal'] .k-btn--soft { background: none; color: var(--k-muted); border-color: var(--k-rule); }
+:root[data-skin='minimal'] .k-btn--soft:hover:not(:disabled) { background: none; opacity: 1; color: var(--k-accent); border-color: var(--k-accent); }
+
+/* ── Quiet inline text button (card row actions: edit / delete / confirm) ── */
+.k-quiet {
+  background: var(--k-quiet-bg);
+  color: var(--k-muted);
+  border: none;
+  border-radius: var(--k-radius-sm);
+  padding: 2px 6px;
+  cursor: pointer;
+  font-family: var(--k-font);
+  font-size: var(--k-text-label);
+  text-transform: var(--k-text-transform);
+  transition: color 0.2s ease, background 0.2s ease;
+}
+.k-quiet:hover { color: var(--k-fg); }
+.k-quiet--danger { color: var(--k-danger); }
+.k-quiet--danger:hover { color: var(--k-danger); opacity: 0.8; }
+
 /* ── Form controls — full-bordered box in modern, bottom-rule in minimal ── */
 .k-input {
   background: var(--k-control-bg);

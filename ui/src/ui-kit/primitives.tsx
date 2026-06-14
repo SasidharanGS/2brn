@@ -171,9 +171,10 @@ export function Badge({ children }: { children: ReactNode }) {
   )
 }
 
-export type ButtonVariant = 'ghost' | 'primary' | 'danger'
+export type ButtonVariant = 'ghost' | 'primary' | 'soft' | 'danger'
 
-/** Action button. `primary` = filled accent (modern) / accent-on-hover (minimal). */
+/** Action button. `primary` = filled accent (modern) / accent-on-hover (minimal);
+ *  `soft` = a tinted accent action; `ghost`/`danger` as named. */
 export function Button({ children, onClick, disabled, variant = 'ghost', type = 'button' }: {
   children: ReactNode; onClick?: () => void; disabled?: boolean
   variant?: ButtonVariant; type?: 'button' | 'submit'
@@ -181,6 +182,54 @@ export function Button({ children, onClick, disabled, variant = 'ghost', type = 
   return (
     <button type={type} onClick={onClick} disabled={disabled} className={`k-btn k-btn--${variant}`}>
       {children}
+    </button>
+  )
+}
+
+/** Quiet inline text action (card-row edit / delete / confirm). */
+export function QuietButton({ children, onClick, danger }: {
+  children: ReactNode; onClick?: () => void; danger?: boolean
+}) {
+  return (
+    <button type="button" onClick={onClick} className={`k-quiet${danger ? ' k-quiet--danger' : ''}`}>
+      {children}
+    </button>
+  )
+}
+
+/** Generic bordered surface card. `dim` fades disabled rows. */
+export function Card({ children, dim, style }: { children: ReactNode; dim?: boolean; style?: CSSProperties }) {
+  return (
+    <div style={{
+      background: 'var(--k-surface)', border: '1px solid var(--k-rule)', borderRadius: 'var(--k-radius)',
+      padding: 'var(--k-space-md)', display: 'flex', flexDirection: 'column', gap: 'var(--k-space-sm)',
+      opacity: dim ? 0.55 : 1, ...style,
+    }}>
+      {children}
+    </div>
+  )
+}
+
+/** On/off pill switch (instructions, settings, plugins). */
+export function Switch({ on, onToggle, disabled, label }: {
+  on: boolean; onToggle: () => void; disabled?: boolean; label?: string
+}) {
+  return (
+    <button
+      type="button" role="switch" aria-checked={on} aria-label={label}
+      onClick={onToggle} disabled={disabled}
+      style={{
+        position: 'relative', flex: '0 0 auto', width: 34, height: 18, borderRadius: 9, padding: 0,
+        cursor: disabled ? 'default' : 'pointer', opacity: disabled ? 0.5 : 1,
+        background: on ? 'var(--k-accent)' : 'var(--k-switch-off-bg)',
+        border: `1px solid ${on ? 'var(--k-accent)' : 'var(--k-switch-off-border)'}`,
+        transition: 'background 0.2s ease, border-color 0.2s ease',
+      }}
+    >
+      <span style={{
+        position: 'absolute', top: 2, left: on ? 17 : 2, width: 12, height: 12, borderRadius: '50%',
+        background: on ? 'var(--k-switch-knob-on)' : 'var(--k-switch-knob-off)', transition: 'left 0.2s ease',
+      }} />
     </button>
   )
 }

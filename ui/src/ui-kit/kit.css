@@ -59,3 +59,81 @@
   transform: none;
   box-shadow: none;
 }
+
+/* ── Buttons ────────────────────────────────────────────────────────────────
+   `primary` is the emphasised action: a filled accent in modern, an accent
+   outline-on-hover in minimal (which never fills with hue). `ghost` is the
+   quiet action. */
+.k-btn {
+  cursor: pointer;
+  font-family: var(--k-font);
+  font-weight: var(--k-emphasis-weight);
+  border-radius: var(--k-radius-sm);
+  padding: var(--k-btn-pad);
+  font-size: var(--k-btn-text);
+  text-transform: var(--k-text-transform);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: background 0.15s ease, color 0.2s ease, border-color 0.2s ease, opacity 0.15s ease;
+}
+.k-btn:disabled { opacity: 0.4; cursor: default; }
+
+.k-btn--ghost { background: var(--k-btn-ghost-bg); color: var(--k-muted); border: 1px solid var(--k-rule); }
+.k-btn--ghost:hover:not(:disabled) { color: var(--k-fg); }
+:root[data-skin='minimal'] .k-btn--ghost:hover:not(:disabled) { border-color: var(--k-fg); }
+
+.k-btn--primary { background: var(--k-accent); color: var(--k-on-accent); border: 1px solid var(--k-accent); }
+.k-btn--primary:hover:not(:disabled) { background: var(--k-accent-hover); border-color: var(--k-accent-hover); }
+:root[data-skin='minimal'] .k-btn--primary { background: none; color: var(--k-muted); border: 1px solid var(--k-rule); }
+:root[data-skin='minimal'] .k-btn--primary:hover:not(:disabled) { background: none; color: var(--k-accent); border-color: var(--k-accent); }
+
+.k-btn--danger { background: var(--k-danger-bg); color: var(--k-danger); border: 1px solid transparent; }
+.k-btn--danger:hover:not(:disabled) { opacity: 0.85; }
+:root[data-skin='minimal'] .k-btn--danger { background: none; border-color: var(--k-rule); }
+:root[data-skin='minimal'] .k-btn--danger:hover:not(:disabled) { border-color: var(--k-accent); }
+
+/* ── Form controls — full-bordered box in modern, bottom-rule in minimal ── */
+.k-input {
+  background: var(--k-control-bg);
+  border: 1px solid var(--k-rule);
+  border-radius: var(--k-radius-sm);
+  padding: var(--k-control-pad);
+  color: var(--k-fg);
+  font-family: var(--k-font);
+  font-size: var(--k-text-sm);
+  font-weight: var(--k-body-weight);
+  outline: none;
+}
+:root[data-skin='minimal'] .k-input {
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--k-rule);
+  border-radius: 0;
+}
+.k-input:focus { border-color: var(--k-accent); }
+:root[data-skin='minimal'] .k-input:focus { border-bottom-color: var(--k-accent); }
+
+/* ── Small square/round toggle (weekday picker) ── */
+.k-toggle-btn {
+  cursor: pointer;
+  font-family: var(--k-font);
+  font-size: var(--k-text-label);
+  font-weight: var(--k-label-weight);
+  text-transform: var(--k-text-transform);
+  background: var(--k-btn-ghost-bg);
+  color: var(--k-muted);
+  border: 1px solid var(--k-rule);
+  border-radius: var(--k-radius-sm);
+  transition: background 0.15s ease, color 0.2s ease, border-color 0.2s ease;
+}
+.k-toggle-btn.active { background: var(--k-accent); color: var(--k-on-accent); border-color: var(--k-accent); }
+:root[data-skin='minimal'] .k-toggle-btn.active { background: var(--k-fg); color: var(--k-bg); border-color: var(--k-fg); }
+
+/* ── Modern markdown prose (minimal uses .m-prose) ── */
+.k-prose {
+  color: var(--k-fg);
+  font-size: var(--k-text-body);
+  line-height: 1.7;
+  white-space: pre-wrap;
+}

@@ -59,6 +59,8 @@ CI enforces lint, type-check, and tests with a **coverage floor of 60%**
 ```bash
 cd ui
 pnpm exec tsc --noEmit                 # type-check
+pnpm lint                              # eslint src
+pnpm test                              # vitest run (unit tests for hooks/helpers)
 pnpm build                             # tsc + vite build
 ```
 

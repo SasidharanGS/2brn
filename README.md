@@ -106,9 +106,10 @@ chat, journal and blog wait for a reachable provider and heal once one is set.
 ┌──────────────────────────────────────────────────────────────────────┐
 │  Electron UI  (React 19 · React Router · TanStack Query · Recharts)    │
 │  Home · Chat · Journal · Blog · Timeline · Insights · Instructions ·   │
-│  Plugins · Settings                                                    │
+│  Plugins · Devices · Settings                                          │
+│  one ui-kit + token contract → two skins (modern · minimal)           │
 └───────────────────────────────┬────────────────────────────────────────┘
-                                │  HTTP :7842  (bearer-token gated)
+                                │  HTTP :7842  (token gated)
 ┌───────────────────────────────▼────────────────────────────────────────┐
 │  Python Daemon  (FastAPI + APScheduler)                                │
 │                                                                        │
@@ -121,14 +122,18 @@ chat, journal and blog wait for a reachable provider and heal once one is set.
 │  ~/.2brn/  (SQLite,    ←──► /v1/chat/completions                       │
 │  ChromaDB, screenshots)     /v1/embeddings                             │
 └──────────────────────┬─────────────────────────────────────────────────┘
-                       │  opt-in LAN bridge (bind 0.0.0.0, same token)
+                       │  opt-in LAN bridge (bind 0.0.0.0; per-device tokens)
 ┌──────────────────────▼─────────────────────────────────────────────────┐
 │  Mobile companion (Android) — save-to-2brn share target + read journal │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
-See [`AGENTS.md`](AGENTS.md) for the module-level map and
-[`docs/integrations.md`](docs/integrations.md) for the plugin/event design.
+The Electron UI ships **two skins** (modern and minimal): every screen is a
+single component rendered through a shared **ui-kit** whose look is driven by a
+`--k-*` CSS token contract, so the skins stay in lockstep — see
+[`docs/theming.md`](docs/theming.md). See
+[`docs/integrations.md`](docs/integrations.md) for the plugin/event design and
+[`docs/mobile-bridge.md`](docs/mobile-bridge.md) for the phone-pairing contract.
 
 ## Configuration
 
@@ -173,17 +178,25 @@ SQLite. See [`docs/integrations.md`](docs/integrations.md) for the full referenc
 
 The daemon binds loopback by default. Setting `lan_access: true` (Settings, or
 `PUT /settings`) makes it listen on `0.0.0.0:7842` after a restart so a phone on
-the same Wi-Fi can reach it — still gated by the same bearer token. To pair a
-phone, run the terminal helper, which prints the URL + token and a scannable QR:
+the same Wi-Fi can reach it. The master token (`~/.2brn/api_token`) stays
+**loopback-only** — phones authenticate with their **own per-device token**,
+which you mint and can revoke independently.
+
+Pair from the **Devices** screen ("Connect a device") in the app: it mints a
+fresh device token and shows a scannable QR (plus a copyable URL + token for
+manual entry), and lists paired devices so you can revoke any of them. The same
+flow is available from the terminal:
 
 ```bash
 cd daemon
 uv run python -m brn_daemon.pair   # optional: uv pip install qrcode for the QR
 ```
 
-The companion can then save links/text into your second brain (`POST
+A paired phone can then save links/text into your second brain (`POST
 /ingest/note`, embedded alongside notes for chat RAG) and read your journal &
-insights. Full contract: [`docs/mobile-bridge.md`](docs/mobile-bridge.md).
+insights. Revoking a device makes its token stop authenticating immediately, and
+the phone self-heals back to its pairing screen. Full contract:
+[`docs/mobile-bridge.md`](docs/mobile-bridge.md).
 
 ## Joplin integration *(optional)*
 
@@ -201,7 +214,10 @@ Joplin). Enable it in **Settings → Joplin integration**. Mirroring journals
 - API keys, the screenshot password, and plugin secrets live in the **OS
   keychain** — only key *names* are stored in the database.
 - The daemon is loopback-only unless you opt into `lan_access`, and every
-  endpoint but `/status` requires the per-machine bearer token.
+  endpoint but `/status` requires a token: the per-machine master token on
+  loopback (used by the desktop UI), or an individually revocable per-device
+  token for paired phones on the LAN. Device management (`/devices`) is
+  loopback + master only, so a phone can't enumerate or revoke devices.
 - Screenshots can be encrypted at rest with **AES-256-GCM**; the key is derived
   from a keychain-held password.
 
@@ -246,13 +262,15 @@ uv run --extra dev pytest tests/ -v    # tests (CI enforces 60% coverage)
 
 # UI (from ui/)
 pnpm exec tsc --noEmit                 # type-check
+pnpm lint                              # eslint src
+pnpm test                              # vitest run (unit tests for hooks/helpers)
 pnpm build                             # tsc + vite build
 pnpm screenshots                       # regenerate docs/screenshots/
 ```
 
 CI (`.github/workflows/ci.yml`) runs the daemon lint/type-check/tests (coverage
-floor 60%) and the UI type-check/build. Optionally install the pre-commit hooks:
-`cd daemon && uv run pre-commit install`.
+floor 60%) and the UI lint/type-check/test/build. Optionally install the
+pre-commit hooks: `cd daemon && uv run pre-commit install`.
 
 ## Contributing
 

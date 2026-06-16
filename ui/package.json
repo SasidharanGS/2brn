@@ -33,7 +33,7 @@
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^4.3",
     "autoprefixer": "^10.4",
-    "concurrently": "^8.2",
+    "concurrently": "^10.0",
     "electron": "^31.0",
     "electron-builder": "^24.0",
     "eslint": "^10.5.0",

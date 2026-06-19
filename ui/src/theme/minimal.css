@@ -75,6 +75,7 @@
   --sidebar-w: clamp(168px, 13vw, 208px);
   --topbar-h: 56px;
   --panel-w: clamp(264px, 22vw, 320px);
+  --content-pad: clamp(1.5rem, 3.4vw, 3.5rem);
 }
 
 :root[data-skin='minimal'][data-theme='dark'] {
@@ -318,7 +319,8 @@ html.macos[data-skin='minimal'] .m-sidebar { padding-top: 44px; }
   :root[data-skin='minimal'] .m-rail-btn { justify-content: center; gap: 0 !important; }
 }
 
-/* ≤560: hide the secondary status items (top, focused). */
+/* ≤560: hide the secondary status items (top, focused); tighten content padding. */
 @media (max-width: 560px) {
+  :root[data-skin='minimal'] { --content-pad: var(--space-sm); }
   :root[data-skin='minimal'] .m-status-extra { display: none !important; }
 }

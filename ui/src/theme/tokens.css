@@ -160,7 +160,7 @@
   --k-leading: var(--leading-snug);
 
   /* spacing — minimal's airier scale */
-  --k-page-pad: var(--space-lg);
+  --k-page-pad: var(--content-pad);
   --k-page-max: 760px;
   --k-page-align: 0;
   --k-space-2xs: 0.25rem;

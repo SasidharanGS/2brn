@@ -66,7 +66,7 @@ export default function TopBar() {
       style={{
         height: 'var(--topbar-h)', borderBottom: '1px solid var(--rule)',
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: '0 var(--space-md)', gap: 'var(--space-md)', flex: '0 0 auto',
+        padding: '0 var(--content-pad)', gap: 'var(--space-md)', flex: '0 0 auto',
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-md)', minWidth: 0, overflow: 'hidden' }}>

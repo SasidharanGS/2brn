@@ -21,7 +21,7 @@ export function useJournalEntry() {
 
   useEffect(() => {
     setScheduleTime(serverTime)
-  }, [serverTime]) // eslint-disable-line
+  }, [serverTime])
 
   // Reset edit state whenever the date changes (calendar navigation)
   useEffect(() => {

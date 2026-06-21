@@ -6,21 +6,22 @@ import Icon, { type IconName } from '../Icon'
 // 52px status strip: now · top · focused% on the left, theme control right.
 // The live "now" dot is the one accent — a live, important cue.
 
-const THEME_SEGMENTS: { mode: ThemeMode; icon: IconName }[] = [
-  { mode: 'light', icon: 'sun' },
-  { mode: 'system', icon: 'monitor' },
-  { mode: 'dark', icon: 'moon' },
+const THEME_SEGMENTS: { mode: ThemeMode; icon: IconName; label: string }[] = [
+  { mode: 'light',  icon: 'sun',     label: 'light mode'   },
+  { mode: 'system', icon: 'monitor', label: 'system theme' },
+  { mode: 'dark',   icon: 'moon',    label: 'dark mode'    },
 ]
 
 function ThemeControl() {
   const { mode, setMode } = useTheme()
   return (
-    <div style={{ display: 'inline-flex', border: '1px solid var(--rule)', padding: 2 }}>
-      {THEME_SEGMENTS.map(({ mode: m, icon }) => {
+    <div style={{ display: 'inline-flex', border: '1px solid var(--rule)', padding: 2 }} role="group" aria-label="theme">
+      {THEME_SEGMENTS.map(({ mode: m, icon, label }) => {
         const active = mode === m
         return (
           <button
-            key={m} type="button" onClick={() => setMode(m)} title={m}
+            key={m} type="button" onClick={() => setMode(m)}
+            title={label} aria-label={label} aria-pressed={active}
             style={{
               background: active ? 'var(--accent)' : 'none',
               color: active ? 'var(--bg)' : 'var(--muted)',

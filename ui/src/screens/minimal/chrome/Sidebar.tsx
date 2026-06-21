@@ -13,6 +13,7 @@ function RailButton({ icon, label, active, onClick }: {
     <button
       type="button" onClick={onClick}
       className={`m-rail-btn${active ? ' active' : ''}`}
+      aria-label={label} aria-pressed={active}
       style={{
         display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7,
         width: '100%', background: 'none', padding: '7px 0', cursor: 'pointer',
@@ -20,7 +21,7 @@ function RailButton({ icon, label, active, onClick }: {
         fontWeight: 300, fontFamily: 'var(--font-sans)',
       }}
     >
-      <Icon name={icon} size={13} /><span className="m-rail-label">{label}</span>
+      <Icon name={icon} size={13} /><span className="m-rail-label" aria-hidden="true">{label}</span>
     </button>
   )
 }
@@ -61,6 +62,7 @@ export default function Sidebar({ calendarApplies, calendarOpen, onToggleCalenda
         {ROUTES.map(({ to, screen, end }) => (
           <NavLink
             key={to} to={to} end={end}
+            aria-label={screen}
             className={({ isActive }) => `m-nav-link${isActive ? ' active' : ''}`}
             style={{
               display: 'flex', alignItems: 'center', gap: 'var(--space-sm)',
@@ -72,7 +74,7 @@ export default function Sidebar({ calendarApplies, calendarOpen, onToggleCalenda
             {({ isActive }) => (
               <>
                 <Icon name={screen as IconName} size={15} strokeWidth={isActive ? 1.7 : 1.5} />
-                <span className="m-navlabel">{screen}</span>
+                <span className="m-navlabel" aria-hidden="true">{screen}</span>
               </>
             )}
           </NavLink>

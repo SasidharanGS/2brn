@@ -44,11 +44,12 @@ export default function CalendarPanel({ onClose }: { onClose: () => void }) {
     }}>
       {/* Month navigator */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <button type="button" onClick={prevMonth} className="m-quiet" style={navBtn}>
+        <button type="button" onClick={prevMonth} className="m-quiet" style={navBtn}
+          title="previous month" aria-label="previous month">
           <Icon name="chevronL" size={15} />
         </button>
         <button
-          type="button" onClick={goToToday} title="go to today"
+          type="button" onClick={goToToday} title="go to today" aria-label="go to today"
           className="m-quiet"
           style={{
             background: 'none', border: 'none', cursor: 'pointer',
@@ -60,6 +61,7 @@ export default function CalendarPanel({ onClose }: { onClose: () => void }) {
         </button>
         <button
           type="button" onClick={nextMonth} disabled={isAtCurrentMonth} className="m-quiet"
+          title="next month" aria-label="next month"
           style={{ ...navBtn, opacity: isAtCurrentMonth ? 0.3 : 1, cursor: isAtCurrentMonth ? 'default' : 'pointer' }}
         >
           <Icon name="chevronR" size={15} />
@@ -124,6 +126,7 @@ export default function CalendarPanel({ onClose }: { onClose: () => void }) {
             <button
               type="button" onClick={() => setChatDateOverridden(true)} className="m-quiet"
               title="remove date filter — search all history"
+              aria-label="remove date filter — search all history"
               style={{
                 background: 'none', border: 'none', cursor: 'pointer', padding: '2px 4px',
                 fontSize: 'var(--text-2xs)', letterSpacing: 'var(--tracking-wide)', fontFamily: 'var(--font-sans)',
@@ -154,7 +157,8 @@ export default function CalendarPanel({ onClose }: { onClose: () => void }) {
               today
             </button>
           )}
-          <button type="button" onClick={onClose} className="m-quiet" style={navBtn}>
+          <button type="button" onClick={onClose} className="m-quiet" style={navBtn}
+            title="close calendar" aria-label="close calendar">
             <Icon name="close" size={14} />
           </button>
         </div>
